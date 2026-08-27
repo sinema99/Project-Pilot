@@ -1,0 +1,15 @@
+# Godot 4+ editor cache / imported assets (regenerated on open)
+.godot/
+
+# Godot export output
+/build/
+/export/
+*.exe
+*.pck
+
+# OS / editor cruft
+Thumbs.db
+desktop.ini
+.DS_Store
+*.tmp
+*~

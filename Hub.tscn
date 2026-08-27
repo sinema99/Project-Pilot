@@ -1,0 +1,12 @@
+[gd_scene format=3 uid="uid://cxwkpvvuix5bl"]
+
+[ext_resource type="PackedScene" uid="uid://dlbu7xwv0ugo4" path="res://assets/HUB_blockout.glb" id="1_2ju24"]
+[ext_resource type="PackedScene" uid="uid://bg1e5i8c46n06" path="res://assets/setsuna.glb" id="2_xn0c7"]
+
+[node name="Node3D" type="Node3D" unique_id=730052480]
+
+[node name="HUB_blockout" parent="." unique_id=557987785 instance=ExtResource("1_2ju24")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.9192672, 0, 7.6273565)
+
+[node name="setsuna" parent="." unique_id=392318211 instance=ExtResource("2_xn0c7")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.7914245, 17.558538, 44.44767)

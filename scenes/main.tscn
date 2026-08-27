@@ -1,0 +1,59 @@
+[gd_scene format=3 uid="uid://ctci7bmnq8ta5"]
+
+[ext_resource type="PackedScene" uid="uid://ysjb2mhytwxx" path="res://scenes/player.tscn" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/mech.tscn" id="2"]
+[ext_resource type="Texture2D" uid="uid://0j8pkp16h8hj" path="res://assets/qwantani_night_puresky_4k.exr" id="3"]
+[ext_resource type="PackedScene" uid="uid://dlbu7xwv0ugo4" path="res://assets/HUB_blockout.glb" id="4"]
+
+[sub_resource type="PanoramaSkyMaterial" id="PanoramaSkyMaterial_1"]
+panorama = ExtResource("3")
+energy_multiplier = 0.4
+
+[sub_resource type="Sky" id="Sky_1"]
+sky_material = SubResource("PanoramaSkyMaterial_1")
+
+[sub_resource type="Environment" id="Environment_1"]
+background_mode = 2
+sky = SubResource("Sky_1")
+ambient_light_source = 3
+ambient_light_color = Color(1, 1, 1, 1)
+ambient_light_energy = 0.15
+reflected_light_source = 2
+
+[sub_resource type="BoxMesh" id="BoxMesh_ground"]
+size = Vector3(60, 1, 60)
+
+[sub_resource type="StandardMaterial3D" id="Mat_ground"]
+albedo_color = Color(0.3, 0.35, 0.3, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_ground"]
+size = Vector3(60, 1, 60)
+
+[node name="Main" type="Node3D" unique_id=1028042342]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1481131941]
+environment = SubResource("Environment_1")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=366178471]
+transform = Transform3D(0.707107, -0.5, 0.5, 0, 0.707107, 0.707107, -0.707107, -0.5, 0.5, 0, 10, 0)
+light_energy = 0.15
+shadow_enabled = true
+
+[node name="Ground" type="StaticBody3D" parent="." unique_id=1654376433]
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Ground" unique_id=593579764]
+visible = false
+mesh = SubResource("BoxMesh_ground")
+surface_material_override/0 = SubResource("Mat_ground")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Ground" unique_id=1988495043]
+shape = SubResource("BoxShape3D_ground")
+
+[node name="SETSUNA" parent="." unique_id=370020753 instance=ExtResource("1")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.24235153, 2.7852502, 4.8881445)
+
+[node name="EXIA" parent="." unique_id=1938399844 instance=ExtResource("2")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6, 2.9425573, -5)
+
+[node name="HUB_blockout" parent="." unique_id=1106917287 instance=ExtResource("4")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -14.9864, 0)
