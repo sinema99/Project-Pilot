@@ -1,0 +1,149 @@
+[gd_scene format=3 uid="uid://c0f6qcnliqkg6"]
+
+[ext_resource type="Shader" uid="uid://ci0f7aqha3nyg" path="res://shaders/gradient_sky.gdshader" id="1_sky"]
+[ext_resource type="Script" uid="uid://fi67coahu4aa" path="res://scripts/rendering/moebius_compositor.gd" id="2_at5dv"]
+[ext_resource type="Shader" uid="uid://bo3wb7oabvjk5" path="res://shaders/stylized.gdshader" id="3_stylized"]
+[ext_resource type="Material" path="res://resources/stylized_material.tres" id="4_shared_mat"]
+[ext_resource type="Script" uid="uid://he1couvcqarw" path="res://scripts/rendering/apply_stylized.gd" id="5_applier"]
+[ext_resource type="PackedScene" uid="uid://ysjb2mhytwxx" path="res://scenes/player.tscn" id="6_setsuna"]
+[ext_resource type="PackedScene" uid="uid://dlbu7xwv0ugo4" path="res://assets/HUB_blockout.glb" id="7_hub"]
+[ext_resource type="Material" path="res://resources/character_material.tres" id="8_char_mat"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_sky"]
+shader = ExtResource("1_sky")
+shader_parameter/horizon_color = Color(0.831, 0.694, 0.456, 1)
+shader_parameter/mid_color = Color(0.347, 0.651, 0.731, 1)
+shader_parameter/upper_color = Color(0.188, 0.521, 0.638, 1)
+shader_parameter/zenith_color = Color(0.078, 0.381, 0.552, 1)
+shader_parameter/horizon_height = 0.06
+shader_parameter/mid_height = 0.22
+shader_parameter/upper_height = 0.5
+shader_parameter/band_softness = 0.004
+shader_parameter/sun_enabled = true
+shader_parameter/sun_size = 0.04
+shader_parameter/sun_softness = 0.02
+shader_parameter/sun_color = Color(1, 0.888, 0.687, 1)
+
+[sub_resource type="Sky" id="Sky_banded"]
+sky_material = SubResource("ShaderMaterial_sky")
+
+[sub_resource type="Environment" id="Environment_moebius"]
+background_mode = 2
+sky = SubResource("Sky_banded")
+ambient_light_source = 3
+ambient_light_color = Color(0.521, 0.745, 0.823, 1)
+ambient_light_energy = 0.35
+reflected_light_source = 1
+fog_enabled = true
+fog_mode = 1
+fog_light_color = Color(0.906, 0.839, 0.69, 1)
+fog_sun_scatter = 0.1
+fog_density = 0.0
+fog_sky_affect = 0.0
+fog_height = 2.0
+fog_height_density = 0.06
+fog_depth_begin = 40.0
+fog_depth_end = 220.0
+adjustment_enabled = true
+adjustment_contrast = 1.05
+adjustment_saturation = 1.12
+
+[sub_resource type="CompositorEffect" id="CompositorEffect_moebius"]
+resource_local_to_scene = false
+resource_name = ""
+enabled = true
+effect_callback_type = 4
+needs_motion_vectors = false
+needs_normal_roughness = true
+script = ExtResource("2_at5dv")
+line_color = Color(0.101961, 0.078431, 0.062745, 1)
+
+[sub_resource type="Compositor" id="Compositor_jcd4p"]
+compositor_effects = Array[CompositorEffect]([SubResource("CompositorEffect_moebius")])
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_sand"]
+render_priority = 0
+shader = ExtResource("3_stylized")
+shader_parameter/albedo_color = Color(0.807, 0.552, 0.275, 1)
+shader_parameter/gradient_color = Color(0.807, 0.552, 0.275, 1)
+shader_parameter/gradient_strength = 0.0
+shader_parameter/gradient_low = 0.0
+shader_parameter/gradient_high = 10.0
+shader_parameter/band_count = 3
+shader_parameter/band_softness = 0.02
+shader_parameter/shadow_floor = 0.0
+shader_parameter/dot_enabled = true
+shader_parameter/dot_density = 0.55
+shader_parameter/dot_scale_px = 6.0
+shader_parameter/ambient_sky_color = Color(0.521, 0.745, 0.823, 1)
+shader_parameter/ambient_ground_color = Color(0.584, 0.275, 0.102, 1)
+shader_parameter/ambient_energy = 0.35
+shader_parameter/specular_enabled = false
+shader_parameter/specular_threshold = 0.85
+shader_parameter/specular_sharpness = 32.0
+shader_parameter/specular_color = Color(1, 1, 1, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_ground"]
+size = Vector3(300, 1, 300)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_ground"]
+size = Vector3(300, 1, 300)
+
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_landmark"]
+height = 34.0
+radius = 7.0
+
+[node name="TestScene" type="Node3D" unique_id=477048498]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=2100961324]
+environment = SubResource("Environment_moebius")
+compositor = SubResource("Compositor_jcd4p")
+
+[node name="Sun" type="DirectionalLight3D" parent="." unique_id=1252883554]
+transform = Transform3D(0.819152, -3.9060197e-07, 0.5735765, 0.383798, 0.7431446, -0.5481197, -0.42625, 0.6691309, 0.60874856, 0, 89.776596, 0)
+light_color = Color(1, 0.957, 0.878, 1)
+light_energy = 1.6
+shadow_enabled = true
+shadow_bias = 0.05
+shadow_normal_bias = 0.2
+shadow_blur = 0.0
+directional_shadow_split_1 = 0.06
+directional_shadow_split_2 = 0.18
+directional_shadow_split_3 = 0.45
+directional_shadow_max_distance = 220.0
+
+[node name="Ground" type="StaticBody3D" parent="." unique_id=1510050845]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Ground" unique_id=120529467]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -268.67822, 0)
+material_override = SubResource("ShaderMaterial_sand")
+mesh = SubResource("BoxMesh_ground")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Ground" unique_id=1672120645]
+shape = SubResource("BoxShape3D_ground")
+
+[node name="Landmark" type="StaticBody3D" parent="." unique_id=1103961897]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 46, 17, -52)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Landmark" unique_id=1874907872]
+shape = SubResource("CylinderShape3D_landmark")
+
+[node name="HUB_blockout" parent="." unique_id=1979919658 instance=ExtResource("7_hub")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -17.648926, 0)
+
+[node name="SETSUNA" parent="." unique_id=370020753 instance=ExtResource("6_setsuna")]
+transform = Transform3D(-0.99858904, 0, 0.053102925, 0, 1, 0, -0.053102925, 0, -0.99858904, -0.24235153, 0.9952111, 4.8881445)
+
+[node name="ApplyStylized" type="Node" parent="." unique_id=1885130486]
+script = ExtResource("5_applier")
+material = ExtResource("4_shared_mat")
+targets = Array[NodePath]([NodePath("../HUB_blockout"), NodePath("../Landmark")])
+
+[node name="ApplyStylizedCharacter" type="Node" parent="." unique_id=1885130487]
+script = ExtResource("5_applier")
+material = ExtResource("8_char_mat")
+targets = Array[NodePath]([NodePath("../SETSUNA/PlayerModel")])
+derive_from_surfaces = true
+
+[node name="Lights" type="Node3D" parent="." unique_id=661495079]

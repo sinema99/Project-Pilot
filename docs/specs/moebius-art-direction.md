@@ -103,15 +103,17 @@ Two cooperating layers plus environment setup:
 - **Sky rejection:** samples at infinite/sky depth produce no line; no outline is drawn
   around the sky or where one neighbour is sky.
 - **Line weight:** fixed screen-space, **resolution-scaled** (thickness in px scales with
-  viewport height so it holds at 4K). Default **1.5 px**. (Sable ≈ 1.0; drop the tunable
-  to 1.0 for exact-Sable weight.)
+  viewport height so it holds at 4K). Default **1.0 px** — exact-Sable weight. (1.5 gives a
+  heavier pen; the tunable is the Sobel tap radius, so heavier also means coarser creases.)
 - **Line colour:** default warm near-black **#1A1410**. Tunable to pure black.
 - **Distance fade:** line opacity ramps from full to zero between a near and far distance.
   Defaults **60 m → 150 m**. Independent of the fog node; keep the two roughly aligned by
   eye. Guidance, not a hard link.
 - **Wobble:** scrolling-noise perturbation of the edge-sample position for a hand-inked
-  quiver. **Knob ships at 0** (Sable's lines are stable; wobble in motion is a nausea
-  risk). Present so it can be dialled up toward static-Moebius plates later.
+  quiver. **Default 0.5** — roughly a pixel of drift, which against a 1 px pen is a visible
+  waver while still reading as a straight line: a steady hand failing to be a ruler, not a
+  shaky one. Kept under 1.0 deliberately: wobble in motion is a nausea risk, and past that
+  it reads as heat haze instead of ink.
 - **Grain:** overlaid noise, **low strength**, **stepped**: the noise field is re-seeded
   every **~10 rendered frames** (tunable interval) rather than per-frame. On by default.
 
@@ -128,6 +130,13 @@ A `spatial` shader, assigned through `material_override`.
   is what makes slopes legible for mech traversal — do not default to 2.
 - **Band terminator:** razor-thin `smoothstep`, softness tunable, **default 0.02** — reads
   as a hard step but antialiases so the terminator doesn't shimmer in motion.
+- **Shadow floor:** the lowest band's floor, as a fraction of the key light. At **0** (the
+  default) an unlit face is lit by the hemisphere ambient alone, which is correct for open
+  terrain — dune shadows want to be dark — but crushes anything enclosed: the hub's
+  interior receives no sun at all, so every wall of it lands on the darkest band. Raise it
+  per-material on interior geometry (hub ships at **0.35**), leave it at 0 on terrain. The
+  band edges stay hard; the whole ramp just compresses upward. Applied per light, so keep
+  it at 0 on anything lit by more than the key sun.
 - **Halftone dotting:** the shadow band renders as a **screen-space** ordered dot matrix
   (locked to the screen like ink on a page; the surface slides underneath). Density ramps:
   thinning toward the lit edge, filling toward full dark. **On by default, low density.**
@@ -180,14 +189,14 @@ or node properties) so the developer can dial the look while looking at `test.ts
 
 | Tunable | Default | Notes |
 |---|---|---|
-| `line_thickness_px` | 1.5 | screen-space, resolution-scaled; Sable ≈ 1.0 |
+| `line_thickness_px` | 1.0 | screen-space, resolution-scaled; Sable's own weight |
 | `line_color` | `#1A1410` | warm near-black; → `#000000` for hard look |
 | `depth_edge_threshold` | TBD in editor | depth discontinuity sensitivity |
 | `normal_edge_threshold` | TBD in editor | crease sensitivity |
 | `fade_start_m` | 60 | full-strength line up to here |
 | `fade_end_m` | 150 | line fully faded by here |
-| `wobble_strength` | 0.0 | hand-drawn quiver; keep at 0 for motion |
-| `wobble_scale` / `wobble_speed` | TBD | only relevant if `wobble_strength` > 0 |
+| `wobble_strength` | 0.5 | hand-drawn quiver; ~1 px of drift against a 1 px pen |
+| `wobble_scale` / `wobble_speed` | 24 / 0.35 | long slow waves; jitter if scale goes high |
 | `grain_strength` | low (TBD) | |
 | `grain_step_frames` | 10 | re-seed interval |
 
@@ -200,6 +209,7 @@ or node properties) so the developer can dial the look while looking at `test.ts
 | `gradient_strength` | 0.0 | raise per-material only where a surface reads dead |
 | `band_count` | 3 | do not default to 2 |
 | `band_softness` | 0.02 | razor-thin terminator |
+| `shadow_floor` | 0.0 | lowest band's floor; raise on interiors (hub = 0.35), leave 0 on terrain |
 | `dot_density` | low (TBD) | shadow-band halftone |
 | `dot_scale_px` | TBD | screen-space dot size |
 | `specular_enabled` | false | hard white blob for Exia later |
@@ -221,7 +231,7 @@ or node properties) so the developer can dial the look while looking at `test.ts
 | Sun elevation | 40–45° | warm white |
 | Sun energy | TBD in editor | |
 | Ambient sky colour / ground colour | seeded from palette | hemisphere split |
-| Ambient energy | TBD in editor | |
+| Ambient energy | per-material | ground 0.35; hub 1.1 — enclosed geometry has no sun to fill it |
 | SDFGI | off | |
 | Sky reflections | off | |
 | Directional shadow map size | bumped (e.g. 4096) | fight stair-stepping |
@@ -350,7 +360,8 @@ Built into the pipeline as capability (off / absent) or explicitly postponed:
 - **Night / day-night cycle** — per-time palette, sun/moon, sky, and per-zone fog swaps.
 - **Painted / decal clouds**; **volumetric fog** god-rays.
 - **Colour-correction LUT** slot on the Environment.
-- **Outline wobble** tuning (knob ships at 0).
+- **Outline wobble** stepped re-draw (the field currently drifts continuously; stepping it
+  the way the grain steps would read as the line being re-inked each frame).
 
 ## Out of Scope
 

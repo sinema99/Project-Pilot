@@ -83,7 +83,7 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		return
 
-	var is_crouching := Input.is_key_pressed(KEY_CTRL)
+	var is_crouching := Input.is_key_pressed(KEY_C)
 	var target_camera_height := CROUCH_CAMERA_HEIGHT if is_crouching else STAND_CAMERA_HEIGHT
 	current_camera_height = move_toward(current_camera_height, target_camera_height, CROUCH_LERP_SPEED * delta)
 	camera_pivot.position.y = current_camera_height

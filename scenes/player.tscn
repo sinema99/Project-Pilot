@@ -39,7 +39,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.8, 0)
 
 [node name="SpringArm3D" type="SpringArm3D" parent="CameraPivot/CameraPitch" unique_id=1882827573]
 shape = SubResource("SphereShape3D_cam")
-spring_length = 4.0
+spring_length = 3.0
 margin = 0.1
 
 [node name="Camera3D" type="Camera3D" parent="CameraPivot/CameraPitch/SpringArm3D" unique_id=1882827572]
