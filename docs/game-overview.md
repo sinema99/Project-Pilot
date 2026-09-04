@@ -2,18 +2,18 @@
 
 > **Purpose of this document:** a fast onboarding brief so another person (or AI) can grasp
 > what this game is, what exists in the codebase today, and where it's headed — without
-> reading every script. For the detailed world/level design, see
-> [specs/zone-based-map-system.md](specs/zone-based-map-system.md).
+> reading every script.
 
-Last updated: 2026-08-27
+Last updated: 2026-09-04
 
 ---
 
 ## The Pitch
 
 A third-person open-world **cargo-delivery game** built around piloting a mech across
-difficult terrain. The world is a Dark Souls–style network of discrete, hand-modeled
-zones connected through a central hub — full of secrets, shortcuts, and hidden areas.
+difficult terrain. The world is intended as a Dark Souls–style network of discrete,
+hand-modeled zones connected through a central hub — full of secrets, shortcuts, and
+hidden areas.
 
 There is no combat (yet). The core gameplay loop *is* traversal: carefully navigating
 slopes, ledges, and narrow routes to carry cargo from the hub to a destination and back.
@@ -25,58 +25,67 @@ landmark-based navigation), **Dark Souls** (zone structure and permanent shortcu
 | Concept | Description |
 |---|---|
 | **Exia (the mech)** | The player's vehicle and the *only* thing that can carry cargo. Delivery missions require Exia to physically reach the destination. In-scene node name: `EXIA`. |
-| **The pilot (on foot)** | The player character on foot. Can dismount Exia at any time to squeeze through gaps too narrow for the mech, reach secrets, and open shortcut gates. In-scene node name: `SETSUNA`. |
-| **Zones** | Discrete, hand-modeled Blender levels (~1100m across), each fully loaded into memory — no streaming. Connected hub-and-spoke, never directly to each other. |
-| **Hub** | The fixed center of the zone graph — a walkable garage/depot where the player explores on foot between deliveries. |
-| **Shortcut gates** | Progressing through a zone unlocks a gate back toward an earlier point or the hub. Once opened, permanent — collapses the return trip on future deliveries. |
-| **Navigation** | No minimap, compass, or waypoints. The player orients by distinctive landmarks placed along and visible from the critical path. |
+| **Setsuna (on foot)** | The player character on foot. Can dismount Exia at any time to squeeze through gaps too narrow for the mech, reach secrets, and open shortcut gates. In-scene node name: `SETSUNA`. |
+| **Zones** | Discrete, hand-modeled Blender levels, each fully loaded into memory — no streaming. Connected hub-and-spoke, never directly to each other. *Not built.* |
+| **Shortcut gates** | Progressing through a zone unlocks a gate back toward an earlier point. Once opened, permanent. *Not built.* |
+| **Navigation** | No minimap, compass, or waypoints. The player orients by distinctive landmarks. |
 
 ## Traversal Model
 
-- Movement is shared between the pilot and Exia: WASD relative to the camera, mouse-look,
-  crouch, jump, with smooth turning toward the movement direction.
+- Movement is shared between Setsuna and Exia: WASD relative to the camera, mouse-look,
+  with smooth turning toward the movement direction.
 - Steep terrain is challenging through **footing, slope angle, and balance** — there is
   **no climb action**, no grapple, no handholds.
-- Mech-passable routes are kept comfortably wider than Exia (3m+); dismount-only gaps are
-  narrower than Exia's 1.6m width so only the on-foot player fits.
-- **Scale reference:** Exia's collision footprint is 1.6m W × 3.6m H × 1.2m D; the on-foot
-  player capsule is 0.8m diameter × 1.8m tall.
+- Mech-passable routes are kept comfortably wider than Exia; dismount-only gaps are
+  narrower than Exia so only the on-foot player fits.
 
 ---
 
 ## What Exists in the Codebase Today
 
-**Engine:** Godot 4.6, Forward+ renderer. Windows. Not currently under version control.
+**Engine:** Godot 4.6, Forward+ renderer. Windows. Under git version control.
 
-The game is an early prototype: a player, a pilotable mech, an HDRI night sky, and a first
-**Hub blockout** (hand-modeled in Blender) dropped into the main scene. The zone/shortcut
-systems from the spec are **not built yet**, and the hub itself is untextured greybox geometry.
+The project was reduced to a single scene on 2026-09-04. Everything that exists is what
+loads in **`scenes/test_platform.tscn`**, which is also the main scene: Setsuna and Exia
+standing on a simple mesh platform under the cel-shaded art direction. The earlier hub,
+desert, night and Moebius/Ghibli experiments were deleted — they remain recoverable from
+the checkpoint commit that precedes the cleanup.
 
 ### Scenes
 
 | File | Contents |
 |---|---|
-| [scenes/main.tscn](../scenes/main.tscn) | The main scene. `HUB_blockout` instance (with a Y counter-offset — see worklog), the old 60×60m box `Ground` kept as a hidden-mesh fallback collider, one `DirectionalLight3D` (energy 0.15) with shadows, a `WorldEnvironment` with a `PanoramaSkyMaterial` night-sky HDRI (`qwantani_night_puresky_4k.exr`, energy 0.4) driving low sky ambient + reflections, plus instances of the player (`SETSUNA`) and mech (`EXIA`). |
-| [scenes/player.tscn](../scenes/player.tscn) | On-foot player: `CharacterBody3D` + capsule collision (0.4m radius, 1.8m tall), an imported `setsuna.glb` model with an `AnimationPlayer` (IDLE / RUN START / RUN LOOP / JUMP), and a camera rig (`CameraPivot` → `CameraPitch` → `SpringArm3D` → `Camera3D`) — the spring arm (length 4, 0.3 sphere shape) pulls the camera in to stop it clipping through walls. |
-| [scenes/mech.tscn](../scenes/mech.tscn) | Exia: `CharacterBody3D` with a 1.6×3.6×1.2 box collision, placeholder box-mesh body (torso, head, two legs), its own camera rig, a 5×4×5 `InteractionArea` (Area3D), an `ExitPoint` marker, and a `CanvasLayer` UI with a `PromptLabel`. |
-| [scenes/Hub.tscn](../scenes/Hub.tscn) | Standalone scene for iterating on the hub map: `Node3D` "Hub" + `HUB_blockout` instance + `DirectionalLight3D` + `WorldEnvironment` (same night-sky HDRI). No player/mech. |
+| [scenes/test_platform.tscn](../scenes/test_platform.tscn) | **Main scene.** `WorldEnvironment` (cel sky, flat ambient, filmic tonemap, light distance fog), a `Sun` `DirectionalLight3D` with shadows, the `test_platform.glb` map instance, a `WorldBoundaryShape3D` `Ground` 35m down as a catch-all floor, `SETSUNA` and `EXIA` instances, three `apply_stylized` applier nodes (ground / Setsuna / mech), and a disabled `PixelFilter` `CanvasLayer`. |
+| [scenes/player.tscn](../scenes/player.tscn) | Setsuna: `CharacterBody3D` + capsule collision, the imported `setsuna.glb` model driven by an `AnimationTree`, a camera rig (`CameraPivot` → `CameraPitch` → `SpringArm3D` → `Camera3D`), and five `BoneAttachment3D` screen quads (health, stamina, dash, both thighs) driven by `setsuna_screens.gd`. |
+| [scenes/mech.tscn](../scenes/mech.tscn) | Exia: `CharacterBody3D` wrapping the `Mech_V1.glb` model, its own camera rig plus a separate `HandoverCamera` for the mount transition, an `InteractionArea`, `ExitPoint` and `EmbarkPoint` markers, and a `CanvasLayer` prompt label. |
+| [scenes/ui/](../scenes/ui/) | `ui_window.tscn` (the shared frame) and the two windows built on it: `pause_menu.tscn`, `inventory.tscn`. |
 
 ### Scripts
 
 | File | Role |
 |---|---|
-| [scripts/player.gd](../scripts/player.gd) | On-foot controller. Camera-relative WASD movement (`SPEED` 6, `SPRINT_SPEED` 9, `CROUCH_SPEED` = `SPRINT_SPEED`), mouse-look with pitch clamp, jump (`JUMP_VELOCITY` 12.5, double jump), crouch toggle on **C** (lerps capsule height and mesh between 1.8m and 1.0m), dash on **Ctrl** (launches at `DASH_RISE_ANGLE` 30 above horizontal), sprint toggle on **Shift**. Sliding is the sprint's crouch: **C** while sprinting dives into a held slide at sprint speed, steerable, and holds until **C** stands you up or a jump/dash takes the body. `_ready()` excludes the player's own body from the camera spring arm. Animation: plays `RUN START` on the first frame of movement and queues `RUN LOOP` after it, `IDLE` when stopped; on the Space press it plays the one-shot `JUMP` front flip and holds its last frame until landing. `enter_vehicle()` / `exit_vehicle()` hide and freeze the pilot while driving and hand the camera back on exit. |
-| [scripts/mech.gd](../scripts/mech.gd) | Exia controller. Same movement model as the player (`SPEED` 6, crouch lowers the camera 3.7m → 2.5m). `InteractionArea` detects any body with an `enter_vehicle` method and shows a prompt. **F** enters/exits; on enter, the pilot is passed in and Exia's camera becomes current; on exit, the pilot is released at `ExitPoint`. When unpiloted, Exia just decelerates and idles. |
-| [scripts/hub_import.gd](../scripts/hub_import.gd) | `EditorScenePostImport` hook on `HUB_blockout.glb` (wired via its `.import`). On every (re)import: adds `create_trimesh_collision()` to each mesh (solid floor/walls/ramps), forces materials double-sided, and gives material-less surfaces a `(0.45, 0.45, 0.45)` greybox tone. Re-runs automatically on each Blender re-export. |
-| [scripts/skybox.gd](../scripts/skybox.gd) | **No longer used** — the mesh sky dome it drove was removed from `main.tscn` when the HDRI panorama sky replaced it. Script + `skybox_anime_sky.glb` still on disk. |
+| [scripts/player.gd](../scripts/player.gd) | On-foot controller. Camera-relative WASD (`SPEED` 6, `SPRINT_SPEED` 9), mouse-look with pitch clamp, jump (`JUMP_VELOCITY` 12.5, `MAX_JUMPS` 2) with a tunable apex-hang gravity band, dash (`DASH_SPEED` 18, 0.3s, 3s cooldown), sprint toggle, and a steerable slide. Animation runs through an `AnimationTree` state machine rather than direct clip calls. `enter_vehicle()` / `exit_vehicle()` hide and freeze the pilot while driving and hand the camera back on exit. |
+| [scripts/mech.gd](../scripts/mech.gd) | Exia controller (`SPEED` 7). `InteractionArea` detects any body with an `enter_vehicle` method and shows the `F pilot` prompt. **F** enters/exits. Handles the authored embark: splits root motion off the hip bone so the mech's travel drives the body, carries Setsuna on the cockpit bone (`spine.003`) through the canopy close, and blends cameras over `HANDOVER_TIME`. |
+| [scripts/map_import.gd](../scripts/map_import.gd) | `EditorScenePostImport` hook on `test_platform.glb` (wired via its `.import`). On every (re)import: adds `create_trimesh_collision()` to each mesh, forces materials double-sided, and gives material-less surfaces a `(0.45, 0.45, 0.45)` greybox tone. Re-runs automatically on each Blender re-export. |
+| [scripts/setsuna_import.gd](../scripts/setsuna_import.gd) · [scripts/mech_import.gd](../scripts/mech_import.gd) | The equivalent import hooks for `setsuna.glb` and `Mech_V1.glb`. |
+| [scripts/rendering/apply_stylized.gd](../scripts/rendering/apply_stylized.gd) | Walks a target subtree and applies a cel material per surface, optionally deriving each surface's colour from the imported material so a multi-material mesh keeps its palette. |
+| [scripts/rendering/setsuna_screens.gd](../scripts/rendering/setsuna_screens.gd) | Drives the emissive screen quads on Setsuna's suit via `shaders/screen.gdshader`. |
+| [scripts/rendering/pixelate.gd](../scripts/rendering/pixelate.gd) | Toggles/configures the optional full-screen pixelation filter. Off by default. |
+| [scripts/ui/](../scripts/ui/) | `ui_manager.gd` is an autoload owning a small screen/action state machine; `ui_window.gd`, `pause_menu.gd`, `inventory.gd` are the windows it spawns. |
+| [scripts/screenshot.gd](../scripts/screenshot.gd) | Autoload — **M** writes a debug screenshot to `screenshots/`. |
 
-### Assets
+### Resources, shaders, assets
 
-- `assets/setsuna.glb` — the on-foot player model "Setsuna" (Rigify metarig; IDLE / RUN START / RUN LOOP / JUMP animations).
-- `assets/HUB_blockout.glb` — first hub blockout, hand-modeled in Blender. Untextured. Still has unapplied root scale + a large origin offset (see [worklog/2026-08-27.md](worklog/2026-08-27.md)).
-- `assets/qwantani_night_puresky_4k.exr` — Poly Haven night-sky HDRI, used as the panorama skybox in `main.tscn` and `Hub.tscn`.
-- `assets/skybox_anime_sky.glb` (+ `_0.jpg` texture) — the old sky dome mesh; **no longer referenced** by any scene.
-- Exia is a placeholder primitive; no zone/terrain art beyond the hub blockout exists yet.
+- `resources/cel_*.tres` — the cel material set (character, ground, sky, outline pass, and the
+  shared `cel_diffuse_curve` wired in as a shader global).
+- `resources/setsuna_locomotion_tree.tres` — Setsuna's `AnimationNodeStateMachine`.
+- `resources/ui_theme.tres` — the single source of UI colours and sizes.
+- `shaders/cel/` — third-party cel-shader base (see [ATTRIBUTION](../shaders/cel/ATTRIBUTION.md)),
+  plus `outline.gdshader` and `vfx/sky.gdshader`. The `includes/` folder is required: those
+  shaders pull it in with **relative** `#include` paths, so nothing references it by `res://`.
+- `shaders/screen.gdshader`, `shaders/pixelate.gdshader` — suit screens and the optional filter.
+- `assets/setsuna.glb`, `assets/Mech_V1.glb`, `assets/test_platform.glb` — the only three
+  models in the project.
 
 ### Controls (current build)
 
@@ -86,32 +95,27 @@ systems from the spec are **not built yet**, and the hub itself is untextured gr
 | Mouse | Look |
 | Space | Jump / double jump |
 | Shift | Sprint (toggle) |
-| C | Crouch (toggle) |
+| C | Crouch / slide while sprinting |
 | Ctrl | Dash |
 | F | Interact — enter / exit Exia; confirm in menus |
 | Enter | Confirm in menus |
 | P | Pause |
 | Tab | Inventory |
 | Esc | Close the open window |
+| M | Debug screenshot |
 
 ---
 
 ## What's Designed But Not Built
 
-From [specs/zone-based-map-system.md](specs/zone-based-map-system.md):
-
-- **`ZoneManager` autoload** — loads/unloads zone scenes and drives the loading-screen
-  transition, relying only on a shared `Zone` scene contract (one entry `Marker3D`, one
-  exit/hub-transition trigger, zero or more `ShortcutGate` nodes with stable zone-scoped IDs).
-- **Shortcut-unlock save-state system** — tracks unlocked gate IDs keyed by zone ID;
-  permanent for the playthrough, designed to survive a future save/load system. This is the
-  one piece with real "business logic" worth a focused test.
-- **The Hub scene** and at least one **zone blockout** (hand-modeled in Blender).
-- **Performance setup per zone** — `OccluderInstance3D` occlusion culling using cliffs as
-  natural occluders, automatic mesh LOD on import, and a polygon/texture-memory budget
-  (numbers TBD until a blockout exists to profile against).
-- **Cargo** — only that "cargo exists on Exia and must reach the destination." No inventory
-  system, no mission content, no economy.
+- **Zones and a `ZoneManager`** — loading/unloading zone scenes against a shared scene
+  contract (one entry `Marker3D`, one exit trigger, zero or more `ShortcutGate` nodes).
+- **Shortcut-unlock save state** — tracks unlocked gate IDs per zone; permanent for the
+  playthrough. The one piece with real business logic worth a focused test.
+- **A hub scene and any zone blockout** — none currently exist; `test_platform.glb` is a
+  bare traversal testbed, not a level.
+- **Cargo** — only the idea that cargo rides on Exia and must reach a destination. No
+  inventory model, mission content, or economy.
 
 ### Explicitly Out of Scope (for now)
 
@@ -125,8 +129,6 @@ specific delivery mission design.
 
 - **Exia** — the mech (node `EXIA`).
 - **Setsuna** — the on-foot pilot (node `SETSUNA`).
-- **Zone** — one hand-modeled ~1100m level.
-- **Hub** — the central garage/depot; fixed center of the hub-and-spoke zone graph.
+- **Zone** — one hand-modeled level. Not built.
+- **Hub** — the intended central garage/depot. Not built.
 - **Shortcut gate** — a one-time-unlock passage that shortens a zone's return trip.
-- **Critical path** — the linear-ish route from a zone's entry to its exit; detours off it
-  lead to secrets and chests.

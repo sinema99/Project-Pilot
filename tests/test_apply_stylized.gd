@@ -15,7 +15,7 @@ func _applier() -> GDScript:
 # so the derive tests below read albedo_color and gradient_color back either
 # way. Naming a shader file here only buys two problems - the suite breaks every
 # time an art-direction shader is renamed or archived (this used to load
-# res://shaders/stylized.gdshader, which now lives under shaders/archive/), and
+# res://shaders/stylized.gdshader, which has since been deleted), and
 # the headless dummy renderer errors on a real shader assigned to a mesh that
 # was never drawn.
 func _mat() -> ShaderMaterial:

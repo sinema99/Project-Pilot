@@ -1,7 +1,7 @@
 extends CanvasLayer
 
 # Runtime control for the full-screen retro downsample (shaders/pixelate.gdshader).
-# Attached to the PixelFilter CanvasLayer in scenes/test3.tscn.
+# Attached to the PixelFilter CanvasLayer in scenes/test_platform.tscn.
 #
 # QA keys, so the effect can be A/B'd without leaving the game:
 #   O   toggle the filter on/off

@@ -42,7 +42,7 @@ static func apply_to(root: Node, mat: Material) -> int:
 	return meshes.size()
 
 # --- scene-facing configuration -------------------------------------------
-# Attached in test.tscn only; it does not touch scripts/hub_import.gd, so
+# Attached in test_platform.tscn only; it does not touch scripts/map_import.gd, so
 # main.tscn is unaffected.
 
 @export var material: Material
@@ -52,7 +52,7 @@ static func apply_to(root: Node, mat: Material) -> int:
 
 ## Off: one material_override per mesh, so every surface renders the base
 ## swatch. The hub and the landmark need this; their imported material is the
-## flat grey hub_import.gd bakes in, so deriving from it would repaint the whole
+## flat grey map_import.gd bakes in, so deriving from it would repaint the whole
 ## hub grey and throw away the sand swatch in stylized_material.tres.
 ##
 ## On: one override per *surface*, coloured from the Blender material slot on

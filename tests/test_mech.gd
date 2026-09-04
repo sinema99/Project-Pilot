@@ -507,15 +507,6 @@ func test_the_mount_is_pulled_back_by_the_power_downs_travel() -> void:
 	approx(held.x, 0.0, 0.0005,
 		"the power-down walks straight ahead, so the pull-back is along the nose and nowhere else")
 
-# Both mechs share mech.gd, so both need the mark or V2 silently falls back to the old cut. V2's
-# is inherited from V1 rather than measured - its export stages the machine differently - so it
-# is the one to re-check by eye.
-func test_the_second_mech_has_a_mount_mark_too() -> void:
-	var v2: Node3D = (load("res://scenes/mech_v2.tscn") as PackedScene).instantiate()
-	var mark := v2.get_node_or_null("EmbarkPoint") as Marker3D
-	check(mark != null, "mech_v2.tscn needs its own EmbarkPoint or F cuts her straight aboard")
-	approx(mark.position.x, MOUNT_DISTANCE, 0.0001, "V2 inherits V1's mark until it is re-measured")
-
 # --- the canopy close ----------------------------------------------------------
 #
 # She is not hidden the instant the climb ends. MECH_launch slides the cockpit bone (spine.003)

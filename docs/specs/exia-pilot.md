@@ -46,7 +46,7 @@ metarig bone names. They play, and they produce nonsense.
 name does not begin with `MECH_`**, so the imported scene carries exactly five. The mech
 cannot accidentally be driven by a clip authored for a 1.9 m character, and the AnimationPlayer
 in the editor lists five items instead of sixteen. This is the same shape as
-`scripts/hub_import.gd`, which fixes up the hub blockout on import.
+`scripts/map_import.gd`, which fixes up the hub blockout on import.
 
 Godot's name-suffix importer already renames them:
 
