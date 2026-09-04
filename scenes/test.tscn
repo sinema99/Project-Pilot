@@ -1,13 +1,13 @@
 [gd_scene format=3 uid="uid://c0f6qcnliqkg6"]
 
-[ext_resource type="Shader" uid="uid://ci0f7aqha3nyg" path="res://shaders/gradient_sky.gdshader" id="1_sky"]
-[ext_resource type="Script" uid="uid://fi67coahu4aa" path="res://scripts/rendering/moebius_compositor.gd" id="2_at5dv"]
-[ext_resource type="Shader" uid="uid://bo3wb7oabvjk5" path="res://shaders/stylized.gdshader" id="3_stylized"]
-[ext_resource type="Material" path="res://resources/stylized_material.tres" id="4_shared_mat"]
+[ext_resource type="Shader" uid="uid://ci0f7aqha3nyg" path="res://shaders/archive/gradient_sky.gdshader" id="1_sky"]
+[ext_resource type="Script" uid="uid://fi67coahu4aa" path="res://scripts/archive/moebius_compositor.gd" id="2_at5dv"]
+[ext_resource type="Shader" uid="uid://bo3wb7oabvjk5" path="res://shaders/archive/stylized.gdshader" id="3_stylized"]
+[ext_resource type="Material" path="res://resources/archive/stylized_material.tres" id="4_shared_mat"]
 [ext_resource type="Script" uid="uid://he1couvcqarw" path="res://scripts/rendering/apply_stylized.gd" id="5_applier"]
 [ext_resource type="PackedScene" uid="uid://ysjb2mhytwxx" path="res://scenes/player.tscn" id="6_setsuna"]
 [ext_resource type="PackedScene" uid="uid://dlbu7xwv0ugo4" path="res://assets/HUB_blockout.glb" id="7_hub"]
-[ext_resource type="Material" path="res://resources/character_material.tres" id="8_char_mat"]
+[ext_resource type="Material" path="res://resources/archive/character_material.tres" id="8_char_mat"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_sky"]
 shader = ExtResource("1_sky")
@@ -57,6 +57,7 @@ needs_motion_vectors = false
 needs_normal_roughness = true
 script = ExtResource("2_at5dv")
 line_color = Color(0.101961, 0.078431, 0.062745, 1)
+grain_luma_falloff = null
 
 [sub_resource type="Compositor" id="Compositor_jcd4p"]
 compositor_effects = Array[CompositorEffect]([SubResource("CompositorEffect_moebius")])
@@ -78,6 +79,10 @@ shader_parameter/dot_scale_px = 6.0
 shader_parameter/ambient_sky_color = Color(0.521, 0.745, 0.823, 1)
 shader_parameter/ambient_ground_color = Color(0.584, 0.275, 0.102, 1)
 shader_parameter/ambient_energy = 0.35
+shader_parameter/rim_enabled = false
+shader_parameter/rim_color = Color(0.521, 0.658, 1, 1)
+shader_parameter/rim_threshold = 0.62
+shader_parameter/rim_strength = 0.5
 shader_parameter/specular_enabled = false
 shader_parameter/specular_threshold = 0.85
 shader_parameter/specular_sharpness = 32.0
@@ -104,19 +109,20 @@ transform = Transform3D(0.819152, -3.9060197e-07, 0.5735765, 0.383798, 0.7431446
 light_color = Color(1, 0.957, 0.878, 1)
 light_energy = 1.6
 shadow_enabled = true
-shadow_bias = 0.05
-shadow_normal_bias = 0.2
-shadow_blur = 0.0
-directional_shadow_split_1 = 0.06
-directional_shadow_split_2 = 0.18
+shadow_bias = 0.02
+shadow_normal_bias = 0.5
+shadow_blur = 0.6
+directional_shadow_mode = 2
+directional_shadow_split_1 = 0.08
+directional_shadow_split_2 = 0.2
 directional_shadow_split_3 = 0.45
-directional_shadow_max_distance = 220.0
+directional_shadow_max_distance = 80.0
 
 [node name="Ground" type="StaticBody3D" parent="." unique_id=1510050845]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="Ground" unique_id=120529467]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -268.67822, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.66996, -270.3257, 0.34988403)
 material_override = SubResource("ShaderMaterial_sand")
 mesh = SubResource("BoxMesh_ground")
 

@@ -172,6 +172,11 @@ func _material_for_surface(mi: MeshInstance3D, surface: int, derived: Dictionary
 		# nothing today. It means raising the strength later fades toward the
 		# slot's own colour instead of snapping back to the base swatch.
 		sm.set_shader_parameter("gradient_color", colour)
+		# shaders/cel/cel-shader-base.gdshader names its albedo uniform `color`.
+		# set_shader_parameter just stores unknown names, so stylized.gdshader
+		# (no `color` uniform) is unaffected; the cel materials in test3 pick
+		# this up and render one colour per Blender slot.
+		sm.set_shader_parameter("color", colour)
 	elif mat is StandardMaterial3D:
 		(mat as StandardMaterial3D).albedo_color = colour
 	mat.resource_name = "stylized:%s" % slot
@@ -185,8 +190,19 @@ func _material_for_surface(mi: MeshInstance3D, surface: int, derived: Dictionary
 func clear_now() -> int:
 	var cleared := 0
 	for entry in _applied:
-		var mi: MeshInstance3D = entry["mesh"]
-		if not is_instance_valid(mi):
+		# Held as a Variant until it has been checked. A mesh in here can have
+		# been freed since the pass that recorded it - re-importing a GLB
+		# rebuilds the whole instanced subtree, and the entries still point at
+		# the nodes it replaced - and assigning a freed object to a *typed*
+		# variable is itself the error ("Trying to assign invalid previously
+		# freed instance"), so the check has to come before the narrowing
+		# rather than after it. That is one error per stale entry, every time
+		# the scene is saved, since the pre-save pass calls this.
+		var node: Variant = entry["mesh"]
+		if not is_instance_valid(node):
+			continue
+		var mi := node as MeshInstance3D
+		if mi == null:
 			continue
 		var surface: int = entry["surface"]
 		if surface == _WHOLE_MESH:

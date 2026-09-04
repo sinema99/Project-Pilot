@@ -1,15 +1,18 @@
 [gd_scene format=3 uid="uid://ysjb2mhytwxx"]
 
 [ext_resource type="Script" uid="uid://lrqyvopsxfrc" path="res://scripts/player.gd" id="1"]
-[ext_resource type="PackedScene" path="res://assets/setsuna.glb" id="2"]
+[ext_resource type="PackedScene" uid="uid://c5g0ht33rb6mh" path="res://assets/setsuna.glb" id="2"]
+[ext_resource type="Shader" uid="uid://b7emtbmthtacg" path="res://shaders/screen.gdshader" id="3_screen"]
+[ext_resource type="Script" uid="uid://dk8mwbjxkobjt" path="res://scripts/rendering/setsuna_screens.gd" id="4_screens"]
+[ext_resource type="AnimationNodeStateMachine" path="res://resources/setsuna_locomotion_tree.tres" id="5_locomotion"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_1"]
 radius = 0.4
-height = 1.8
+height = 1.6725
 
 [sub_resource type="CapsuleMesh" id="CapsuleMesh_1"]
 radius = 0.4
-height = 1.8
+height = 1.6725
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_1"]
 albedo_color = Color(0.2, 0.6, 1, 1)
@@ -17,23 +20,69 @@ albedo_color = Color(0.2, 0.6, 1, 1)
 [sub_resource type="SphereShape3D" id="SphereShape3D_cam"]
 radius = 0.3
 
+[sub_resource type="QuadMesh" id="QuadMesh_screen_health"]
+size = Vector2(0.051, 0.1165)
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_screen_health"]
+render_priority = 0
+shader = ExtResource("3_screen")
+shader_parameter/fill_color = Color(0.9, 0.15, 0.15, 1)
+shader_parameter/fill = 1.0
+shader_parameter/track_level = 0.12
+
+[sub_resource type="QuadMesh" id="QuadMesh_screen_stamina"]
+size = Vector2(0.0255, 0.1165)
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_screen_stamina"]
+render_priority = 0
+shader = ExtResource("3_screen")
+shader_parameter/fill_color = Color(0.2, 0.85, 0.3, 1)
+shader_parameter/fill = 1.0
+shader_parameter/track_level = 0.12
+
+[sub_resource type="QuadMesh" id="QuadMesh_screen_dash"]
+size = Vector2(0.102, 0.0388)
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_screen_dash"]
+render_priority = 0
+shader = ExtResource("3_screen")
+shader_parameter/fill_color = Color(1, 0.5, 0.1, 1)
+shader_parameter/fill = 1.0
+shader_parameter/track_level = 0.12
+
+[sub_resource type="QuadMesh" id="QuadMesh_screen_thigh"]
+size = Vector2(0.0303, 0.2441)
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_screen_thigh"]
+render_priority = 0
+shader = ExtResource("3_screen")
+shader_parameter/fill_color = Color(0.15, 0.42, 0.95, 1)
+shader_parameter/fill = 1.0
+shader_parameter/track_level = 0.12
+
 [node name="SETSUNA" type="CharacterBody3D" unique_id=370020753]
 script = ExtResource("1")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=821301637]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.83625, 0)
 shape = SubResource("CapsuleShape3D_1")
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=261125823]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.83625, 0)
 visible = false
 mesh = SubResource("CapsuleMesh_1")
 surface_material_override/0 = SubResource("StandardMaterial3D_1")
 
 [node name="PlayerModel" parent="." unique_id=1422301510 instance=ExtResource("2")]
 
+[node name="AnimationTree" type="AnimationTree" parent="PlayerModel"]
+tree_root = ExtResource("5_locomotion")
+anim_player = NodePath("../AnimationPlayer")
+callback_mode_process = 0
+active = true
+
 [node name="CameraPivot" type="Node3D" parent="." unique_id=2118882396]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.8, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.6725, 0)
 
 [node name="CameraPitch" type="Node3D" parent="CameraPivot" unique_id=1186148408]
 
@@ -44,4 +93,82 @@ margin = 0.1
 
 [node name="Camera3D" type="Camera3D" parent="CameraPivot/CameraPitch/SpringArm3D" unique_id=1882827572]
 current = true
-far = 1000.0
+far = 5000.0
+
+[node name="ScreenHealth" type="BoneAttachment3D" parent="." unique_id=705907133]
+visible = false
+transform = Transform3D(0.9343115, 0, 0, 0, 0.9338386, 0.029722886, 0, -0.029722886, 0.9338386, 0, 1.2079715, -0.00037372048)
+bone_name = "spine.002"
+bone_idx = 5
+use_external_skeleton = true
+external_skeleton = NodePath("../PlayerModel/metarig/Skeleton3D")
+
+[node name="Quad" type="MeshInstance3D" parent="ScreenHealth" unique_id=705757437]
+transform = Transform3D(-0.9999997, 0, 0, 0, 0.999494, 0.031813, 0, 0.031813, -0.999494, 0.02549999, 0.20978081, -0.29658034)
+cast_shadow = 0
+mesh = SubResource("QuadMesh_screen_health")
+surface_material_override/0 = SubResource("ShaderMaterial_screen_health")
+
+[node name="ScreenStamina" type="BoneAttachment3D" parent="." unique_id=522877194]
+visible = false
+transform = Transform3D(0.9343115, 0, 0, 0, 0.9338386, 0.029722886, 0, -0.029722886, 0.9338386, 0, 1.2079715, -0.00037372048)
+bone_name = "spine.002"
+bone_idx = 5
+use_external_skeleton = true
+external_skeleton = NodePath("../PlayerModel/metarig/Skeleton3D")
+
+[node name="Quad" type="MeshInstance3D" parent="ScreenStamina" unique_id=1151223331]
+transform = Transform3D(-0.9999995, 0, 0, 0, 0.999494, 0.031813, 0, 0.031813, -0.999494, -0.035267834, 0.20916247, -0.29703355)
+cast_shadow = 0
+mesh = SubResource("QuadMesh_screen_stamina")
+surface_material_override/0 = SubResource("ShaderMaterial_screen_stamina")
+
+[node name="ScreenDash" type="BoneAttachment3D" parent="." unique_id=804096966]
+visible = false
+transform = Transform3D(0.9343115, 0, 0, 0, 0.9338386, 0.029722886, 0, -0.029722886, 0.9338386, 0, 1.2079715, -0.00037372048)
+bone_name = "spine.002"
+bone_idx = 5
+use_external_skeleton = true
+external_skeleton = NodePath("../PlayerModel/metarig/Skeleton3D")
+
+[node name="Quad" type="MeshInstance3D" parent="ScreenDash" unique_id=328279232]
+transform = Transform3D(-0.9999996, 0, 0, 0, 0.999494, 0.031813, 0, 0.031813, -0.999494, 0, 0.091254115, -0.30151445)
+cast_shadow = 0
+mesh = SubResource("QuadMesh_screen_dash")
+surface_material_override/0 = SubResource("ShaderMaterial_screen_dash")
+
+[node name="ScreenThighR" type="BoneAttachment3D" parent="." unique_id=2117742002]
+visible = false
+transform = Transform3D(0.93382424, -0.030174829, 5.0903587e-08, -0.030086538, -0.931092, -0.07141844, 0.0023065996, 0.07138111, -0.93157935, -0.11962461, 1.0015819, -0.011585457)
+bone_name = "thigh.R"
+bone_idx = 17
+use_external_skeleton = true
+external_skeleton = NodePath("../PlayerModel/metarig/Skeleton3D")
+
+[node name="Quad" type="MeshInstance3D" parent="ScreenThighR" unique_id=958924121]
+transform = Transform3D(-0.99975413, -0.022133196, -5.7998113e-06, 0.022068184, -0.99681973, -0.07657277, 0.0016886939, -0.07655522, 0.9970615, -0.0033684075, 0.24964333, 0.06508064)
+cast_shadow = 0
+mesh = SubResource("QuadMesh_screen_thigh")
+surface_material_override/0 = SubResource("ShaderMaterial_screen_thigh")
+
+[node name="ScreenThighL" type="BoneAttachment3D" parent="." unique_id=197201241]
+visible = false
+transform = Transform3D(0.93382424, 0.030174829, -5.0903587e-08, 0.030086538, -0.931092, -0.07141844, -0.0023065996, 0.07138111, -0.93157935, 0.11962461, 1.0015819, -0.011585457)
+bone_name = "thigh.L"
+bone_idx = 15
+use_external_skeleton = true
+external_skeleton = NodePath("../PlayerModel/metarig/Skeleton3D")
+
+[node name="Quad" type="MeshInstance3D" parent="ScreenThighL" unique_id=1584725323]
+transform = Transform3D(-0.9997365, 0.022918407, 5.9395097e-06, -0.022851069, -0.99680185, -0.07657479, -0.0017487282, -0.07655572, 0.9970619, 0.0033759475, 0.25131547, 0.06482731)
+cast_shadow = 0
+mesh = SubResource("QuadMesh_screen_thigh")
+surface_material_override/0 = SubResource("ShaderMaterial_screen_thigh")
+
+[node name="Screens" type="Node" parent="." unique_id=1208173937]
+script = ExtResource("4_screens")
+player = NodePath("..")
+health_screen = NodePath("../ScreenHealth/Quad")
+stamina_screen = NodePath("../ScreenStamina/Quad")
+dash_screen = NodePath("../ScreenDash/Quad")
+thigh_screens = Array[NodePath]([NodePath("../ScreenThighR/Quad"), NodePath("../ScreenThighL/Quad")])

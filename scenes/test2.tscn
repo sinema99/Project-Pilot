@@ -1,0 +1,227 @@
+[gd_scene format=3 uid="uid://cvj3tc31jqnsa"]
+
+[ext_resource type="Texture2D" uid="uid://8wvknlqdhp08" path="res://assets/citrus_orchard_road_puresky_4k.hdr" id="1_sky"]
+[ext_resource type="Script" uid="uid://fi67coahu4aa" path="res://scripts/archive/moebius_compositor.gd" id="2_at5dv"]
+[ext_resource type="Shader" uid="uid://by25mg4htc6d4" path="res://shaders/archive/stylized_ghibli.gdshader" id="3_stylized"]
+[ext_resource type="Script" uid="uid://he1couvcqarw" path="res://scripts/rendering/apply_stylized.gd" id="5_applier"]
+[ext_resource type="PackedScene" uid="uid://ysjb2mhytwxx" path="res://scenes/player.tscn" id="6_setsuna"]
+[ext_resource type="PackedScene" uid="uid://did2b6vmi7p1s" path="res://assets/HUB_blockout_v2.glb" id="7_hub"]
+
+[sub_resource type="PanoramaSkyMaterial" id="PanoramaSkyMaterial_citrus"]
+panorama = ExtResource("1_sky")
+
+[sub_resource type="Sky" id="Sky_banded"]
+sky_material = SubResource("PanoramaSkyMaterial_citrus")
+
+[sub_resource type="Environment" id="Environment_moebius"]
+background_mode = 2
+sky = SubResource("Sky_banded")
+ambient_light_source = 3
+ambient_light_color = Color(0.3467, 0.521, 0.552, 1)
+reflected_light_source = 1
+fog_enabled = true
+fog_mode = 1
+fog_light_color = Color(0.8714, 0.7157, 0.5271, 1)
+fog_sun_scatter = 0.1
+fog_density = 1.0
+fog_sky_affect = 0.0
+fog_depth_begin = 15.0
+fog_depth_end = 170.0
+adjustment_enabled = true
+adjustment_contrast = 1.08
+
+[sub_resource type="CompositorEffect" id="CompositorEffect_moebius"]
+resource_local_to_scene = false
+resource_name = ""
+enabled = true
+effect_callback_type = 4
+needs_motion_vectors = false
+needs_normal_roughness = true
+script = ExtResource("2_at5dv")
+line_color = Color(0, 0, 0, 1)
+depth_edge_threshold = 0.02
+grain_luma_falloff = 0.05
+
+[sub_resource type="Compositor" id="Compositor_jcd4p"]
+compositor_effects = Array[CompositorEffect]([SubResource("CompositorEffect_moebius")])
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_sand"]
+render_priority = 0
+shader = ExtResource("3_stylized")
+shader_parameter/albedo_color = Color(0.147, 0.1946, 0.0908, 1)
+shader_parameter/gradient_color = Color(0.147, 0.1946, 0.0908, 1)
+shader_parameter/gradient_strength = 0.0
+shader_parameter/gradient_low = 0.0
+shader_parameter/gradient_high = 10.0
+shader_parameter/soft_terminator = 0.38
+shader_parameter/lit_tint = Color(1, 0.8963, 0.7454, 1)
+shader_parameter/shadow_tint = Color(0.0976, 0.147, 0.1248, 1)
+shader_parameter/warm_cool_strength = 0.6
+shader_parameter/shadow_floor = 0.0
+shader_parameter/band_softness = 0.02
+shader_parameter/breakup_strength = 0.22
+shader_parameter/breakup_scale = 4.0
+shader_parameter/rim_enabled = false
+shader_parameter/rim_color = Color(0.62, 0.72, 0.85, 1)
+shader_parameter/rim_threshold = 0.6
+shader_parameter/rim_strength = 0.4
+
+[sub_resource type="BoxMesh" id="BoxMesh_ground"]
+size = Vector3(300, 1, 300)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_ground"]
+size = Vector3(300, 1, 300)
+
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_landmark"]
+height = 34.0
+radius = 7.0
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_hub"]
+render_priority = 0
+shader = ExtResource("3_stylized")
+shader_parameter/albedo_color = Color(0.2542, 0.2918, 0.2623, 1)
+shader_parameter/gradient_color = Color(0.2542, 0.2918, 0.2623, 1)
+shader_parameter/gradient_strength = 0.0
+shader_parameter/gradient_low = 0.0
+shader_parameter/gradient_high = 10.0
+shader_parameter/soft_terminator = 0.38
+shader_parameter/lit_tint = Color(1, 0.8963, 0.7454, 1)
+shader_parameter/shadow_tint = Color(0.3467, 0.4851, 0.5841, 1)
+shader_parameter/warm_cool_strength = 0.6
+shader_parameter/shadow_floor = 0.22
+shader_parameter/band_softness = 0.02
+shader_parameter/breakup_strength = 0.18
+shader_parameter/breakup_scale = 3.2
+shader_parameter/rim_enabled = false
+shader_parameter/rim_color = Color(0.62, 0.72, 0.85, 1)
+shader_parameter/rim_threshold = 0.6
+shader_parameter/rim_strength = 0.4
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_char"]
+render_priority = 0
+shader = ExtResource("3_stylized")
+shader_parameter/albedo_color = Color(0.88, 0.865, 0.83, 1)
+shader_parameter/gradient_color = Color(0.88, 0.865, 0.83, 1)
+shader_parameter/gradient_strength = 0.0
+shader_parameter/gradient_low = 0.0
+shader_parameter/gradient_high = 10.0
+shader_parameter/soft_terminator = 0.34
+shader_parameter/lit_tint = Color(1, 0.8963, 0.7454, 1)
+shader_parameter/shadow_tint = Color(0.3467, 0.4851, 0.5841, 1)
+shader_parameter/warm_cool_strength = 0.5
+shader_parameter/shadow_floor = 0.12
+shader_parameter/band_softness = 0.02
+shader_parameter/breakup_strength = 0.08
+shader_parameter/breakup_scale = 1.5
+shader_parameter/rim_enabled = true
+shader_parameter/rim_color = Color(0.3467, 0.4851, 0.6795, 1)
+shader_parameter/rim_threshold = 0.6
+shader_parameter/rim_strength = 0.4
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_highlights"]
+render_priority = 0
+shader = ExtResource("3_stylized")
+shader_parameter/albedo_color = Color(0, 0, 0, 1)
+shader_parameter/gradient_color = Color(0, 0, 0, 1)
+shader_parameter/gradient_strength = 0.0
+shader_parameter/gradient_low = 0.0
+shader_parameter/gradient_high = 10.0
+shader_parameter/soft_terminator = 0.34
+shader_parameter/lit_tint = Color(1, 0.8963, 0.7454, 1)
+shader_parameter/shadow_tint = Color(0.3467, 0.4851, 0.5841, 1)
+shader_parameter/warm_cool_strength = 0.5
+shader_parameter/shadow_floor = 0.12
+shader_parameter/band_softness = 0.02
+shader_parameter/breakup_strength = 0.0
+shader_parameter/breakup_scale = 1.5
+shader_parameter/rim_enabled = false
+shader_parameter/rim_color = Color(0.62, 0.72, 0.85, 1)
+shader_parameter/rim_threshold = 0.6
+shader_parameter/rim_strength = 0.4
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_primary"]
+render_priority = 0
+shader = ExtResource("3_stylized")
+shader_parameter/albedo_color = Color(0.72, 0.548, 0.449, 1)
+shader_parameter/gradient_color = Color(0.72, 0.548, 0.449, 1)
+shader_parameter/gradient_strength = 0.0
+shader_parameter/gradient_low = 0.0
+shader_parameter/gradient_high = 10.0
+shader_parameter/soft_terminator = 0.34
+shader_parameter/lit_tint = Color(1, 0.8963, 0.7454, 1)
+shader_parameter/shadow_tint = Color(0.3467, 0.4851, 0.5841, 1)
+shader_parameter/warm_cool_strength = 0.5
+shader_parameter/shadow_floor = 0.12
+shader_parameter/band_softness = 0.02
+shader_parameter/breakup_strength = 0.08
+shader_parameter/breakup_scale = 1.5
+shader_parameter/rim_enabled = true
+shader_parameter/rim_color = Color(0.3467, 0.4851, 0.6795, 1)
+shader_parameter/rim_threshold = 0.6
+shader_parameter/rim_strength = 0.4
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_secondary"]
+render_priority = 0
+shader = ExtResource("3_stylized")
+shader_parameter/albedo_color = Color(0.4, 0.384, 0.372, 1)
+shader_parameter/gradient_color = Color(0.4, 0.384, 0.372, 1)
+shader_parameter/gradient_strength = 0.0
+shader_parameter/gradient_low = 0.0
+shader_parameter/gradient_high = 10.0
+shader_parameter/soft_terminator = 0.34
+shader_parameter/lit_tint = Color(1, 0.8963, 0.7454, 1)
+shader_parameter/shadow_tint = Color(0.3467, 0.4851, 0.5841, 1)
+shader_parameter/warm_cool_strength = 0.5
+shader_parameter/shadow_floor = 0.12
+shader_parameter/band_softness = 0.02
+shader_parameter/breakup_strength = 0.08
+shader_parameter/breakup_scale = 1.5
+shader_parameter/rim_enabled = true
+shader_parameter/rim_color = Color(0.3467, 0.4851, 0.6795, 1)
+shader_parameter/rim_threshold = 0.6
+shader_parameter/rim_strength = 0.4
+
+[node name="TestScene2" type="Node3D" unique_id=477048498]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=2100961324]
+environment = SubResource("Environment_moebius")
+compositor = SubResource("Compositor_jcd4p")
+
+[node name="Ground" type="StaticBody3D" parent="." unique_id=1510050845]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Ground" unique_id=120529467]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -268.67822, 0)
+material_override = SubResource("ShaderMaterial_sand")
+mesh = SubResource("BoxMesh_ground")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Ground" unique_id=1672120645]
+shape = SubResource("BoxShape3D_ground")
+
+[node name="Landmark" type="StaticBody3D" parent="." unique_id=1103961897]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 46, 17, -52)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Landmark" unique_id=1874907872]
+shape = SubResource("CylinderShape3D_landmark")
+
+[node name="HUB_blockout" parent="." unique_id=1979919658 instance=ExtResource("7_hub")]
+
+[node name="SETSUNA" parent="." unique_id=370020753 instance=ExtResource("6_setsuna")]
+transform = Transform3D(-0.99858904, 0, 0.053102925, 0, 1, 0, -0.053102925, 0, -0.99858904, -0.24235153, 0.1413452, 7.1120615)
+
+[node name="ApplyStylized" type="Node" parent="." unique_id=1885130486]
+script = ExtResource("5_applier")
+material = SubResource("ShaderMaterial_hub")
+targets = Array[NodePath]([NodePath("../HUB_blockout"), NodePath("../Landmark")])
+derive_from_surfaces = true
+
+[node name="ApplyStylizedCharacter" type="Node" parent="." unique_id=1885130487]
+script = ExtResource("5_applier")
+material = SubResource("ShaderMaterial_char")
+targets = Array[NodePath]([NodePath("../SETSUNA/PlayerModel")])
+derive_from_surfaces = true
+slot_overrides = Dictionary[String, Material]({
+"Highlights": SubResource("ShaderMaterial_highlights"),
+"Primary": SubResource("ShaderMaterial_primary"),
+"Secondary": SubResource("ShaderMaterial_secondary")
+})

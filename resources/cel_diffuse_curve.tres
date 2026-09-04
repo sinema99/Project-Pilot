@@ -1,0 +1,7 @@
+[gd_resource type="GradientTexture1D" format=3 uid="uid://ba35b0drfllgw"]
+
+[sub_resource type="Gradient" id="Gradient_celdiff"]
+offsets = PackedFloat32Array(0.38, 0.52)
+
+[resource]
+gradient = SubResource("Gradient_celdiff")

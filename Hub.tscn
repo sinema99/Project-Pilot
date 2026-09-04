@@ -1,7 +1,7 @@
 [gd_scene format=3 uid="uid://cxwkpvvuix5bl"]
 
 [ext_resource type="PackedScene" uid="uid://dlbu7xwv0ugo4" path="res://assets/HUB_blockout.glb" id="1_2ju24"]
-[ext_resource type="PackedScene" uid="uid://bg1e5i8c46n06" path="res://assets/setsuna.glb" id="2_xn0c7"]
+[ext_resource type="PackedScene" uid="uid://c5g0ht33rb6mh" path="res://assets/setsuna.glb" id="2_xn0c7"]
 
 [node name="Node3D" type="Node3D" unique_id=730052480]
 

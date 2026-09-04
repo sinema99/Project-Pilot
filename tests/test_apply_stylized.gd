@@ -7,10 +7,19 @@ func _applier() -> GDScript:
 	# failure, which makes --script fall back to running main.tscn and hang.
 	return load(APPLIER_PATH) as GDScript
 
+# A stand-in for the material the applier is pointed at in a scene.
+#
+# Deliberately shaderless. Nothing the applier does depends on which shader is
+# loaded: it duplicates the material, stamps parameters, and compares instances,
+# and ShaderMaterial stores a parameter whether or not the shader declares it,
+# so the derive tests below read albedo_color and gradient_color back either
+# way. Naming a shader file here only buys two problems - the suite breaks every
+# time an art-direction shader is renamed or archived (this used to load
+# res://shaders/stylized.gdshader, which now lives under shaders/archive/), and
+# the headless dummy renderer errors on a real shader assigned to a mesh that
+# was never drawn.
 func _mat() -> ShaderMaterial:
-	var m := ShaderMaterial.new()
-	m.shader = load("res://shaders/stylized.gdshader")
-	return m
+	return ShaderMaterial.new()
 
 # An imported GLB is a Node3D root with MeshInstance3D nodes nested underneath,
 # and material_override does not propagate down from that root. The whole reason
@@ -78,6 +87,42 @@ func test_applies_to_each_configured_target_subtree() -> void:
 	eq(hub_mesh.material_override, applier.material, "hub mesh should be overridden")
 	eq(landmark_mesh.material_override, applier.material, "landmark mesh should be overridden")
 	eq(untouched.material_override, null, "a mesh outside the targets must be left alone")
+	scene_root.free()
+
+# Re-importing a GLB rebuilds the instanced subtree, so by the time the editor
+# saves the scene the recorded entries can be pointing at meshes that no longer
+# exist. Clearing has to walk past those quietly: the freed ones are already
+# gone, and the survivors still need putting back. Godot errors on assigning a
+# freed instance to a typed variable, so this used to print one error per stale
+# entry on every save.
+func test_clear_walks_past_meshes_that_have_since_been_freed() -> void:
+	var applier_script := _applier()
+	if applier_script == null:
+		fail("%s does not exist" % APPLIER_PATH)
+		return
+
+	var scene_root := Node3D.new()
+	var hub := Node3D.new()
+	hub.name = "Hub"
+	var reimported := MeshInstance3D.new()
+	var survivor := MeshInstance3D.new()
+	hub.add_child(reimported)
+	hub.add_child(survivor)
+	scene_root.add_child(hub)
+
+	var applier: Node = applier_script.new()
+	scene_root.add_child(applier)
+	applier.material = _mat()
+	var target_paths: Array[NodePath] = [NodePath("../Hub")]
+	applier.targets = target_paths
+
+	eq(applier.apply_now(), 2, "precondition: both meshes should be overridden")
+	# The re-import: one of the meshes this node is holding is replaced out from
+	# under it.
+	reimported.free()
+
+	eq(applier.clear_now(), 1, "the surviving mesh should still be put back")
+	eq(survivor.material_override, null, "and put back to its imported material")
 	scene_root.free()
 
 # The editor pre-save pass strips the overrides so they never get serialised
@@ -210,6 +255,19 @@ func _derive_rig(mesh: ArrayMesh) -> Array:
 	applier.derive_from_surfaces = true
 	return [scene_root, applier, mi]
 
+# Tears down a rig built by _derive_rig.
+#
+# Drops the applier's overrides before freeing the tree. Freeing outright
+# releases the applier's reference to the material first, while the
+# MeshInstance3D under it still points at that material, and the headless dummy
+# renderer reports that ordering as 'Parameter "material" is null' on the way
+# out. Nothing is wrong with the applier - but noise in the suite output is
+# where a real failure goes to hide.
+func _free_rig(rig: Array) -> void:
+	var applier: Node = rig[1]
+	applier.clear_now()
+	rig[0].free()
+
 # The core claim: one material per slot, each carrying its own colour.
 #
 # The colour crosses over untouched. Godot's glTF importer has already
@@ -237,7 +295,7 @@ func test_each_surface_gets_its_slot_colour() -> void:
 		eq(second.get_shader_parameter("albedo_color"), highlight, "second slot should carry its own colour")
 		eq(first.get_shader_parameter("gradient_color"), primary, "gradient_color should be stamped alongside albedo")
 		eq(first.resource_name, "stylized:Primary", "derived materials should be identifiable in the remote inspector")
-	rig[0].free()
+	_free_rig(rig)
 
 # Setsuna's torso is fifteen shells sharing one slot. That has to be one
 # material, not fifteen, or every colour tweak in the inspector edits a copy.
@@ -252,7 +310,7 @@ func test_surfaces_sharing_a_slot_share_one_material() -> void:
 
 	eq(mi.get_surface_override_material(0), mi.get_surface_override_material(1),
 		"two surfaces on the same slot should share one material instance")
-	rig[0].free()
+	_free_rig(rig)
 
 # Blender writes slot names verbatim, trailing space and all - Setsuna's own
 # export ships a slot called "Secondary ". A key that has to be typed with an
@@ -267,7 +325,7 @@ func test_slot_names_are_trimmed() -> void:
 
 	var mat := mi.get_surface_override_material(0)
 	eq(mat.resource_name, "stylized:Secondary", "a trailing space in the slot name should be trimmed away")
-	rig[0].free()
+	_free_rig(rig)
 
 # The escape hatch for a slot that wants more than a colour. None ship yet; the
 # mechanism exists so the first one is a scene edit rather than a code change.
@@ -283,7 +341,7 @@ func test_slot_override_wins_over_derivation() -> void:
 	applier.apply_now()
 
 	eq(mi.get_surface_override_material(0), hand_authored, "a configured slot override should win")
-	rig[0].free()
+	_free_rig(rig)
 
 # A surface Blender left without a material must not render default white or
 # error out; it falls back to the base swatch.
@@ -296,7 +354,7 @@ func test_surface_without_a_material_falls_back_to_the_base() -> void:
 	applier.apply_now()
 
 	eq(mi.get_surface_override_material(0), applier.material, "a bare surface should get the base material")
-	rig[0].free()
+	_free_rig(rig)
 
 # The hub's contract, asserted rather than assumed: deriving colours from its
 # imported flat grey would repaint the whole hub grey.
@@ -312,7 +370,7 @@ func test_default_mode_still_sets_material_override() -> void:
 	eq(count, 1, "default mode should still count meshes")
 	eq(mi.material_override, applier.material, "default mode should set the whole-mesh override")
 	eq(mi.get_surface_override_material(0), null, "default mode must not touch surface overrides")
-	rig[0].free()
+	_free_rig(rig)
 
 # Same pre-save contract as the whole-mesh path: nothing this node set may
 # survive into the .tscn, and nothing anyone else set may be eaten.
@@ -326,7 +384,7 @@ func test_clear_restores_surface_overrides() -> void:
 	eq(applier.clear_now(), 2, "should report every surface it put back")
 	eq(mi.get_surface_override_material(0), null, "surface should fall back to its imported material")
 	eq(mi.get_surface_override_material(1), null, "every surface should be cleared, not just the first")
-	rig[0].free()
+	_free_rig(rig)
 
 func test_clear_leaves_foreign_surface_overrides_alone() -> void:
 	var mesh := _mesh_with_slots([_imported("Primary", Color(0.5, 0.5, 0.5)), _imported("Highlights", Color.BLACK)])
@@ -340,4 +398,4 @@ func test_clear_leaves_foreign_surface_overrides_alone() -> void:
 
 	eq(applier.clear_now(), 1, "should only claim the surface it still owns")
 	eq(mi.get_surface_override_material(1), hand_authored, "hand-set surface override must survive")
-	rig[0].free()
+	_free_rig(rig)

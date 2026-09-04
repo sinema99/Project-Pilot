@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://cyntg3xoke6xw"
+path="res://.godot/imported/moebius_outline.glsl-52888345a532a8af697030f607506c28.res"
+
+[deps]
+
+source_file="res://shaders/archive/moebius_outline.glsl"
+dest_files=["res://.godot/imported/moebius_outline.glsl-52888345a532a8af697030f607506c28.res"]
+
+[params]
+

@@ -7,6 +7,10 @@
 *.exe
 *.pck
 
+# In-game debug screenshots (M key) - keep the folder, not the shots
+/screenshots/*
+!/screenshots/.gitkeep
+
 # OS / editor cruft
 Thumbs.db
 desktop.ini
