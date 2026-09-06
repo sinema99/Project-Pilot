@@ -19,8 +19,9 @@ extends SceneTree
 #   DISCARDS every editor change to pilot9.tscn, including added clips and states.
 #
 # What this script OWNS in both modes, and therefore overwrites on every run: the GLB_CLIPS
-# entries in the library, and the whole `crouch` state with its transitions. Editing either
-# in the editor is wasted work - change it here.
+# entries in the library, the whole `crouch` state with its transitions,
+# AnimationTree.deterministic, and the rig camera's `current` flag. Editing any of them in
+# the editor is wasted work - change it here.
 #
 # Why the rig is baked in rather than instanced: RC's 30 clips address the skeleton as
 # %GeneralSkeleton (a scene-unique name), which only resolves if the skeleton node is
@@ -65,6 +66,10 @@ const CROUCH_CLIP := &"crouch_walk"
 ## crouch cycle advancing - set() on a path that does not exist is not an error.
 const CROUCH_SCALE_NODE := "CrouchScale"
 
+## RC's camera rig, unchanged by either mode. Only the `current` flag is asserted on it -
+## see _ensure_camera_current().
+const CAMERA_PATH := "CameraPivot/SpringArm3D/Camera3D"
+
 
 func _init() -> void:
 	var fresh := _has_flag("--fresh")
@@ -86,6 +91,9 @@ func _init() -> void:
 		quit(1)
 		return
 	if not _ensure_deterministic_blending(root):
+		quit(1)
+		return
+	if not _ensure_camera_current(root):
 		quit(1)
 		return
 
@@ -363,6 +371,27 @@ func _ensure_deterministic_blending(root: Node) -> bool:
 		return false
 	at.deterministic = true
 	print("  AnimationTree.deterministic = true (bones no clip animates return to rest)")
+	return true
+
+
+# -- camera ---------------------------------------------------------------------------
+
+# RC ships its rig camera with `current` unset, and nothing here was setting it either.
+# Today that is invisible: Godot promotes the first Camera3D to enter a viewport when no
+# other is active, so the trial has always rendered. It stops being invisible the moment a
+# scene instancing pilot9 carries a camera of its own - then which one wins is decided by
+# tree order, and the loser is a black screen or a view from the wrong place.
+#
+# So the flag is set here rather than left to the engine's fallback: it makes the rig's
+# camera the intended one on the record, and it survives a --fresh, which an editor tick
+# would not. tests/test_pilot9_retarget.gd asserts it.
+func _ensure_camera_current(root: Node) -> bool:
+	var cam := root.get_node_or_null(CAMERA_PATH) as Camera3D
+	if cam == null:
+		push_error("%s has no camera at %s" % [OUT, CAMERA_PATH])
+		return false
+	cam.current = true
+	print("  ", CAMERA_PATH, ".current = true")
 	return true
 
 
