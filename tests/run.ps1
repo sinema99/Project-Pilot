@@ -18,5 +18,17 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 $godotArgs = @("--headless", "--path", $projectRoot, "--script", "tests/run_tests.gd")
 if ($Filter) { $godotArgs += @("--", $Filter) }
 
-& $godot @godotArgs
-exit $LASTEXITCODE
+# run_tests.gd quit()s 0 on pass and 1 on fail, but Godot segfaults during headless
+# shutdown (leaked Canvas RIDs) and overwrites the code with 0xC0000005 - so $LASTEXITCODE
+# reported failure on a green suite. The printed summary line is the only trustworthy
+# verdict. PowerShell 5.1 wraps a native command's stderr in ErrorRecords, hence ToString().
+$output = @(& $godot @godotArgs 2>&1 | ForEach-Object { $_.ToString() })
+$output | ForEach-Object { Write-Host $_ }
+
+$summary = $output | Select-String -Pattern '^(PASS|FAIL)\s' | Select-Object -Last 1
+if (-not $summary) {
+    Write-Error "the suite printed no PASS/FAIL line - it did not finish"
+    exit 1
+}
+if ($summary.Line -like "FAIL*") { exit 1 }
+exit 0

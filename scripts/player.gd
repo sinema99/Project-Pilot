@@ -15,6 +15,24 @@ const RISE_GRAVITY_SCALE = 2.6
 const HANG_GRAVITY_SCALE = 1.0
 const FALL_GRAVITY_SCALE = 1.0
 const MAX_FALL_SPEED = 16.0
+# How far move_and_slide reaches down to keep her stuck to a ramp or step that drops out from
+# under a purely-horizontal velocity. The engine default is 0.1 m - fine at a walk, but a
+# single tick at CROUCH_SPEED/SLIDE_SPEED (9 m/s, sprint pace) drops further than that off the
+# top of a downgrade, so she goes briefly airborne every frame and the descent reads as a
+# stair-step stutter instead of a smooth slope. 0.5 m clears one frame's fall at that speed
+# with room to spare. This keeps her *body* on the slope; the model tilt in _physics_process
+# is what makes the slope read as one she is walking down rather than skating across level.
+const FLOOR_SNAP_LENGTH = 0.5
+# How fast the model's pitch chases a change in grade, in radians per second of blend weight.
+# The tilt is the visible model alone - the CharacterBody stays a bolt-upright capsule - so
+# this is pure show: it sells the slope the snap above is already walking her along. Kept equal
+# to ROTATE_SPEED (declared below) so cresting a ramp sweeps the same way a turn does rather
+# than snapping.
+const MODEL_SLOPE_PITCH_SPEED = 10.0
+# A grade shallower than this reads as flat ground and gets no tilt - keeps the model from
+# twitching over the sub-degree normal changes a collision mesh throws off on nominally flat
+# floor. About 3 degrees.
+const MODEL_SLOPE_PITCH_DEADZONE = deg_to_rad(3.0)
 const DASH_SPEED = 18.0
 const DASH_TIME = 0.3
 # Dash-to-dash interval, measured from the press rather than from the end of the dash, so the
@@ -184,6 +202,7 @@ var _crouch_lean := 0.0
 # as a smaller move list instead of a broken one.
 func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	floor_snap_length = FLOOR_SNAP_LENGTH
 	# Don't let the camera's spring arm collide with our own body.
 	spring_arm.add_excluded_object(get_rid())
 	# The clips a state can sit in indefinitely: the three she rests in on the ground, and the
@@ -242,8 +261,10 @@ func begin_embark(mount_position: Vector3, mount_yaw: float) -> float:
 	# and without this the snap onto the mark would swing it by however far she was turned.
 	camera_pivot.rotation.y = camera_yaw - rotation.y
 	_hand_over_controls()
-	# The run lift is left on by a freeze mid-stride, and the climb is not a run.
+	# The run lift and the slope tilt are both left on by a freeze mid-stride, and the climb is
+	# neither a run nor on a slope.
 	player_model.position.y = 0.0
+	player_model.rotation.x = 0.0
 	if anim_player.has_animation(ANIM_EMBARK):
 		anim_player.play(ANIM_EMBARK)
 		# play() resumes a clip that is already current; the climb always starts at the top.
@@ -297,8 +318,10 @@ func begin_disembark(mount_position: Vector3, mount_yaw: float) -> float:
 	rotation.y = mount_yaw
 	visible = true
 	_hand_over_controls()
-	# The run lift belongs to a stride, and nothing has cleared it since she climbed in.
+	# The run lift and slope tilt belong to a stride, and nothing has cleared them since she
+	# climbed in.
 	player_model.position.y = 0.0
+	player_model.rotation.x = 0.0
 	if anim_player.has_animation(ANIM_EMBARK):
 		anim_player.play_backwards(ANIM_EMBARK)
 		# `embark` is already the assigned clip - she has been holding its last frame since the
@@ -391,6 +414,27 @@ func _step_crouch_lean(lag: float, delta: float) -> float:
 	var target := clampf(-lag / CROUCH_LEAN_ANGLE, -1.0, 1.0)
 	_crouch_lean = move_toward(_crouch_lean, target, CROUCH_LEAN_SPEED * delta)
 	return _crouch_lean
+
+# The pitch to put on the model so it lies along the grade she is standing on, in radians:
+# positive is nose-down (heading downhill), negative is nose-up (climbing). Zero on flat
+# ground, on a grade shallower than the deadzone, or when `facing` runs straight across the
+# slope with no up or down to it.
+#
+# `facing` is her world forward (+Z nose, so transform.basis.z); `floor_normal` is what
+# get_floor_normal() hands back. Dropping `facing`'s component along the normal leaves the
+# part of it that lies in the slope plane, and how far that dips below level - its y - is the
+# sine of the grade she is walking. rotation.x is nose-down for positive angles and +Z tipped
+# below horizontal (negative y) is the downhill case, hence the negation.
+#
+# Split out and static for the same reason _step_crouch_lean is: it is pure trig with a sign
+# convention that is easy to get backwards, and a flipped sign here looks exactly like a model
+# that leans back going downhill.
+static func _slope_pitch(facing: Vector3, floor_normal: Vector3) -> float:
+	var along_slope := facing - floor_normal * facing.dot(floor_normal)
+	if along_slope.length() < 0.001:
+		return 0.0
+	var pitch := asin(clampf(-along_slope.normalized().y, -1.0, 1.0))
+	return 0.0 if absf(pitch) < MODEL_SLOPE_PITCH_DEADZONE else pitch
 
 # Hands the jump to the tree, which owns the rest of it: JUMP is the whole airborne cycle and it
 # loops there until one of the landing conditions comes true. Shared by the grounded and the
@@ -710,3 +754,11 @@ func _physics_process(delta: float) -> void:
 	# Lift slightly while running since the RUN animation's foot-down pose sits lower than IDLE and clips the ground.
 	var is_running := moving and not dashing and not is_crouching and not sliding
 	player_model.position.y = RUN_MODEL_LIFT if is_running else 0.0
+
+	# Tip the model along the grade so a ramp reads as one she is walking up or down rather than
+	# skating across on the level. Only the model moves - the capsule that does the colliding
+	# stays vertical - and it eases toward the target rather than snapping, so cresting a ramp
+	# sweeps like a turn. Released to level the moment she leaves the ground: an airborne body
+	# has no grade to lie along, and get_floor_normal() is stale once is_on_floor() goes false.
+	var pitch_target := _slope_pitch(global_transform.basis.z, get_floor_normal()) if is_on_floor() else 0.0
+	player_model.rotation.x = lerp_angle(player_model.rotation.x, pitch_target, MODEL_SLOPE_PITCH_SPEED * delta)

@@ -56,6 +56,11 @@ func _ready() -> void:
 	_pause_menu = _spawn(PAUSE_MENU_PATH)
 	_inventory = _spawn(INVENTORY_PATH)
 	_inventory.close_requested.connect(close)
+	# Apply the opening state rather than assuming the engine already matches it.
+	# mouse_mode starts VISIBLE, and until this ran the only thing that ever wrote
+	# it was _dispatch - so with no screen open on launch the cursor stayed free
+	# and mouse look was dead until you opened and closed a menu.
+	_apply(resolve(screen, Action.CANCEL))
 
 func _spawn(path: String) -> Control:
 	var packed := load(path) as PackedScene
