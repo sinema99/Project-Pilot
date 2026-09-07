@@ -17,3 +17,8 @@ desktop.ini
 .DS_Store
 *.tmp
 *~
+
+# Agent skills installed by `npx skills add` (local, not shared)
+.agents/
+.claude/
+skills-lock.json

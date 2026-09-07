@@ -386,6 +386,13 @@ Adding one is a single row. Three things to get right:
    `P.crouchwalk` is (its hips return to within 0.4 mm), and it loops well: worst
    first-vs-last bone rotation across the whole clip is 1.9°.
 
+   **The exception is a one-shot verb with its own speed curve**, where the root motion is
+   worth more than the convenience — a slide, a mantle, a dodge. `P.slide` came in
+   *without* In Place, and its 7.8 m of Hips travel is now what drives the body; see
+   section 10. If you take that route the clip still has to be locked in place before it
+   reaches the state machine, because **a root-motion track cannot be cross-faded** — it
+   drags the mesh across the whole fade. The builder does both halves.
+
 #### Route B — a Mixamo FBX dropped straight into the project
 
 Only worth it when the clip is not going through Blender at all.
@@ -490,6 +497,198 @@ from some clip is only safe under deterministic blending). The cost: while crouc
 the crouch clip does not animate — both wrists — sit at rest rather than freezing on the
 pose idle left them in. Expect the same trap from every future mixed-source clip; it is not
 crouch-specific.
+
+### 10. The slide, and the clip that drives it
+
+Built 2026-09-06 on `P.slide`. Full rationale in `docs/specs/pilot9-slide.md`; this is the
+part that matters when a re-export lands.
+
+**`crouch` pressed at a sprint means slide, not crouch.** One key, one decision point
+(`pilot9.gd::_handle_crouch_and_slide()`), and the press is never spent twice. Jump cancels
+a slide; leaving the floor ends one; there is a 0.4 s cooldown. **It steers** — the stick
+turns a slide at the same `rotation_speed` a run turns at.
+
+**The clip is cut to its first 75 of 93 frames** by `_trim_slide()`, before anything else
+reads it. The tail it removes is the end of the run-out, where he is already upright and
+just running; cutting it hands control back ~0.3 s earlier, which is the whole of the
+change in feel. Two things about that cut:
+
+- It is **not** just `Animation.length`. Godot's interpolation ignores keys past the length
+  rather than clamping to it, so moving the length alone leaves every track holding its
+  last in-range key — a frozen tail on a cut made to remove one, silently costing 0.2 m of
+  travel. The boundary pose is sampled first, the keys past it dropped, and the pose
+  re-keyed exactly on the new end.
+- Frame numbers are quoted at **60 fps** (Blender's timeline, hence `SLIDE_SOURCE_FPS`),
+  not the 30 Hz the exporter sampled at. Both describe the same clip.
+
+**Nothing in the code says how fast it goes.** The clip was exported *without* In Place, so
+its `Hips` walk +6.462 m over the trimmed 1.250 s — and the shape of that walk is the
+animation: in at ~8 m/s with his feet planted, down to 2.2 m/s on the floor, back up and
+running out.
+`_ensure_slide_motion()` bakes that into a normalised `Curve` on the controller
+(`slide_motion`, plus `slide_duration` and `slide_distance`) and
+`pilot9.gd::_apply_slide_velocity()` differentiates it each frame. The two windows with
+planted feet are the only two where a speed mismatch shows, and both are exact because the
+number driving the body is the animator's own.
+
+**Then the clip is locked in place** — Z only, so the hip drop and the sway survive. This is
+not optional: every transition in the state machine is an `xfade`, and a `Hips` sitting at
++7.68 m blended against a run clip's ~0 drags the mesh backwards through the whole exit
+fade. `AnimationTree.root_motion_track` would handle both jobs and strips the named track
+from *every* clip in the tree, so the bob would go out of all 29 of RC's. Not worth it.
+
+Consequences worth knowing before the next export:
+
+- **Re-authoring the action silently changes how far he slides.** That is correct — the
+  bake follows the clip. But `slide_scale`, the one dial meant to be tuned in the
+  inspector, is then tuned against a different distance.
+- **`SLIDE_KEEP_FRAMES` is a frame count, not a fraction.** Re-author the action longer or
+  shorter and the cut still lands on frame 75, which may no longer be the end of the
+  run-out. The builder leaves a clip already at or under the cut alone rather than padding
+  it back out.
+- `slide_scale` is the **only** slide property the builder does not write, so it survives a
+  swap (not a `--fresh`). `slide_motion` / `slide_duration` / `slide_distance` are
+  rewritten on every sync; editing them by hand is wasted work.
+- The builder **fails the build** if the clip carries less than 0.5 m of travel — i.e. if
+  it comes back exported In Place. There is nothing sensible to fall back on.
+- There is no `TimeScale` in the `slide` state, on purpose. The state machine plays the
+  clip on its own clock and `_slide_time` runs in `_physics_process`; they agree only
+  because both are real time.
+- `_slide_direction` is the single heading a slide has: `_steer_slide()` turns it,
+  `_apply_slide_velocity()` drives the body along it, and `_handle_character_rotation()`
+  writes the mesh straight onto it. One lerp end to end — a second one anywhere in that
+  path halves the turn rate and opens a gap between where he points and where he goes.
+
+Transitions, and why the priorities:
+
+| From | To | Expression | Priority |
+| --- | --- | --- | --- |
+| `Locomotion` | `slide` | `is_sliding` | **0** |
+| `fall` | `slide` | `is_sliding` | **0** |
+| `jump_land` | `slide` | `is_sliding` | **0** |
+| `slide` | `jump` | `velocity.y > 0` | **0** |
+| `slide` | `fall` | `not is_on_floor() and velocity.y <= 0` | 1 |
+| `slide` | `Locomotion` | `not is_sliding` | 2 |
+
+Same argument as the crouch's: cancelling into a jump clears `is_sliding` on the frame it
+launches, so `-> jump` and `-> Locomotion` are both eligible and the leap has to win.
+
+`fall -> slide` and `jump_land -> slide` are the **land-and-slide buffer**
+(`docs/specs/pilot9-jump-slide.md`): a `crouch` press made any time in the air is held
+(`_slide_buffered`, no timer) and spent on the landing frame, when the tree is in `fall` or
+`jump_land`. Priority 0 puts each ahead of its plain-landing sibling (`fall -> jump_land`,
+`jump_land -> Locomotion`, both default priority 1) so the slide is entered in one fade
+rather than after a frame of `jump_land`. No `jump -> slide` — the buffer is only spent once
+`is_on_floor()`, so `is_sliding` can never be true in `jump`. `can_buffer_slide` is the
+on/off switch and, like `slide_scale`, is never written by the builder. Note `sprint` is a
+toggle (`sprint_toggled`), so the buffer's sprint condition is the toggle, not a held key.
+
+`P.climbing` imports alongside as `climb_up` and used to sit here unwired, its root motion
+left intact for whoever built the mantle. That is section 11.
+
+### 11. The ledge mantle, and why its numbers are not the clip's
+
+Built 2026-09-07 on `P.climbing`. Full rationale in `docs/specs/pilot9-climb.md`; this is
+the part that matters when a re-export lands.
+
+**`jump` pressed airborne with a ledge in probe range means mantle, not double jump.** The
+check is intercepted ahead of the air-jump branch in `pilot9.gd::_handle_gravity_and_jump()`,
+so a mantle costs no air jump and the same press away from a wall is still the double jump.
+It runs to completion — **not cancellable**, because his collision shape is off and he is
+being written along a path over an edge. A `jump` pressed during one is buffered and fired
+on the frame after the exit snap.
+
+**The map had to be fixed first.** `scenes/trial.tscn` was instancing `TrainingV` at an
+extra **1.7574×** on top of the GLB node's own 36.1356, which put every block at 1.76× its
+authored height and the one mantle-height step (**1.84 m**, "shell 2") at 3.23 m — out of
+reach. The instance is scale **1.0** now. The 1.7574 was an "apply scale" that did not take
+in Blender before export; a clean re-export with it applied makes that line a no-op.
+
+**The clip is taken apart the way the slide is, on two axes instead of one.**
+`_ensure_climb_motion()` bakes `Hips` Y and Z into a pair of normalised `Curve`s
+(`climb_motion_y` / `climb_motion_z`) and then locks **both** axes to the first key. X is
+kept — it is the lateral sway on the pull-up. The reason is the slide's: a root-motion track
+cannot be cross-faded, and every transition in this state machine is an xfade.
+
+Two things here are **not** in the slide, and both are easy to get wrong silently:
+
+- **`motion_scale`.** The retargeter divides every position track by
+  `Skeleton3D.motion_scale` (**1.0608** on this rig) and `AnimationMixer` multiplies it back
+  on playback. Metres therefore need the multiply. The `Hips` track reads +1.782 m of rise;
+  the mesh actually rises **+1.890 m**. (The slide's bake does **not** apply this — see the
+  note at the end of this section.)
+- **The clip's own travel is not what the body should travel.** FK'd on frame 1, his hand
+  contact sits **1.583 m** above his origin; FK'd on the last frame his soles sit **0.259 m**
+  above it. So a catch that puts his hands *on* the lip and a landing that puts his soles
+  *on* the top are **1.324 m** apart — not the 1.890 m the `Hips` walk. Driving the authored
+  rise finishes him about a third of a metre in the air with his hands floating over the lip
+  through the middle of the pull.
+
+  So the distances are derived from the two poses that touch geometry, and the authored
+  travel is kept only for its **shape** (the curves) and for `climb_inset`. Same discipline
+  as the slide — drive the body from the animator's own numbers — applied to the two frames
+  that actually matter.
+
+What is baked onto `scripts/pilot9.gd`, all rewritten on every sync:
+
+| Property | Value today | What it is |
+| --- | --- | --- |
+| `climb_motion_y` / `climb_motion_z` | 65 points each | the arc, normalised 0..1 on both axes |
+| `climb_duration` | 1.150 s | the clip length; the two-clocks seam |
+| `climb_rise` | 1.324 m | metres the body rises, hands-on-lip to soles-on-top |
+| `climb_reach` | 1.104 m | metres the body travels forward over the same span |
+| `climb_inset` | 0.514 m | how far in from the edge he lands — the level-design contract |
+| `climb_hand_offset` | (-0.036, 1.583, 0.593) | frame-1 hand contact in his own frame; the entry snap subtracts it from the lip |
+| `climb_foot_offset` | (-0.048, 0.259, 0.002) | last-frame ground contact; the exit snap subtracts it from the landing point |
+
+**The curves are deliberately not clamped to 0..1.** `climb_motion_y` peaks at **1.066** —
+that is him pulling *over* the lip before settling onto it — and `climb_motion_z` dips to
+**-0.234** at the start, the swing back before the pull. `Curve`'s default value range is
+0..1 and would flatten both into a lift on rails, so the bake widens it to -1..2.
+
+Consequences worth knowing before the next export:
+
+- **Re-authoring `P.climbing` re-derives the arc, the rise, the reach and both contact
+  offsets.** That is correct — the bake follows the clip. But `climb_inset` is the level
+  contract: geometry built against 0.51 m of top is wrong after a re-export that moves it.
+  Do not hand-tune any of the eight baked properties; `CLIMB_BAKED` overwrites them.
+- The builder **fails the build** if the clip carries less than 1.0 m of rise — i.e. if it
+  comes back exported In Place. There is nothing to fall back on.
+- There is no `TimeScale` in the `climb` state, on purpose, and no tail trim either. The
+  slide cuts its run-out at frame 75; the mantle's tail is the stand-up and is worth
+  keeping, so the "hands back a beat early" is done by the 0.2 s exit xfade eating it.
+- **The detection band is the only filter** — no climbable layer, no tag. Any static
+  collider with an up-facing top between `climb_band_min` (0.9 m) and `climb_band_max`
+  (1.9 m) above his feet offers a mantle. In `TrainingV` that is shell 2 and nothing else,
+  until a double jump puts him within 1.9 m of the 4.19 m block's top.
+- **`climb_probe_height` must stay below `climb_band_min`.** The forward ray has to pass
+  *under* the lip it is looking for; cast at or above it, it sails over the top of every
+  wall in range and nothing is ever climbable. Silent when broken, so
+  `tests/test_pilot9_climb.gd` asserts it.
+- The probe numbers (`can_climb`, the band, the ray heights, the slope cutoff, the headroom)
+  are inspector dials the builder never writes, like `slide_scale`.
+
+Transitions, and why so few:
+
+| From | To | Expression | Priority | xfade |
+| --- | --- | --- | --- | --- |
+| `fall` | `climb` | `is_climbing` | **0** | 0.08 |
+| `jump` | `climb` | `is_climbing` | **0** | 0.08 |
+| `climb` | `Locomotion` | `not is_climbing` | 0 | 0.20 |
+
+Both airborne states enter it: depending on where in the arc the press lands the tree is in
+`jump` (still rising) or `fall` (past apex). The 0.08 s entry is near-hard on purpose — the
+snap has already teleported him to the lip and turned him to the wall, and a longer fade
+blends the old airborne pose across that teleport and reads as a lurch. There is exactly one
+exit: no `climb -> fall` (collision is off, he cannot leave the floor mid-mantle) and no
+`climb -> jump` (not cancellable; the buffered jump fires from `Locomotion` afterwards).
+
+**Known, not fixed: the slide's bake does not apply `motion_scale`.** `slide_distance` is
+6.462 m off the raw `Hips` track while the mesh actually travels 6.462 × 1.0608 = 6.855 m,
+so the slide under-travels its own animation by ~6%. It is a one-line change in
+`_ensure_slide_motion()`, but it moves the distance the feel was tuned against (and
+`slide_scale` with it), so it is left for a pass that can be played rather than folded into
+this one.
 
 ---
 

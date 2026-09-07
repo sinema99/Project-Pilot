@@ -5,7 +5,21 @@ extends SceneTree
 
 const TEST_DIR := "res://tests/"
 
-func _initialize() -> void:
+var _ran := false
+
+# Run on the first idle frame rather than in _initialize(). The tree's root Window is not
+# marked as being inside the tree until iteration starts, so anything a test adds to it in
+# _initialize() has a parent and still answers is_inside_tree() false - which makes
+# global_position, is_on_floor() and every other tree-dependent call on a Node3D an error.
+# One frame later they all work, and nothing else about the run changes.
+func _process(_delta: float) -> bool:
+	if _ran:
+		return true
+	_ran = true
+	_run()
+	return true
+
+func _run() -> void:
 	var filter := ""
 	var user_args := OS.get_cmdline_user_args()
 	if user_args.size() > 0:

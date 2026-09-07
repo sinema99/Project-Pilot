@@ -138,6 +138,10 @@ rather than rebuilding it.
 `forward` W · `backward` S · `left` A · `right` D · `jump` Space · `sprint` Shift ·
 `walk` Alt · `camera_mode_switch` V · `look_up/down/left/right` right stick.
 
+Stock RC holds `sprint`; pilot9 made it a **toggle** (press to start running, press again or
+press `walk` to stop) on 2026-09-06 - see `docs/specs/pilot9-jump-slide.md`. The binding is
+unchanged; only how the controller reads it.
+
 Purely additive. `scripts/player.gd` reads **raw keycodes** (`Input.is_key_pressed(KEY_W)`), never
 named actions, so Setsuna cannot be affected. No collision with the existing `pause`, `inventory`
 or `ui_accept` bindings.

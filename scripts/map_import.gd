@@ -1,7 +1,8 @@
 @tool
 extends EditorScenePostImport
 
-# Runs when assets/test_platform.glb is (re)imported.
+# Runs when a map .glb is (re)imported - assets/test_platform.glb and
+# assets/TrainingV.glb both point their import_script here.
 #  - Adds trimesh (concave) static collision for every MeshInstance3D, so the
 #    map is solid: floor, walls and ramps all stop the player.
 #  - Forces every surface material double-sided (no backface culling) so polys

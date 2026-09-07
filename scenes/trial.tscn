@@ -7,6 +7,7 @@
 [ext_resource type="Material" uid="uid://c7etxtnthghch" path="res://resources/cel_character.tres" id="5_char"]
 [ext_resource type="Shader" uid="uid://dcg01gsjj5mpj" path="res://shaders/pixelate.gdshader" id="6_pixelate"]
 [ext_resource type="Script" uid="uid://csg3i1yfc2wog" path="res://scripts/rendering/pixelate.gd" id="7_pixctl"]
+[ext_resource type="PackedScene" uid="uid://b745modfj23k4" path="res://assets/TrainingV.glb" id="9_training"]
 
 [sub_resource type="Sky" id="Sky_cel"]
 sky_material = ExtResource("3_sky")
@@ -20,16 +21,6 @@ tonemap_mode = 2
 fog_enabled = true
 fog_density = 0.0004
 fog_sky_affect = 0.0
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ground"]
-albedo_color = Color(0.431373, 0.396078, 0.345098, 1)
-
-[sub_resource type="BoxMesh" id="BoxMesh_ground"]
-material = SubResource("StandardMaterial3D_ground")
-size = Vector3(40, 1, 40)
-
-[sub_resource type="BoxShape3D" id="BoxShape3D_ground"]
-size = Vector3(40, 1, 40)
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_pixelate"]
 shader = ExtResource("6_pixelate")
@@ -54,21 +45,15 @@ directional_shadow_split_1 = 0.08
 directional_shadow_split_3 = 0.45
 directional_shadow_max_distance = 80.0
 
-[node name="Ground" type="StaticBody3D" parent="." unique_id=859710073]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
-
-[node name="MeshInstance3D" type="MeshInstance3D" parent="Ground" unique_id=396146355]
-mesh = SubResource("BoxMesh_ground")
-
-[node name="CollisionShape3D" type="CollisionShape3D" parent="Ground" unique_id=1570508659]
-shape = SubResource("BoxShape3D_ground")
+[node name="TrainingV" parent="." unique_id=859710073 instance=ExtResource("9_training")]
 
 [node name="Pilot9" parent="." unique_id=530713254 instance=ExtResource("1_pilot")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.004591346, 0.17800736, -0.002503395)
 
 [node name="ApplyCelGround" type="Node" parent="." unique_id=997651511]
 script = ExtResource("2_applier")
 material = ExtResource("4_ground")
-targets = Array[NodePath]([NodePath("../Ground")])
+targets = Array[NodePath]([NodePath("../TrainingV")])
 derive_from_surfaces = true
 
 [node name="ApplyCelPilot9" type="Node" parent="." unique_id=1729387506]

@@ -2,8 +2,12 @@
 ## pilot9's AnimationTree blend positions each frame from the controller's input_dir /
 ## is_walking / is_sprinting. See docs/specs/pilot9-real-controller.md.
 ##
-## One addition to stock RC, at the bottom of _process: the crouch TimeScale. RC has no
-## crouch. Everything above it is unchanged.
+## Three changes from stock RC:
+##
+## 1. The blend position is the travel direction in BODY space, not input space - see
+##    _travel_blend(). Required by turn-to-face; docs/specs/pilot9-turn-to-face.md.
+## 2. The crouch TimeScale at the bottom of _process. RC has no crouch.
+## 3. The `air_jumped` listener. RC has no double jump.
 extends Node
 
 ## The scale on the `crouch` state's TimeScale node, built by
@@ -17,11 +21,28 @@ const CROUCH_SCALE := "parameters/crouch/CrouchScale/scale"
 ## target, and a crouch clip creeping forward at 0.3% speed reads as a drift, not a hold.
 const CROUCH_SCALE_EPSILON := 0.01
 
+## The state the double jump restarts. There is no second-jump clip and no fall -> jump
+## transition in the tree, so the air jump replays this one - see _on_air_jumped().
+const JUMP_STATE := "jump"
+
 @onready var animation_tree: AnimationTree = $"../AnimationTree"
 @onready var playback = animation_tree.get("parameters/playback")
 @onready var player: CharacterBody3D = $".."
 
 var target_direction: Vector2 = Vector2.ZERO
+
+func _ready() -> void:
+	if player != null and player.has_signal("air_jumped"):
+		player.air_jumped.connect(_on_air_jumped)
+
+## Restarts the jump clip on an air jump. playback.start() rather than travel(): a travel
+## to a state the tree is already in is a no-op, and from `fall` there is no transition to
+## take. start() re-enters `jump` from frame 0 from wherever he is, which is the whole ask -
+## the cut is hard, and a hard cut is what makes the second jump read as a second jump.
+func _on_air_jumped() -> void:
+	if playback == null:
+		return
+	playback.start(JUMP_STATE)
 
 func _process(delta: float) -> void:
 	if player == null or animation_tree == null:
@@ -30,7 +51,7 @@ func _process(delta: float) -> void:
 	var is_sprinting = player.is_sprinting
 	var is_walking = player.is_walking
 
-	var target_blend = Vector2(player.input_dir.x, -player.input_dir.y)
+	var target_blend := _travel_blend()
 
 	# Update blend positions for all movement types
 	var current_walk = animation_tree.get("parameters/Locomotion/WalkBlend/blend_position")
@@ -50,13 +71,46 @@ func _process(delta: float) -> void:
 	var smooth_walk_run = lerp(current_walk_run, target_walk_run, delta * 8.0)
 	animation_tree.set("parameters/Locomotion/WalkRunBlend/blend_amount", smooth_walk_run)
 
+	# Facing travel there is no backward, so the gate that suppressed a sprint while
+	# reversing only means anything in strafe mode.
 	var is_moving_backward = player.input_dir.y > 0
-	var target_speed = 1.0 if (is_sprinting and not is_moving_backward) else 0.0
+	var target_speed = 1.0 if (is_sprinting and (player.face_travel_direction or not is_moving_backward)) else 0.0
 	var current_speed = animation_tree.get("parameters/Locomotion/SpeedBlend/blend_amount")
 	var smooth_speed = lerp(current_speed, target_speed, delta * 8.0)
 	animation_tree.set("parameters/Locomotion/SpeedBlend/blend_amount", smooth_speed)
 
 	_drive_crouch(delta)
+
+## The blend position for all three locomotion blend spaces: where he is travelling,
+## expressed in his own frame. Forward sits at (0, 1) in every one of them.
+##
+## Stock RC feeds input space, which is the same thing only while the body is welded to
+## camera-back. Facing travel, the body IS the frame: steady state this reads (0, 1) and
+## only run_forward plays, and the sideways clips come alive exactly during a pivot, while
+## the body still lags the heading. That lean is what keeps a hard 180 from reading as a
+## skate, and it is the reason the blend is not simply pinned to forward.
+##
+## The negated X is not a typo. pilot9's mesh faces its own +Z but its local +X points to
+## his LEFT - the 180 degree basis on the `character` node - so travel toward his right is
+## -basis.x, and run_right sits at +1. Measured, not derived; test_pilot9_turn_to_face.gd
+## pins the sign, because getting it backwards leans him into every turn the wrong way and
+## looks like a bad blend rather than a wrong sign.
+##
+## Local basis rather than global on purpose: only the mesh child rotates, never the
+## CharacterBody, so the two agree - and local is readable without the node being in a tree,
+## which is what makes this testable headlessly.
+func _travel_blend() -> Vector2:
+	if not player.face_travel_direction:
+		return Vector2(player.input_dir.x, -player.input_dir.y)
+	# `direction` and `input_strength` are last frame's when frozen (handle_frozen_movement
+	# clears input_dir and nothing else), so without this he keeps running on the spot.
+	if player.input_dir == Vector2.ZERO:
+		return Vector2.ZERO
+	var b: Basis = player.character.transform.basis
+	# input_strength, not direction's own length: it is already clamped to 1, so a keyboard
+	# diagonal lands on the unit circle where the clips are instead of sqrt(2) past it.
+	return Vector2(-player.direction.dot(b.x), player.direction.dot(b.z)) * player.input_strength
+
 
 ## Added on top of RC. pilot9 has a crouch WALK clip and no crouch IDLE, so the state plays
 ## the one cycle through a TimeScale and this eases the scale to 0 when he is not actually
