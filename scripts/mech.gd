@@ -301,11 +301,15 @@ func _board() -> void:
 	_play_chain(ANIM_LAUNCH, ANIM_STANDING)
 	# She is not hidden yet. MECH_launch slides the canopy (spine.003) shut over its own length,
 	# and she rides it there, held on embark's last frame. Record where the cockpit bone and her
-	# root sit now; seat_follow replays the bone's motion onto her root until the launch ends. A
-	# mech with no spine.003, or no launch clip, has nothing to ride, so enter_vehicle() hides her
-	# here the way it did before the canopy close existed.
+	# root sit now; seat_follow replays the bone's motion onto her root until the launch ends.
+	#
+	# A mech with no spine.003 or no launch clip - or a pilot with no ride() to be carried by -
+	# has nothing to put on screen for the beat, so enter_vehicle() takes that pilot aboard here
+	# the way F did before the canopy close existed. The seal beat exists to be *seen*; a pilot
+	# hidden on the frame F was pressed (pilot9) is not eligible for it, and calling ride() on
+	# one that does not have it is a live crash. See docs/specs/pilot9-mech-mount.md.
 	seal_left = 0.0
-	if _cockpit_bone >= 0 and anim_player.has_animation(ANIM_LAUNCH):
+	if _cockpit_bone >= 0 and anim_player.has_animation(ANIM_LAUNCH) and pilot.has_method("ride"):
 		seal_left = anim_player.get_animation(ANIM_LAUNCH).length
 	if seal_left > 0.0:
 		_cockpit_board = _cockpit_world()

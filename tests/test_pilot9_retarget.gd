@@ -202,17 +202,30 @@ func test_trial_scene_wires_pilot9() -> void:
 		check(pilot.get_node_or_null("%GeneralSkeleton") is Skeleton3D,
 			"%GeneralSkeleton does not resolve inside the trial-instanced pilot9")
 
-func test_trial_has_exactly_one_camera_and_it_is_the_rc_rig_camera() -> void:
+# EXIA (scenes/mech.tscn, added for the mech mount - docs/specs/pilot9-mech-mount.md) brings
+# two cameras of its own, so a raw Camera3D count is no longer the check. What has to hold is
+# that exactly one camera is `current`, it is RC's rig camera under Pilot9/CameraPivot, and
+# EXIA's two are both dormant until someone climbs in. Strictly stronger than the old count -
+# that never checked a *wrong* camera was not the one taking the picture.
+func test_trial_has_exactly_one_current_camera_and_it_is_the_rc_rig_camera() -> void:
 	var root := _instantiate(TRIAL_TSCN)
 	if root == null:
 		fail("trial.tscn did not load"); return
 	var cams := root.find_children("*", "Camera3D", true, false)
-	eq(cams.size(), 1, "trial.tscn should carry exactly one camera (RC's rig camera); the fixed Camera3D must be gone")
-	if cams.size() == 1:
-		var cam := cams[0] as Camera3D
-		check(cam.current, "the RC rig Camera3D must be marked current or the trial boots black")
+	var current: Array = []
+	for c in cams:
+		if (c as Camera3D).current:
+			current.append(c)
+	eq(current.size(), 1,
+		"trial.tscn must have exactly one current camera; got %d" % current.size())
+	if current.size() == 1:
+		var cam := current[0] as Camera3D
 		check(str(root.get_path_to(cam)).begins_with("Pilot9/CameraPivot"),
-			"the surviving camera should be RC's CameraPivot camera, got %s" % root.get_path_to(cam))
+			"the current camera should be RC's CameraPivot camera, got %s" % root.get_path_to(cam))
+	for c in cams:
+		if str(root.get_path_to(c)).begins_with("EXIA"):
+			check(not (c as Camera3D).current,
+				"EXIA's %s must not be current in a parked trial" % root.get_path_to(c))
 
 func test_trial_still_carries_the_cel_pass_on_pilot9() -> void:
 	# Cel look started OFF for the first look (spec), then flipped ON once the retarget

@@ -67,6 +67,13 @@ enum CameraMode {
 ## reference to its own shape; the climb does, because a body on a scripted path over
 ## an edge has to stop colliding with the edge.
 @onready var collision_shape: CollisionShape3D = $CollisionShape3D
+## Held only so the mech handshake can switch the locomotion tree off while EXIA drives and
+## start it again at `Locomotion` on the way out - see enter_vehicle() / exit_vehicle().
+## pilot9 is otherwise driven entirely from the sibling `Animation` node
+## (scripts/pilot9_animation.gd), which keeps writing blend positions into an inactive tree:
+## harmless, because it sets parameters and never calls travel(). See
+## docs/specs/pilot9-mech-mount.md.
+@onready var anim_tree: AnimationTree = $AnimationTree
 
 ## Movement Settings
 ## -----------------------------------------------------------------------------
@@ -97,6 +104,13 @@ enum CameraMode {
 ## scripts/pilot9_build_scene.gd, and _apply_slide_velocity() differentiates it. That is
 ## what keeps his feet with the floor through the run-in and the run-out, which are the
 ## only two windows of the clip where a mismatch would show. See docs/specs/pilot9-slide.md.
+##
+## It is also HELD rather than played straight through. At `slide_hold_time` the clip and
+## the curve both stop on the settled floor pose and he carries on at the speed he reached,
+## for as long as the player wants: `crouch` again plays out the run-out and hands him off
+## into a crouch, `jump` leaves immediately and standing. That is what makes a long slope one
+## slide instead of a queue of 1.25 s ones. See docs/specs/pilot9-slide-hold.md and
+## docs/specs/pilot9-slide-crouch.md.
 
 @export_group("Slide")
 @export var can_slide: bool = true
@@ -118,6 +132,11 @@ enum CameraMode {
 ## otherwise it evaporates without toggling the crouch. `false` turns this off and an air
 ## press falls straight back to the crouch toggle. See docs/specs/pilot9-jump-slide.md.
 @export var can_buffer_slide: bool = true
+## The held slide. `false` plays the clip straight through the way it did before the hold
+## existed, which is the whole of the old behaviour and is worth being able to get back to
+## without a rebuild. Nothing else changes: the entry, the steering and the run-out are the
+## same code either way. See docs/specs/pilot9-slide-hold.md.
+@export var can_hold_slide: bool = true
 
 ## BAKED - written by scripts/pilot9_build_scene.gd::_ensure_slide_motion() from the clip
 ## itself. Distance travelled as a fraction of the total (Y) against time as a fraction of
@@ -129,6 +148,11 @@ enum CameraMode {
 @export var slide_duration: float = 0.0
 ## BAKED - metres the clip's Hips travel forward, the scale `slide_motion` is normalised by.
 @export var slide_distance: float = 0.0
+## BAKED - seconds into the clip the hold pose sits, from SLIDE_HOLD_FRAME in the builder.
+## The clip's own frame 30, where he is fully down on the floor. 0.0 means no hold was baked
+## (an old pilot9.tscn, or a build that refused the frame), and the slide falls back to
+## playing straight through - the same thing `can_hold_slide` off does.
+@export var slide_hold_time: float = 0.0
 
 ## Climb Settings
 ## -----------------------------------------------------------------------------
@@ -240,6 +264,25 @@ enum CameraMode {
 @export_range(1.0, 20.0, 0.1) var camera_transition_speed: float = 8.0
 ## Allow switching between camera modes with V key.
 @export var allow_camera_mode_switch: bool = false
+## Degrees added to the camera's FOV while he is sprinting. Rides on top of whatever the
+## Camera3D's own `fov` is set to rather than replacing it - see `base_fov`. 0.0 is the off
+## switch, and the whole feature costs one lerp a frame when it is off.
+@export_range(0.0, 40.0, 0.5) var sprint_fov_boost: float = 10.0
+## Speed at which the FOV eases between the base and the sprint boost. Deliberately the same
+## dial and the same shipping value as camera_transition_speed above, so the lens and the
+## spring arm move at a rate the player reads as one camera rather than two.
+@export_range(1.0, 20.0, 0.1) var fov_transition_speed: float = 8.0
+
+## Seconds of clip the hold's speed is averaged over - see _slide_speed_at(). Long enough to
+## span several of `slide_motion`'s 64 segments and short enough to still be local to the
+## hold frame; the curve is smooth through there, so nothing in between is delicate.
+const SLIDE_SPEED_WINDOW := 0.05
+
+## The camera pitch exit_vehicle() lands on - level, and the same value and intent as
+## player.gd's EXIT_PITCH. He is put down at EXIA's ExitPoint looking at the machine he just
+## climbed out of, and a fixed pitch keeps that framing the same however the mech's own
+## camera was left. See docs/specs/pilot9-mech-mount.md and docs/specs/mech-camera-handover.md.
+const EXIT_PITCH := 0.0
 
 ## How far past the wall face the down ray is cast, so it lands on the platform rather than
 ## on the edge itself - a ray aimed exactly at an edge is a coin toss.
@@ -271,10 +314,25 @@ var is_crouching: bool = false
 ## that does not exist never fires and never complains.
 var is_sliding: bool = false
 
+## True for the held part of a slide - parked on the clip's hold pose, going at a constant
+## speed, waiting for the player. Read by scripts/pilot9_animation.gd, which writes the
+## `slide` state's TimeScale straight off it: is_slide_holding is the clip's freeze and the
+## curve's freeze at once, and the two staying together is the only reason a TimeScale is
+## allowed near this state at all (see _ensure_slide_state in the builder).
+##
+## Always false while is_sliding is false. Nothing outside _enter_slide_hold(), _end_slide()
+## and the `crouch` branch of _handle_crouch_and_slide() may write it.
+var is_slide_holding: bool = false
+
 ## Seconds into the slide clip. Advanced in _apply_slide_velocity(), at the point the
 ## distance for this frame is consumed, so the window sampled off `slide_motion` is always
-## the frame the motion is applied to.
+## the frame the motion is applied to. Frozen at `slide_hold_time` for the length of a hold.
 var _slide_time: float = 0.0
+## The speed the hold runs at, measured off the curve at the moment the hold begins and then
+## held flat - no friction, no gravity term, by the user's call. Constant means a slope
+## carries him further only because move_and_slide() projects a constant horizontal velocity
+## down it, which is the honest version of "slide down slopes" and costs no new tuning.
+var _slide_hold_speed: float = 0.0
 ## The heading the slide is travelling on, and the ONE thing his body and his mesh share
 ## while one is running: _steer_slide() turns it, _apply_slide_velocity() drives the body
 ## along it, and _handle_character_rotation() writes the mesh straight onto it. Nothing
@@ -323,14 +381,24 @@ var frozen: bool = false
 
 var target_camera_distance: float = 3.5
 var is_transitioning_camera: bool = false
+## The FOV with no sprint boost on it, read off the rig's camera at _ready() rather than
+## declared here. _handle_camera_fov() writes camera_3d.fov every frame, so a constant in
+## this file would silently clobber whatever the Camera3D is tuned to in the editor and give
+## no sign it had. Capturing it means the boost rides on top of the tuned value instead.
+var base_fov: float = 75.0
 
 func _ready() -> void:
+	base_fov = camera_3d.fov
 	target_camera_distance = 0.0 if camera_mode == CameraMode.FIRST_PERSON else camera_distance
 	spring_arm.spring_length = target_camera_distance
 	if character:
 		character.visible = camera_mode == CameraMode.THIRD_PERSON
 
 func _physics_process(delta: float) -> void:
+	# First, and above every early return below, for the reason in its own docstring: the
+	# frames a mantle or a freeze bails out on are exactly the frames the FOV has to be
+	# easing back on.
+	_handle_camera_fov(delta)
 	_update_sprint_toggle()
 	# Freezing mid-mantle ends it rather than pausing it, for the reason the slide ends
 	# itself: nothing advances _climb_time while frozen, and he would be left hanging in
@@ -418,9 +486,27 @@ func _handle_crouch_and_slide(delta: float) -> void:
 	if is_sliding:
 		if not is_on_floor():
 			_end_slide()          # off a ledge mid-slide; `fall` takes it from here
+		elif is_slide_holding:
+			# The one press the slide does not swallow, and it ends the slide outright -
+			# straight from the held floor pose into the crouch, with no run-out. The
+			# slide -> crouch transition blends the frozen hold pose into crouch_walk; the
+			# clip's run-out (frames 30-75) is never played on this path. is_crouching set
+			# here and not in _end_slide(), which every standing exit also calls.
+			#
+			# `jump` is not read here. It ends the slide in _handle_gravity_and_jump(),
+			# which runs after this and clears is_crouching first, so a jump out of a hold
+			# cuts to the leap and lands standing. See docs/specs/pilot9-slide-crouch.md.
+			if Input.is_action_just_pressed("crouch"):
+				is_crouching = true
+				_end_slide()
 		elif _slide_time >= slide_duration:
+			# Reached only with the hold off (can_hold_slide false, or a rig that baked no
+			# slide_hold_time): the clip has played straight through, run-out and all. End
+			# him crouched anyway, for the same reason the held path does. With the hold on
+			# he leaves via the branch above and never gets here.
+			is_crouching = true
 			_end_slide()
-		return                    # the slide holds the crouch key for its whole length
+		return                    # otherwise the slide holds the crouch key for its length
 
 	# A `crouch` press made in the air (see _should_buffer_slide) waits here for the ground.
 	# Spent BEFORE the just-pressed check below, so one press is never read twice - and a
@@ -449,14 +535,20 @@ func _handle_crouch_and_slide(delta: float) -> void:
 	else:
 		is_crouching = not is_crouching
 
-## Sprinting, moving, on the ground. The clip opens at 8 m/s with his feet planted, so
-## anything slower than a sprint would start it with a lurch.
+## Sprinting, moving, on the ground, and NOT already crouched. The clip opens at 8 m/s with
+## his feet planted, so anything slower than a sprint would start it with a lurch.
+##
+## `not is_crouching` is what stops a slide handing off into a crouch and then re-entering
+## itself: after the hand-off `sprint_toggled` is still on, so a `crouch` press meant to
+## stand him back up would otherwise pass every test here and start another slide. Crouched,
+## the press is a stand-up - it falls through to the toggle in _handle_crouch_and_slide().
 func _can_start_slide(heading: Vector3) -> bool:
 	return can_slide \
 		and slide_motion != null \
 		and slide_duration > 0.0 \
 		and _slide_cooldown_left <= 0.0 \
 		and is_on_floor() \
+		and not is_crouching \
 		and heading != Vector3.ZERO \
 		and sprint_toggled \
 		and not Input.is_action_pressed("walk")
@@ -475,6 +567,7 @@ func _should_buffer_slide() -> bool:
 		and slide_duration > 0.0 \
 		and _slide_cooldown_left <= 0.0 \
 		and not is_on_floor() \
+		and not is_crouching \
 		and sprint_toggled \
 		and not Input.is_action_pressed("walk") \
 		and Input.get_vector("left", "right", "forward", "backward") != Vector2.ZERO
@@ -482,14 +575,17 @@ func _should_buffer_slide() -> bool:
 
 func _start_slide(heading: Vector3) -> void:
 	is_sliding = true
+	is_slide_holding = false
 	_slide_time = 0.0
+	_slide_hold_speed = 0.0
 	# Where he is visibly pointing, not where the stick is pushing. Entering mid-turn the two
 	# differ, and since the mesh is about to be welded to this heading, taking the stick's
 	# would snap his body round on the entry frame. The stick is only the fallback for first
 	# person, where nothing has been driving character.rotation.
 	_slide_direction = _facing() if camera_mode == CameraMode.THIRD_PERSON else heading
-	# The clip's tail stands him up and runs him out, so ending in a crouch would fight the
-	# pose he is visibly in - even trimmed, he is upright and running by the cut.
+	# A slide is not a crouch: clear it on entry. It is set true again only at the natural
+	# end of the run-out (in _handle_crouch_and_slide), where the slide hands off into a
+	# crouch - unless `jump` took him out of it first. See docs/specs/pilot9-slide-crouch.md.
 	is_crouching = false
 
 ## Turns the slide. The player steers one exactly as he steers a run - same stick, same
@@ -526,8 +622,43 @@ func _end_slide() -> void:
 	if not is_sliding:
 		return
 	is_sliding = false
+	# Cleared here and not only where the hold is left, because the two other ways out of a
+	# hold - a jump, and sliding off a ledge - both come through this function and neither
+	# passes through the `crouch` branch. A stale true would leave the next slide's clip
+	# frozen on frame 0 for as long as the entry lasts.
+	is_slide_holding = false
 	_slide_time = 0.0
+	_slide_hold_speed = 0.0
 	_slide_cooldown_left = slide_cooldown
+
+## The hold begins. Called from _apply_slide_velocity() on the frame _slide_time reaches
+## `slide_hold_time`, which is also the frame that clamps it there.
+##
+## The speed is measured rather than declared: whatever the clip was doing over the window
+## just before the hold frame is what he carries on at, so the transition into the hold is
+## continuous by construction and there is no number here to tune against the animation.
+func _enter_slide_hold() -> void:
+	is_slide_holding = true
+	_slide_hold_speed = _slide_speed_at(slide_hold_time)
+
+## The clip's own forward speed at `t` seconds in, in m/s, taken as the average across the
+## SLIDE_SPEED_WINDOW ending there.
+##
+## A window rather than a two-sample derivative on purpose. `slide_motion` is 64 linear
+## segments, so a derivative taken across less than one segment reads that segment's slope
+## alone and steps as the sample point crosses a knot; 50 ms spans several and comes out
+## smooth. A fixed window also makes the answer frame-rate independent, which matters here -
+## unlike _apply_slide_velocity's per-frame difference, this one number is then held for an
+## unbounded time and any error in it never washes out.
+func _slide_speed_at(t: float) -> float:
+	if slide_motion == null or slide_duration <= 0.0:
+		return 0.0
+	var window := minf(SLIDE_SPEED_WINDOW, t)
+	if window <= 0.0:
+		return 0.0
+	var travelled := slide_motion.sample(t / slide_duration) \
+		- slide_motion.sample((t - window) / slide_duration)
+	return travelled * slide_distance * slide_scale / window
 
 ## Handles gravity application, the jump, the air jump and the mantle trigger.
 ##
@@ -669,6 +800,31 @@ func _handle_camera_transition(delta: float) -> void:
 	elif character:
 		character.visible = camera_mode == CameraMode.THIRD_PERSON
 
+## Widens the camera while he is sprinting and eases it back for everything else.
+## See docs/specs/pilot9-sprint-fov.md.
+##
+## The gate is _apply_movement()'s sprint test with the on-floor requirement dropped, which
+## is the one thing here worth reading twice. `is_sprinting` is not used directly because it
+## needs is_on_floor(): reading it would shut the view down the instant a sprinting pilot9
+## left the ground and pop it open again on touchdown - a dip on every jump taken at speed,
+## which is when the wide shot is most wanted. Carrying it through the air is the same call
+## _update_sprint_toggle() already made for the sprint itself.
+##
+## A slide is not a sprint here, so the view sags shut for its length and opens again if it
+## hands back to a run. That is the literal ask - sprinting only - and it is the line most
+## likely to want revisiting after a play; dropping `and not is_sliding` is the whole change.
+##
+## Runs first in the physics step, so the state it reads is one frame old. That is the trade
+## for also running on the frames a mantle or a freeze returns early from, which are the
+## frames the FOV most needs to be travelling. 16 ms of lag on a ~500 ms ease is not visible.
+func _handle_camera_fov(delta: float) -> void:
+	var sprinting_view := sprint_toggled 		and input_dir != Vector2.ZERO 		and not Input.is_action_pressed("walk") 		and not is_crouching 		and not is_sliding 		and not is_climbing 		and not frozen
+	var target_fov := base_fov + (sprint_fov_boost if sprinting_view else 0.0)
+	# Clamped because the weight is a rate times a frame: a long frame - a hitch, a load, a
+	# breakpoint - would otherwise hand lerpf a weight above 1 and shoot the FOV past the
+	# target instead of arriving at it.
+	camera_3d.fov = lerpf(camera_3d.fov, target_fov, clampf(fov_transition_speed * delta, 0.0, 1.0))
+
 ## Updates camera mode (sets target for smooth transition).
 func _update_camera_mode() -> void:
 	if camera_mode == CameraMode.FIRST_PERSON:
@@ -713,16 +869,50 @@ func _apply_movement() -> void:
 ## set: nothing reads them while the `slide` state owns the tree, and leaving them alone is
 ## what lets a slide that ends with sprint still toggled on hand straight back to a sprint
 ## rather than fading up from a run.
+##
+## Also the only writer of _slide_time, and therefore the only place the hold can begin. It
+## has to be here rather than in _handle_crouch_and_slide(): that runs first in the frame
+## and would enter the hold one frame after the crossing, having already let the curve carry
+## him past the pose the hold is supposed to sit on.
 func _apply_slide_velocity(delta: float) -> void:
 	if delta <= 0.0 or slide_motion == null or slide_duration <= 0.0:
 		return
+
+	# Held: flat speed on the steered heading, and the clock does not move. velocity.y is
+	# left to gravity, so a hold that runs onto a downslope follows it - move_and_slide()
+	# projects this constant horizontal velocity along the floor and he keeps going.
+	if is_slide_holding:
+		velocity.x = _slide_direction.x * _slide_hold_speed
+		velocity.z = _slide_direction.z * _slide_hold_speed
+		return
+
+	# The clock runs to the end of the clip, or to the hold if this frame is still short of
+	# one. `entering` is what makes the crossing one-way: past the hold frame, and after the
+	# run-out has resumed from it, _slide_time is no longer < slide_hold_time and the clip
+	# plays out to its end the way it always did.
+	var entering := can_hold_slide and slide_hold_time > 0.0 and _slide_time < slide_hold_time
+	var limit := slide_hold_time if entering else slide_duration
+
 	var from := _slide_time / slide_duration
-	var to := minf(_slide_time + delta, slide_duration) / slide_duration
-	var travelled := (slide_motion.sample(to) - slide_motion.sample(from)) * slide_distance * slide_scale
+	var until := minf(_slide_time + delta, limit)
+	var travelled := (slide_motion.sample(until / slide_duration) - slide_motion.sample(from)) \
+		* slide_distance * slide_scale
+	var consumed := until - _slide_time
+	_slide_time = until
+
+	# The frame that crosses into the hold is split rather than rounded either way: the curve
+	# is read up to the hold frame and the rest of the frame is already travelling at the
+	# hold speed. Giving the whole frame to the curve would travel metres the run-out then
+	# covers again; giving it to the clock would divide a part-frame's distance by a whole
+	# delta and drop his speed for one frame, which is a hitch on the frame the hold is
+	# meant to be seamless. Splitting it is exact in both.
+	if entering and _slide_time >= slide_hold_time:
+		_enter_slide_hold()
+		travelled += _slide_hold_speed * (delta - consumed)
+
 	var speed_now := travelled / delta
 	velocity.x = _slide_direction.x * speed_now
 	velocity.z = _slide_direction.z * speed_now
-	_slide_time += delta
 
 ## -- the ledge mantle ---------------------------------------------------------
 ##
@@ -928,3 +1118,90 @@ func _input(event: InputEvent) -> void:
 	if InputMap.has_action("camera_mode_switch") and event.is_action_pressed("camera_mode_switch") and allow_camera_mode_switch:
 		camera_mode = CameraMode.THIRD_PERSON if camera_mode == CameraMode.FIRST_PERSON else CameraMode.FIRST_PERSON
 		_update_camera_mode()
+
+## -- the mech handshake -----------------------------------------------------
+##
+## The two methods that make pilot9 a pilot of EXIA (scripts/mech.gd), and only these two of
+## the six-method pilot contract. The other four are the climb - `embark_length`,
+## `begin_embark`, `ride`, `begin_unseal`/`begin_disembark` - and he does not have it: `SET
+## embark` is 2 s of authored travel from one exact spot, and an animation that only works
+## from one approach makes the mech a thing you line yourself up with. So boarding is a cut
+## and exiting is a cut, and mech.gd's own `has_method`-guarded fallback path does the rest.
+##
+## Duck-typed from mech.gd's side - it names no pilot class - so a rename here degrades to a
+## fallback rather than erroring. tests/test_pilot9_mech.gd pins the pair from both ends for
+## that reason. See docs/specs/pilot9-mech-mount.md.
+
+## Boarding EXIA: he disappears on the frame F is pressed and the machine is drivable at
+## once. The first four writes are player.gd::_hand_over_controls() exactly; on top of them
+## the locomotion tree is switched off and he is hidden. `_vehicle` is unused - he rides
+## nothing and is carried by nothing.
+func enter_vehicle(_vehicle: Node3D) -> void:
+	# F can land mid-slide, mid-crouch or mid-mantle - the interaction box is 9 m tall. End
+	# them before the collision shape goes away under him rather than freezing them to resume.
+	_end_verbs_for_boarding()
+	velocity = Vector3.ZERO
+	collision_shape.disabled = true
+	# _end_verbs_for_boarding() may have run _end_climb(), which queues a DEFERRED re-enable
+	# of the shape (a mantle normally ends mid-physics, where the shape is in use). Re-issue
+	# the disable through the same deferred queue so it lands last; the direct write above is
+	# what a same-frame caller and the tests see.
+	collision_shape.set_deferred("disabled", true)
+	set_physics_process(false)
+	set_process_unhandled_input(false)
+	anim_tree.active = false
+	visible = false
+
+## Ends every live verb on the way aboard. Each is stopped the way a freeze already stops it,
+## not frozen to resume later: `is_slide_holding` is unbounded by design, so resuming a hold
+## after a drive across the map is worse than losing it.
+func _end_verbs_for_boarding() -> void:
+	if is_climbing:
+		# The same "land him on top" stop a freeze mid-mantle takes - he is on a scripted path
+		# over an edge with his shape off, and that has to be closed out cleanly.
+		_end_climb(false)
+	if is_sliding:
+		_end_slide()          # also clears is_slide_holding and arms the cooldown
+	# A queued air-slide press would fire the instant he is handed back on the ground - the
+	# same "slide he started somewhere else" the held slide is guarded against.
+	_slide_buffered = false
+	is_crouching = false
+	sprint_toggled = false
+	is_sprinting = false
+	is_walking = false
+	_slide_cooldown_left = 0.0
+
+## Leaving EXIA, landing him in idle. The mirror of enter_vehicle(). `exit_position` is
+## EXIA's ExitPoint - 3.6 m out of the back - and `facing_yaw` is the machine's own nose;
+## ExitPoint is behind it, so facing the nose is facing the mech.
+##
+## His rig is shaped unlike Setsuna's and the same intents write different nodes (spec's
+## table). The body's yaw is never touched - nothing ever rode him - so the mesh child
+## carries the facing, and camera_pivot's yaw IS the world yaw with nothing to subtract.
+func exit_vehicle(exit_position: Vector3, facing_yaw: float) -> void:
+	global_position = exit_position
+	# The mesh, not the body. character.rotation.y = atan2(h.x, h.z) faces heading h, and
+	# atan2(sin yaw, cos yaw) is yaw itself, so the mech's `rotation.y` crosses over with no
+	# correction - see _handle_character_rotation and docs/specs/pilot9-turn-to-face.md.
+	character.rotation.y = facing_yaw
+	# Half a turn round from his facing: behind him, looking at the machine he climbed out of.
+	# mech-camera-handover.md's rule, and the fix for the handback dropping him staring at his
+	# own back. Written straight onto the pivot because the body is unrotated.
+	camera_pivot.rotation.y = facing_yaw + PI
+	camera_pivot.rotation.x = EXIT_PITCH
+	velocity = Vector3.ZERO
+	visible = true
+	collision_shape.disabled = false
+	anim_tree.active = true
+	set_physics_process(true)
+	set_process_unhandled_input(true)
+	# The 0.6 s pan into this shot comes free: mech.gd::_exit_mech() reads the viewport camera
+	# after exit_vehicle() has made his current, and flies the view into it.
+	camera_3d.current = true
+	# Started outright at `Locomotion`, not left to the advance expressions to walk back:
+	# board him mid-jump and the tree is parked in `jump` or `fall`, and he would step out of
+	# a powered-down mech into a fall. `Locomotion` is what start() has to be given - pilot9's
+	# tree has no `idle` state; idle is a corner of the Locomotion blend tree.
+	var playback: AnimationNodeStateMachinePlayback = anim_tree["parameters/playback"]
+	if playback != null:
+		playback.start(&"Locomotion")

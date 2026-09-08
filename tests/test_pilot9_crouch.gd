@@ -306,7 +306,8 @@ func test_sit_down_is_imported_but_not_in_the_state_machine() -> void:
 	var sm := _state_machine(root)
 	if sm:
 		check(not sm.has_node("sit"),
-			"sit_down is meant to stay unwired until the mech handover exists")
+			"the mech handover exists (docs/specs/pilot9-mech-mount.md) and is deliberately " +
+			"animation-free: boarding is a cut, so sit_down stays imported and unwired")
 
 # --- standing back up ------------------------------------------------------
 

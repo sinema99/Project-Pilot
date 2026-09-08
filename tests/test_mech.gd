@@ -265,6 +265,46 @@ func test_setsuna_can_be_a_pilot() -> void:
 	check(methods.has("ride"),
 		"the mech carries her by spine.003 through the canopy close before hiding her")
 
+# --- a climbless pilot: the mech-mount fallback ---------------------------------
+#
+# pilot9 (docs/specs/pilot9-mech-mount.md) is a pilot with enter_vehicle()/exit_vehicle() and
+# none of the climb methods. _board() must gate the canopy beat on the PILOT having ride(),
+# not on the mech having spine.003 + MECH_launch: the beat exists so the pilot is *seen*
+# riding the closing cockpit, and there is nobody to see once a climbless pilot has been
+# hidden on the spot. Without the guard, the piloting branch calls pilot.ride() every frame
+# for the ~2 s of MECH_launch and the first pilot9 to press F takes the machine down with him.
+#
+# The riding half of the rule - a pilot WITH ride() still gets the beat - is in
+# tests/test_pilot9_mech.gd, which needs an in-tree mech (and mutates the shared imported
+# clips doing it, so it is kept out of this file's travel tests).
+
+# The minimum a body needs to be offered the prompt and taken aboard on the spot.
+class _ClimblessPilot extends Node3D:
+	var boarded := false
+	func enter_vehicle(_vehicle: Node3D) -> void:
+		boarded = true
+		visible = false
+	func exit_vehicle(_pos: Vector3, _yaw: float) -> void:
+		pass
+
+# No tree, and no _ready(): the climbless branch of _board() never reaches _cockpit_world(),
+# so the only rig reference it touches is anim_player, wired here by hand. Keeping _ready()
+# out means _split_travel_out_of_the_clips() does not run and the shared Mech_V1 clips the
+# travel tests below read are left intact.
+func test_a_climbless_pilot_boards_on_the_spot_with_no_canopy_beat() -> void:
+	var exia := MechScene.instantiate()
+	exia.anim_player = exia.get_node("Model/AnimationPlayer")
+	var pilot := _ClimblessPilot.new()
+	exia.add_child(pilot)
+	exia.pilot = pilot
+	exia._board()
+	approx(exia.seal_left, 0.0, 0.0001,
+		"a pilot with no ride() has nothing to show riding the canopy, so seal_left stays 0")
+	check(pilot.boarded,
+		"enter_vehicle() is called inside _board(), so he is hidden on the frame F is pressed")
+	check(not pilot.visible, "the climbless pilot is gone the instant he boards")
+	exia.free()
+
 # --- the camera handover ---------------------------------------------------
 
 # See docs/specs/mech-camera-handover.md. The pan itself is a play session; what is asserted

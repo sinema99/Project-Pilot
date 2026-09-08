@@ -8,6 +8,7 @@
 [ext_resource type="Shader" uid="uid://dcg01gsjj5mpj" path="res://shaders/pixelate.gdshader" id="6_pixelate"]
 [ext_resource type="Script" uid="uid://csg3i1yfc2wog" path="res://scripts/rendering/pixelate.gd" id="7_pixctl"]
 [ext_resource type="PackedScene" uid="uid://b745modfj23k4" path="res://assets/TrainingV.glb" id="9_training"]
+[ext_resource type="PackedScene" path="res://scenes/mech.tscn" id="10_mech"]
 
 [sub_resource type="Sky" id="Sky_cel"]
 sky_material = ExtResource("3_sky")
@@ -46,9 +47,13 @@ directional_shadow_split_3 = 0.45
 directional_shadow_max_distance = 80.0
 
 [node name="TrainingV" parent="." unique_id=859710073 instance=ExtResource("9_training")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.08662796, 0, 0.036067963)
 
 [node name="Pilot9" parent="." unique_id=530713254 instance=ExtResource("1_pilot")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.004591346, 0.17800736, -0.002503395)
+
+[node name="EXIA" parent="." unique_id=612094488 instance=ExtResource("10_mech")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.04, -12)
 
 [node name="ApplyCelGround" type="Node" parent="." unique_id=997651511]
 script = ExtResource("2_applier")
@@ -60,6 +65,12 @@ derive_from_surfaces = true
 script = ExtResource("2_applier")
 material = ExtResource("5_char")
 targets = Array[NodePath]([NodePath("../Pilot9")])
+derive_from_surfaces = true
+
+[node name="ApplyCelMech" type="Node" parent="." unique_id=612094489]
+script = ExtResource("2_applier")
+material = ExtResource("5_char")
+targets = Array[NodePath]([NodePath("../EXIA/Model")])
 derive_from_surfaces = true
 
 [node name="PixelFilter" type="CanvasLayer" parent="." unique_id=164024207]

@@ -2,6 +2,11 @@
 
 > **Status:** built 2026-09-06; **trimmed and made steerable 2026-09-06** after the first
 > play - see "The 2026-09-06 feel pass" below. The revised feel is unjudged.
+> **Superseded in part 2026-09-07** by `docs/specs/pilot9-slide-hold.md`, which parks the
+> clip on its frame-30 pose instead of playing it straight through. The entry, the bake, the
+> steering and the run-out are all as described here; what changed is that there is now an
+> unbounded hold between the run-in and the run-out, and that the `slide` state has a
+> TimeScale after all. Both places that matter below say so.
 > **Scene:** `scenes/pilot9.tscn`. **Character:** `assets/pilot9.glb` (export of 2026-09-06 17:58).
 > **Follows:** `docs/specs/pilot9-real-controller.md`, `docs/specs/pilot9-turn-to-face.md`.
 
@@ -46,6 +51,12 @@ look acceptable, and the exact version costs about thirty lines. Taking the exac
 **Sprint + `crouch` on the ground starts a slide.** It runs to completion, steerable but not
 cancellable, travelling exactly the distance curve the clip was authored with, and hands back to
 normal locomotion standing up and moving.
+
+> **2026-09-07:** it no longer runs to completion on its own. It stops on the clip's frame 30
+> and holds there until `crouch` is pressed again (which plays out the run-out) or `jump` is
+> pressed (which cancels it outright). The distance curve still drives every part of the clip
+> that plays; the hold simply inserts flat-speed travel between the two halves of it. See
+> `docs/specs/pilot9-slide-hold.md`.
 
 No new input action: `crouch` already exists and is already the crouch toggle. Pressed at a
 sprint it means slide; pressed at any other time it still means crouch. The press is consumed
@@ -106,9 +117,11 @@ writes it, so a value tuned in the inspector survives a swap (but not a `--fresh
   live at once and the leap would otherwise play as a stand-up.
 - **Leaving the floor ends it.** Slide off a ledge and the slide stops; `fall` takes over and
   gravity is the only thing left driving him.
-- **It ends standing, not crouched.** The clip's last 0.4 s stands him up and runs him out;
-  ending in a crouch would fight the pose he is visibly in. Entering a slide clears
-  `is_crouching` for the same reason.
+- **~~It ends standing, not crouched.~~ It hands off into a crouch.** *(Reversed 2026-09-07 -
+  see `docs/specs/pilot9-slide-crouch.md`.)* `crouch` out of the hold ends the slide on the
+  press, from the held floor pose, and `slide -> crouch` blends that straight into the crouch
+  - the run-out is not played on the shipping path. `jump` out is now the only exit that ends
+  standing. Entering a slide still clears `is_crouching`; it is set again only at the exit.
 - **A cooldown, 0.4 s.** Without one, sprint on and `crouch` tapped re-enters on the frame it
   exits and he never stands up.
 - **No slide from a standstill or a walk.** Sprint on, on the floor, with movement input. The
@@ -201,7 +214,12 @@ changes where he goes and never how fast. No air control, no speed gained by tur
 1. **The clip's own timeline and the controller's timer are separate clocks.** The state machine
    advances the clip; `_slide_time` advances in `_physics_process`. Both are real time from the
    same frame, so they cannot drift by more than a frame - but a `TimeScale` node or a paused
-   tree would desync them silently. There is no `TimeScale` in the `slide` state, deliberately.
+   tree would desync them silently.
+
+   **2026-09-07:** there *is* a `TimeScale` in the `slide` state now, and this risk is the
+   reason it is only ever written 0.0 or 1.0. Both clocks stop and start on the same flag, so
+   a hold of any length costs no drift; a *rate* other than 1 is still forbidden. See
+   `docs/specs/pilot9-slide-hold.md`.
 2. **The entry cross-fade eats the first 0.15 s of the run-in**, which is the part with the
    fastest planted-foot motion. It comes from a sprint at a matching 8 m/s, so it should read;
    if it does not, the fade is the dial, not the curve.
@@ -217,12 +235,15 @@ changes where he goes and never how fast. No air control, no speed gained by tur
 
 ## What this does not do
 
-- No slide-to-crouch: releasing into a held crouch at the end would be natural and is one line,
-  but the clip stands him up, so it would need a crouch-idle to land in (the same missing clip
-  the `crouch` state's TimeScale is a workaround for).
+- ~~No slide-to-crouch.~~ *Added 2026-09-07 - `docs/specs/pilot9-slide-crouch.md`.* A slide
+  now hands off into the `crouch` state - `crouch` out of the hold ends it pose-to-pose off
+  the held frame. There is still no crouch-idle, so he lands on the crouch WALK cycle through
+  its TimeScale exactly as the `crouch` toggle already does.
 - No slide under low geometry. There is no crouch-height collider - the capsule is full height
   throughout - so the one thing a slide is traditionally *for* is not available yet.
-- No slide cancel except by jumping. Steering is not a cancel - the clip runs its 1.25 s.
+- No slide cancel except by jumping. Steering is not a cancel. (2026-09-07: `crouch` now ends
+  the hold too, but by playing the run-out rather than by cancelling - jump is still the only
+  way out that skips it.)
 - No dive, no slide-jump momentum carry.
 
 ## Test coverage
@@ -241,7 +262,8 @@ changes where he goes and never how fast. No air control, no speed gained by tur
   than the stick.
 - The baked curve exists, is monotonic, spans 0..1 on both axes, and its distance and duration
   match the clip they came from.
-- The `slide` state exists, plays `slide`, and has no TimeScale (risk 1).
+- The `slide` state exists and plays `slide`. (2026-09-07: it is now the clip through a
+  `SlideScale` TimeScale, and the assertion moved to the shape of that blend tree - risk 1.)
 - The transitions and their priorities, including `slide -> jump` outranking `slide -> Locomotion`.
 - The controller exposes `is_sliding` - an `advance_expression` naming a property that does not
   exist never fires and never complains, which is how the crouch broke once already.

@@ -2,12 +2,14 @@
 ## pilot9's AnimationTree blend positions each frame from the controller's input_dir /
 ## is_walking / is_sprinting. See docs/specs/pilot9-real-controller.md.
 ##
-## Three changes from stock RC:
+## Four changes from stock RC:
 ##
 ## 1. The blend position is the travel direction in BODY space, not input space - see
 ##    _travel_blend(). Required by turn-to-face; docs/specs/pilot9-turn-to-face.md.
 ## 2. The crouch TimeScale at the bottom of _process. RC has no crouch.
 ## 3. The `air_jumped` listener. RC has no double jump.
+## 4. The slide TimeScale beside the crouch's, which freezes the slide clip on its hold
+##    pose. RC has no slide; docs/specs/pilot9-slide-hold.md.
 extends Node
 
 ## The scale on the `crouch` state's TimeScale node, built by
@@ -20,6 +22,12 @@ const CROUCH_SCALE := "parameters/crouch/CrouchScale/scale"
 ## Below this the eased scale is snapped to a dead stop. lerp() only ever approaches its
 ## target, and a crouch clip creeping forward at 0.3% speed reads as a drift, not a hold.
 const CROUCH_SCALE_EPSILON := 0.01
+
+## The `slide` state's TimeScale, built by scripts/pilot9_build_scene.gd::_ensure_slide_state().
+## Same silent-rename hazard as CROUCH_SCALE, with a different symptom: the clip would run
+## past the hold pose and play itself out while the controller sat frozen at the hold frame,
+## so he would come up out of the slide and then keep travelling flat on his feet.
+const SLIDE_SCALE := "parameters/slide/SlideScale/scale"
 
 ## The state the double jump restarts. There is no second-jump clip and no fall -> jump
 ## transition in the tree, so the air jump replays this one - see _on_air_jumped().
@@ -80,6 +88,7 @@ func _process(delta: float) -> void:
 	animation_tree.set("parameters/Locomotion/SpeedBlend/blend_amount", smooth_speed)
 
 	_drive_crouch(delta)
+	_drive_slide()
 
 ## The blend position for all three locomotion blend spaces: where he is travelling,
 ## expressed in his own frame. Forward sits at (0, 1) in every one of them.
@@ -125,3 +134,26 @@ func _drive_crouch(delta: float) -> void:
 	if smooth < CROUCH_SCALE_EPSILON:
 		smooth = 0.0
 	animation_tree.set(CROUCH_SCALE, smooth)
+
+## Freezes the slide clip on its hold pose, and nothing else. The controller decides when -
+## `is_slide_holding` is set the frame `_slide_time` reaches the baked hold point and
+## cleared on the `crouch` that ends the hold - and this only mirrors it onto the tree.
+##
+## Hard 0/1, deliberately unlike the crouch's eased scale right above. The state machine's
+## clip clock and the controller's _slide_time are two separate clocks kept in step only by
+## both being real time, so anything between 0 and 1 is drift the animation never gets back
+## (see _ensure_slide_state in scripts/pilot9_build_scene.gd). Stopping and starting them
+## together is exactly what this is allowed to do; running them at different rates is not.
+##
+## The hold pose is the read here, not a cycle, so there is nothing for an ease to smooth
+## anyway - freezing the pose he is in IS the animation.
+func _drive_slide() -> void:
+	if animation_tree.get(SLIDE_SCALE) == null:
+		return   # slide state absent - a pilot9.tscn built before _ensure_slide_state
+	# Frozen while holding, AND while the state blends out after a `crouch` ended the slide:
+	# is_sliding is already false by then, and letting the clip run would play a slice of the
+	# run-out into the cross-fade. The slide -> crouch exit is meant to be pose-to-pose off
+	# the held frame - see docs/specs/pilot9-slide-crouch.md. Re-entering `slide` restarts
+	# the clip from 0, so a scale left at 0 here never carries into the next slide.
+	var hold_pose: bool = player.is_slide_holding or not player.is_sliding
+	animation_tree.set(SLIDE_SCALE, 0.0 if hold_pose else 1.0)

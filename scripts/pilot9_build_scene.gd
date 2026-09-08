@@ -77,6 +77,11 @@ const CROUCH_SCALE_NODE := "CrouchScale"
 
 const SLIDE_STATE := &"slide"
 const SLIDE_CLIP := &"slide"
+## AnimationTree parameter scripts/pilot9_animation.gd writes each frame to freeze the clip
+## on the hold pose. Same const-next-to-the-builder discipline as CROUCH_SCALE_NODE, and the
+## same failure if the two halves drift apart: set() on a path that does not exist is not an
+## error, so the clip would simply run past the hold and play itself out.
+const SLIDE_SCALE_NODE := "SlideScale"
 const CLIMB_CLIP := &"climb_up"
 
 ## The track the slide's travel lives on. The retargeter rewrites every GLB clip's paths to
@@ -106,11 +111,26 @@ const SLIDE_SOURCE_FPS := 60.0
 ## clip, so all three describe what actually plays and cannot disagree with it.
 const SLIDE_KEEP_FRAMES := 75
 
+## The frame the slide parks on, quoted on the same Blender timeline SLIDE_KEEP_FRAMES is -
+## so 30/60 s = 0.500 s into the trimmed clip. Picked by eye in Blender: it is the first
+## frame where he is fully down on the floor with the pose settled, which is the only kind
+## of frame a hold can sit on for an unbounded length of time without reading as a freeze.
+##
+## The whole held phase happens AT this frame. Everything before it is the clip's run-in
+## played straight, everything after it is the run-out played straight, and the hold is the
+## seam between them - see docs/specs/pilot9-slide-hold.md.
+##
+## It must land inside the trimmed clip. A cut that ever comes down below it would leave a
+## hold on a frame that no longer exists, which _ensure_slide_motion() refuses rather than
+## clamps: the two numbers describe different intentions and silently reconciling them
+## would produce a slide that holds on the run-out.
+const SLIDE_HOLD_FRAME := 30
+
 ## Exported properties on scripts/pilot9.gd that this script, not the inspector, owns.
 ## Object.set() on a name a script does not declare is silently dropped, so every write is
 ## read back - a rename on the pilot9.gd side would otherwise leave the slide with a null
 ## curve and no complaint from anyone.
-const SLIDE_BAKED := ["slide_motion", "slide_duration", "slide_distance"]
+const SLIDE_BAKED := ["slide_motion", "slide_duration", "slide_distance", "slide_hold_time"]
 
 const CLIMB_STATE := &"climb"
 
@@ -488,9 +508,22 @@ func _ensure_slide_motion(root: Node) -> bool:
 		curve.set_point_left_mode(idx, Curve.TANGENT_LINEAR)
 		curve.set_point_right_mode(idx, Curve.TANGENT_LINEAR)
 
+	# The hold point, converted out of Blender frames into the clip's own seconds. Refused
+	# rather than clamped if the trim has moved in past it - see SLIDE_HOLD_FRAME. Zero
+	# would be a legal value on the pilot9.gd side (it reads as "no hold") and that is
+	# exactly the silent downgrade worth avoiding: the slide would still work, and would
+	# simply stop doing the thing this frame number exists for.
+	var hold := float(SLIDE_HOLD_FRAME) / SLIDE_SOURCE_FPS
+	if hold <= 0.0 or hold >= length:
+		push_error(("the slide's hold frame (%d, i.e. %.3fs) is not inside the trimmed clip, " +
+			"which runs %.3fs. Lower SLIDE_HOLD_FRAME or raise SLIDE_KEEP_FRAMES - a hold " +
+			"on a frame that is not there cannot be built.") % [SLIDE_HOLD_FRAME, hold, length])
+		return false
+
 	root.set("slide_motion", curve)
 	root.set("slide_duration", length)
 	root.set("slide_distance", total)
+	root.set("slide_hold_time", hold)
 	for prop in SLIDE_BAKED:
 		if root.get(prop) == null:
 			push_error(("scripts/pilot9.gd declares no '%s'. Object.set() drops an unknown " +
@@ -505,8 +538,8 @@ func _ensure_slide_motion(root: Node) -> bool:
 		v.z = z0
 		anim.track_set_key_value(track, k, v)
 
-	print("  clip \"%s\" locked in place; %.3f m over %.3fs baked to slide_motion (%d points)"
-		% [SLIDE_CLIP, total, length, curve.point_count])
+	print("  clip \"%s\" locked in place; %.3f m over %.3fs baked to slide_motion (%d points), hold at frame %d (%.3fs)"
+		% [SLIDE_CLIP, total, length, curve.point_count, SLIDE_HOLD_FRAME, hold])
 	return true
 
 
@@ -573,13 +606,22 @@ func _trim_slide(anim: Animation) -> void:
 			int(round(authored * SLIDE_SOURCE_FPS))])
 
 
-# The `slide` state: one clip, no TimeScale, exited by the controller clearing is_sliding.
+# The `slide` state: the clip through a TimeScale, exited by the controller clearing
+# is_sliding.
 #
-# A plain AnimationNodeAnimation rather than the crouch's blend tree, and deliberately so -
+# This used to be a bare AnimationNodeAnimation, and the comment here used to say a
+# TimeScale must never go near it. That reasoning is worth keeping because it still holds:
 # the state machine plays the clip on its own clock while pilot9.gd::_slide_time runs in
-# _physics_process, and the only reason those two agree is that both are real time. A
-# TimeScale anywhere in here would desync the animation from the distance curve driving the
-# body, silently.
+# _physics_process, and the only reason those two agree is that both are real time. Scale
+# the clip to anything other than 1.0 and the animation drifts away from the distance curve
+# driving the body, silently.
+#
+# The hold does not break that rule, it uses it. The scale is only ever 0.0 or 1.0, and the
+# controller freezes _slide_time on exactly the frames it writes 0.0 (see
+# _apply_slide_velocity). Both clocks stop together and both start again together, so the
+# offset between them at the end of the hold is the offset they had going in. What is
+# forbidden is a *rate* other than 1 - a lerped ease like the crouch's would drift by the
+# integral of the ease every single time.
 func _ensure_slide_state(root: Node) -> bool:
 	var at := root.get_node_or_null("AnimationTree") as AnimationTree
 	if at == null:
@@ -593,9 +635,18 @@ func _ensure_slide_state(root: Node) -> bool:
 	var clip := AnimationNodeAnimation.new()
 	clip.animation = SLIDE_CLIP
 
+	var scale := AnimationNodeTimeScale.new()
+
+	var bt := AnimationNodeBlendTree.new()
+	bt.add_node("Clip", clip, Vector2(-160, 40))
+	bt.add_node(SLIDE_SCALE_NODE, scale, Vector2(140, 40))
+	bt.set_node_position("output", Vector2(440, 40))
+	bt.connect_node(SLIDE_SCALE_NODE, 0, "Clip")
+	bt.connect_node("output", 0, SLIDE_SCALE_NODE)
+
 	if sm.has_node(SLIDE_STATE):
 		sm.remove_node(SLIDE_STATE)   # takes its transitions with it - see _ensure_crouch_state
-	sm.add_node(SLIDE_STATE, clip, Vector2(630, 800))
+	sm.add_node(SLIDE_STATE, bt, Vector2(630, 800))
 
 	# Entering outranks the crouch and the jump at 0. is_crouching is cleared on the frame a
 	# slide starts, so `Locomotion -> crouch` cannot actually be live at the same time - the
@@ -616,8 +667,17 @@ func _ensure_slide_state(root: Node) -> bool:
 	_set_transition(sm, SLIDE_STATE, "jump", 0.1, "velocity.y > 0", 0)
 	_set_transition(sm, SLIDE_STATE, "fall", 0.2, "not is_on_floor() and velocity.y <= 0", 1)
 	_set_transition(sm, SLIDE_STATE, "Locomotion", 0.2, "not is_sliding", 2)
+	# A slide hands off into a crouch: the run-out stands him up and he settles into the
+	# `crouch` state instead of standing Locomotion. is_crouching is set true on exactly the
+	# grounded frame the run-out completes (pilot9.gd::_handle_crouch_and_slide), so this
+	# cannot race `-> fall` despite sharing priority 1 - that one needs `not is_on_floor()`.
+	# Priority 1 is ahead of `-> Locomotion` (2), so the crouch wins the hand-off, and behind
+	# `-> jump` (0), which clears is_crouching the same frame: a jump out ends standing.
+	# `crouch` is built before this state (see the _ensure_* call order), so the node exists.
+	# See docs/specs/pilot9-slide-crouch.md.
+	_set_transition(sm, SLIDE_STATE, CROUCH_STATE, 0.2, "is_crouching", 1)
 
-	print("  state \"%s\" -> %s, %d states, %d transitions"
+	print("  state \"%s\" -> %s (TimeScale), %d states, %d transitions"
 		% [SLIDE_STATE, SLIDE_CLIP, sm.get_node_list().size(), sm.get_transition_count()])
 	return true
 

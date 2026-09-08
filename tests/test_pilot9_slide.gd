@@ -337,16 +337,25 @@ func test_state_machine_has_a_slide_state_playing_the_slide_clip() -> void:
 	check(sm.has_node(BUILDER.SLIDE_STATE), "the locomotion state machine has no 'slide' state")
 	if not sm.has_node(BUILDER.SLIDE_STATE):
 		return
-	# A plain animation node, not the crouch's blend tree: a TimeScale here would advance the
-	# clip at a rate the distance curve knows nothing about, and the two clocks would part
-	# company with nothing in the log.
+	# The clip through a TimeScale, like the crouch. This was a bare AnimationNodeAnimation
+	# until the hold arrived, and the reason it could not have one still stands: a rate other
+	# than 1 advances the clip against a distance curve that knows nothing about it, and the
+	# two clocks part company with nothing in the log. What makes it safe here is that the
+	# scale is only ever 0 or 1 - see test_the_slide_scale_is_only_ever_frozen_or_running.
 	var node := sm.get_node(BUILDER.SLIDE_STATE)
-	var clip := node as AnimationNodeAnimation
-	check(clip != null,
-		"the slide state is a %s, not a plain AnimationNodeAnimation - if that is on " % node.get_class() +
-		"purpose, check nothing in it rescales time (see docs/specs/pilot9-slide.md risk 1)")
+	var bt := node as AnimationNodeBlendTree
+	check(bt != null,
+		"the slide state is a %s, not the blend tree the hold needs" % node.get_class())
+	if bt == null:
+		return
+	var clip := bt.get_node("Clip") as AnimationNodeAnimation
+	check(clip != null, "the slide state's blend tree has no 'Clip' AnimationNodeAnimation")
 	if clip:
 		eq(str(clip.animation), str(BUILDER.SLIDE_CLIP), "the slide state plays the wrong clip")
+	check(bt.get_node(BUILDER.SLIDE_SCALE_NODE) as AnimationNodeTimeScale != null,
+		"the slide state has no '%s' AnimationNodeTimeScale - " % BUILDER.SLIDE_SCALE_NODE +
+		"nothing can freeze the clip on the hold pose, so it plays itself out while the " +
+		"controller sits parked at the hold frame")
 
 func test_slide_is_entered_and_left_on_is_sliding() -> void:
 	var root := _scene()
@@ -430,7 +439,14 @@ func test_slide_scale_is_not_a_baked_property() -> void:
 # distance come back out. This is the one test that exercises the differentiation rather
 # than the bake: the curve can be perfect and a factor dropped in that function still
 # leaves him travelling the wrong distance at plausible-looking speeds.
+##
+## Driven with the hold switched OFF, which is what makes it a test of the differentiation
+## and nothing else: with the hold on, the clock stops at the hold frame and the integral
+## measures how long the caller chose to hold for. The hold's own arithmetic is covered
+## below, and `can_hold_slide` false is a shipping configuration in its own right.
 func _integrate_slide(root: Node, steps: int) -> Dictionary:
+	root.set("can_hold_slide", false)
+	root.set("is_slide_holding", false)
 	root.set("_slide_direction", Vector3(0.0, 0.0, 1.0))
 	root.set("_slide_time", 0.0)
 	root.set("is_sliding", true)

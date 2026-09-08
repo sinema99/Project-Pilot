@@ -546,14 +546,24 @@ Consequences worth knowing before the next export:
   shorter and the cut still lands on frame 75, which may no longer be the end of the
   run-out. The builder leaves a clip already at or under the cut alone rather than padding
   it back out.
+- **`SLIDE_HOLD_FRAME` is a frame count too, and it picks a *pose*.** The slide parks on
+  frame 30 and holds it until the player presses `crouch` again or jumps
+  (`docs/specs/pilot9-slide-hold.md`), so a re-authored action can leave the hold sitting on
+  a completely different moment while every test still passes. The builder prints the frame
+  and its seconds on every sync — `hold at frame 30 (0.500s)` — and that line is worth
+  reading against the clip. Unlike the trim, a hold frame at or past the cut is a hard
+  **build failure**: the two numbers describe different intentions and reconciling them
+  quietly would park him mid-stand-up. It is baked to `slide_hold_time`.
 - `slide_scale` is the **only** slide property the builder does not write, so it survives a
   swap (not a `--fresh`). `slide_motion` / `slide_duration` / `slide_distance` are
   rewritten on every sync; editing them by hand is wasted work.
 - The builder **fails the build** if the clip carries less than 0.5 m of travel — i.e. if
   it comes back exported In Place. There is nothing sensible to fall back on.
-- There is no `TimeScale` in the `slide` state, on purpose. The state machine plays the
-  clip on its own clock and `_slide_time` runs in `_physics_process`; they agree only
-  because both are real time.
+- There **is** a `TimeScale` in the `slide` state (`SlideScale`), and it is only ever
+  written `0.0` or `1.0` — the freeze that holds the pose. The state machine plays the clip
+  on its own clock while `_slide_time` runs in `_physics_process`; they agree only because
+  both are real time, so both may *stop and start together* but neither may run at a rate
+  the other does not. Do not copy the crouch's eased scale here.
 - `_slide_direction` is the single heading a slide has: `_steer_slide()` turns it,
   `_apply_slide_velocity()` drives the body along it, and `_handle_character_rotation()`
   writes the mesh straight onto it. One lerp end to end — a second one anywhere in that
@@ -568,10 +578,27 @@ Transitions, and why the priorities:
 | `jump_land` | `slide` | `is_sliding` | **0** |
 | `slide` | `jump` | `velocity.y > 0` | **0** |
 | `slide` | `fall` | `not is_on_floor() and velocity.y <= 0` | 1 |
+| `slide` | `crouch` | `is_crouching` | 1 |
 | `slide` | `Locomotion` | `not is_sliding` | 2 |
 
 Same argument as the crouch's: cancelling into a jump clears `is_sliding` on the frame it
 launches, so `-> jump` and `-> Locomotion` are both eligible and the leap has to win.
+
+`slide -> crouch` is the **hand-off** (`docs/specs/pilot9-slide-crouch.md`): a slide ends
+crouched, not standing, unless `jump` took him out of it. `crouch` out of the hold ends the
+slide on the press, from the held pose - no run-out - and `pilot9.gd::_handle_crouch_and_slide`
+sets `is_crouching` true on that frame (also on the run-out's last frame in the no-hold legacy
+config). Both are grounded frames, so priority 1 does not race `-> fall` (that needs `not
+is_on_floor()`); it beats `-> Locomotion` so the crouch wins, and loses to `-> jump`, which
+clears `is_crouching` the same frame. `_drive_slide()` keeps `SlideScale` at 0 through the
+blend-out so the frozen hold pose is what cross-fades, not a slice of run-out. The `crouch`
+state is built before the `slide` state, so `_ensure_slide_state()` adds this pointing at a
+node that already exists.
+
+A slide can only be *started* from a non-crouched state: `_can_start_slide()` and
+`_should_buffer_slide()` both require `not is_crouching`, so a `crouch` press made while
+crouched (including right after the hand-off, when `sprint_toggled` is still on) is a stand-up,
+not another slide.
 
 `fall -> slide` and `jump_land -> slide` are the **land-and-slide buffer**
 (`docs/specs/pilot9-jump-slide.md`): a `crouch` press made any time in the air is held
