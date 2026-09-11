@@ -197,7 +197,11 @@ func test_slide_scale_reaches_the_hold_speed() -> void:
 	if hold <= 0.0:
 		fail("no baked hold to test")
 		return
-	var steps := int(hold / STEP) + 2
+	# In wall frames - `hold` is clip seconds - and with the ceiling lifted: doubling the
+	# scale on top of slide_time_scale 2.0 would run into slide_max_speed and this would be
+	# measuring the clamp. The clamp has its own tests in tests/test_pilot9_slope_momentum.gd.
+	root.set("slide_max_speed", 1000.0)
+	var steps := int((hold / float(root.get("slide_time_scale"))) / STEP) + 2
 	_begin_slide(root)
 	_run_slide(root, steps)
 	var base := (root.get("velocity") as Vector3).z
@@ -290,12 +294,16 @@ func test_leaving_the_hold_resumes_the_run_out() -> void:
 # either read off the curve - advancing _slide_time by that much - or spent at the hold
 # speed, and the frame that crosses into the hold is split between the two. So over any run:
 #
-#     travelled == curve travel up to _slide_time + hold_speed * (elapsed - _slide_time)
+#     travelled == curve travel up to _slide_time + hold_speed * (elapsed - _slide_time / rate)
 #
 # Run to the end of the clip, _slide_time is `slide_duration` and the first term is the whole
 # `slide_distance`. A seam that rounds the crossing frame either way breaks this by about a
 # frame of travel - a tenth of a metre, invisible in play and exactly the kind of drift that
 # accumulates once a slope is a dozen slides long.
+#
+# The `/ rate` is the only thing docs/specs/pilot9-slide-rate.md changed here: `elapsed` is
+# wall seconds and `_slide_time` is clip seconds, and `slide_time_scale` is what converts one
+# into the other. At a rate of 1 this is the identity it always was.
 func test_a_held_slide_still_travels_the_clip_plus_the_hold() -> void:
 	var root := _scene()
 	if root == null:
@@ -318,16 +326,28 @@ func test_a_held_slide_still_travels_the_clip_plus_the_hold() -> void:
 		fail("did not reach the hold")
 		return
 	var held_speed := float(root.get("_slide_hold_speed"))
+	var rate := float(root.get("slide_time_scale"))
 	root.set("is_slide_holding", false)
-	while float(root.get("_slide_time")) < duration and steps < 10000:
-		root.call("_apply_slide_velocity", STEP)
-		travelled += (root.get("velocity") as Vector3).z * STEP
-		steps += 1
 	var elapsed := float(steps) * STEP
-	var expected := distance + held_speed * (elapsed - duration)
+	var guard := 0
+	while float(root.get("_slide_time")) < duration and guard < 10000:
+		# The last step is cut to whatever wall time the clip has left. Without it the run-out
+		# ends mid-frame, `elapsed` counts a whole frame the curve only half used, and the
+		# identity below is out by that half frame of hold speed - an artifact of the harness
+		# rather than of the seam it is watching. (At a rate of 1 the run-out happened to be
+		# exactly 45 frames and this never showed.)
+		var left := (duration - float(root.get("_slide_time"))) / rate
+		var step := minf(STEP, left)
+		root.call("_apply_slide_velocity", step)
+		travelled += (root.get("velocity") as Vector3).z * step
+		elapsed += step
+		guard += 1
+	# The clip's own length, in the wall seconds `elapsed` is counted in.
+	var clip_wall := duration / rate
+	var expected := distance + held_speed * (elapsed - clip_wall)
 	approx(travelled, expected, 0.02,
 		"a held slide travelled %.3f m where the clip's %.3f m plus %.3f s of hold at " %
-			[travelled, distance, elapsed - duration] +
+			[travelled, distance, elapsed - clip_wall] +
 		"%.3f m/s is %.3f m - the seam is losing or duplicating travel" % [held_speed, expected])
 
 # --- the animation seam ----------------------------------------------------
@@ -358,9 +378,11 @@ func test_the_tree_exposes_the_slide_scale_parameter() -> void:
 		ANIM_SCRIPT.SLIDE_SCALE)
 
 # The one rule that keeps a TimeScale legal in this state. Both clocks may stop and start
-# together; neither may run at a rate the other does not. The crouch's eased scale right
-# beside it is exactly what must not be copied here, so the shape of the write is asserted
-# rather than left to the comment above it.
+# together, and both may run at `slide_time_scale`; neither may run at a rate the other does
+# not, and neither may run at a rate that varies. The crouch's eased scale right beside it is
+# exactly what must not be copied here, so the shape of the write is asserted rather than left
+# to the comment above it. See docs/specs/pilot9-slide-rate.md - this used to demand a literal
+# 1.0, which was the right rule read off the wrong number.
 func test_the_slide_scale_is_only_ever_frozen_or_running() -> void:
 	var src := FileAccess.open("res://scripts/pilot9_animation.gd", FileAccess.READ)
 	if src == null:
@@ -372,16 +394,17 @@ func test_the_slide_scale_is_only_ever_frozen_or_running() -> void:
 	if at == -1:
 		return
 	var body := text.substr(at)
-	# Hard 0/1 - a third value or a rate between them advances the clip against a distance
-	# curve that knows nothing about it, and the animation never gets that drift back. The
+	# Hard stop-or-`slide_time_scale` - any other value advances the clip against a distance
+	# curve read at a different rate, and the animation never gets that drift back. The
 	# freeze condition also carries is_slide_holding: the hold pose is what has to stay put.
 	# (2026-09-07: it now ALSO freezes on `not is_sliding`, so whatever pose the slide ended
 	# on is what cross-fades out instead of a slice of clip advancing under it. Since
 	# docs/specs/pilot9-slide-stand.md that pose is the run-out's last standing frame, and
 	# what it cross-fades into is Locomotion, not the crouch.)
-	check(body.contains("0.0 if hold_pose else 1.0"),
-		"_drive_slide() no longer writes a hard 0/1 - a rate between them drifts the clip " +
-		"against the distance curve and the animation never gets it back")
+	check(body.contains("0.0 if hold_pose else player.slide_time_scale"),
+		"_drive_slide() no longer writes a hard stop-or-slide_time_scale - a constant here " +
+		"is the controller's rate ignored, and anything between drifts the clip against the " +
+		"distance curve with nothing in the log")
 	check(body.contains("is_slide_holding"),
 		"_drive_slide() no longer freezes on is_slide_holding - the hold pose would advance")
 	check(not body.contains("lerp"),

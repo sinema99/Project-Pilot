@@ -1,5 +1,10 @@
 # Spec: the jump stops being floaty
 
+> **Superseded 2026-09-11** by `docs/specs/pilot9-jump-grid.md`, which rounds the shipping
+> numbers to `jump_height: 3.0` / `jump_time_to_apex: 0.60`. This document is the record of
+> the 2026-09-10 pass that was parked by the movement reset; its numbers are history, not
+> the current jump. The derivation below still holds.
+>
 > **Status:** built 2026-09-10, height revised to 2.3 m the same day, **unplayed**.
 > 409 tests pass headless.
 > **Scene:** `scenes/pilot9.tscn`. **Character:** `assets/pilot9.glb`.

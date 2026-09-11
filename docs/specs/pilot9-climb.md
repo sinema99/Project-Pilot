@@ -124,9 +124,10 @@ Reads `climb_up`'s `Hips` position track and writes, onto `scripts/pilot9.gd`:
   `climb_motion`'s Y is normalised by.
 - **`climb_reach`** — the clip's total `Hips` Z travel, **+0.484 m**. Scales the forward axis.
 - **`climb_duration`** — the clip's raw (authored) length, ~1.15 s.
-- **`climb_speed`** — how much faster than authored the whole mantle plays. **1.5** (user,
-  2026-09-07). Applied to *both* clocks (see "Two clocks, again"), so the one number is the
-  only place the pace lives.
+- **`climb_speed`** — how much faster than authored the whole mantle plays. **2.25** (user,
+  2026-09-11; was **1.5** at the 2026-09-07 build and raised by another 1.5× because the
+  pull-up still read as a pause). Applied to *both* clocks (see "Two clocks, again"), so the
+  one number is the only place the pace lives.
 
 Then **locks `climb_up`'s `Hips` Z *and* Y to their first key** in the library copy — X is
 kept (lateral sway on the pull-up). What is left is an ordinary in-place clip that cross-fades
@@ -260,9 +261,10 @@ with collision off. Same reasoning as the slide ending itself on `frozen`.
   2026-09-07 from a deliberate `jump` press). Airborne only — no mantle from the ground.
 - **Baked `Curve3D`, mirroring the slide.** Not a linear lerp — the pull-over-the-top arc is
   the feature.
-- **The mantle plays 1.5× faster than authored** (`climb_speed`, 2026-09-07). Baked, applied
-  to the clip (via the `climb` state's custom timeline) and the path (via `_climb_time`)
-  together — never a `TimeScale` node.
+- **The mantle plays 2.25× faster than authored** (`climb_speed`; 1.5× on 2026-09-07, raised
+  to 2.25× on 2026-09-11 — 1.15 s of clip in 0.51 s). Baked, applied to the clip (via the
+  `climb` state's custom timeline) and the path (via `_climb_time`) together — never a
+  `TimeScale` node.
 - **Collision off for the mantle, hard endpoint snap, zero velocity in and out.**
 - **Instant entry snap** — position so frame-1 hands meet the lip, mesh yaw to the wall.
 - **Exit to `Locomotion` a beat early. Not into `crouch`** — being dumped into a crouch after

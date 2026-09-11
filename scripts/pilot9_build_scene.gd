@@ -19,8 +19,9 @@ extends SceneTree
 #   DISCARDS every editor change to pilot9.tscn, including added clips and states.
 #
 # What this script OWNS in both modes, and therefore overwrites on every run: the GLB_CLIPS
-# entries in the library, the whole `crouch` state with its transitions,
-# AnimationTree.deterministic, and the rig camera's `current` flag. Editing any of them in
+# entries in the library, the whole `crouch` state with its transitions, RC's two
+# `-> jump_land` transitions (see _ensure_slide_state), AnimationTree.deterministic, and the
+# rig camera's `current` flag. Editing any of them in
 # the editor is wasted work - change it here.
 #
 # Why the rig is baked in rather than instanced: RC's 30 clips address the skeleton as
@@ -82,6 +83,9 @@ const SLIDE_CLIP := &"slide"
 ## same failure if the two halves drift apart: set() on a path that does not exist is not an
 ## error, so the clip would simply run past the hold and play itself out.
 const SLIDE_SCALE_NODE := "SlideScale"
+## The TimeSeek in the same blend tree, which is how the clip is dragged back onto the
+## controller's clock when the `slide` state starts late. See _ensure_slide_state().
+const SLIDE_SEEK_NODE := "SlideSeek"
 const CLIMB_CLIP := &"climb_up"
 
 ## The track the slide's travel lives on. The retargeter rewrites every GLB clip's paths to
@@ -146,7 +150,7 @@ const CLIMB_MIN_RISE := 1.0
 ## How much faster than authored the mantle plays. Baked onto the controller AND used to
 ## compress the `climb` state's clip (via its custom timeline) here, so the one number drives
 ## both clocks - see _ensure_climb_state() and docs/specs/pilot9-climb.md's "Two clocks".
-const CLIMB_SPEED := 1.5
+const CLIMB_SPEED := 2.25
 
 ## The bones the entry and exit snaps are measured between. Profile-bone names, because the
 ## retargeter has rewritten every GLB clip onto Godot's humanoid profile.
@@ -163,6 +167,7 @@ const CLIMB_BAKED := ["climb_motion_y", "climb_motion_z", "climb_duration", "cli
 ## RC's camera rig, unchanged by either mode. Only the `current` flag is asserted on it -
 ## see _ensure_camera_current().
 const CAMERA_PATH := "CameraPivot/SpringArm3D/Camera3D"
+const CAMERA_PIVOT_PATH := "CameraPivot"
 
 
 func _init() -> void:
@@ -205,6 +210,9 @@ func _init() -> void:
 		quit(1)
 		return
 	if not _ensure_camera_current(root):
+		quit(1)
+		return
+	if not _ensure_camera_interpolation(root):
 		quit(1)
 		return
 
@@ -610,18 +618,30 @@ func _trim_slide(anim: Animation) -> void:
 # is_sliding.
 #
 # This used to be a bare AnimationNodeAnimation, and the comment here used to say a
-# TimeScale must never go near it. That reasoning is worth keeping because it still holds:
-# the state machine plays the clip on its own clock while pilot9.gd::_slide_time runs in
-# _physics_process, and the only reason those two agree is that both are real time. Scale
-# the clip to anything other than 1.0 and the animation drifts away from the distance curve
-# driving the body, silently.
+# TimeScale must never go near it. The reasoning behind that still holds and is worth
+# keeping: the state machine plays the clip on its own clock while pilot9.gd::_slide_time
+# runs in _physics_process, and the only reason those two agree is that they run at the same
+# rate. Scale the clip by anything the controller does not also scale its clock by, and the
+# animation drifts away from the distance curve driving the body, silently.
 #
-# The hold does not break that rule, it uses it. The scale is only ever 0.0 or 1.0, and the
-# controller freezes _slide_time on exactly the frames it writes 0.0 (see
-# _apply_slide_velocity). Both clocks stop together and both start again together, so the
-# offset between them at the end of the hold is the offset they had going in. What is
-# forbidden is a *rate* other than 1 - a lerped ease like the crouch's would drift by the
-# integral of the ease every single time.
+# Neither thing written to this scale breaks that rule; both use it.
+#
+#   * The hold writes 0.0, and the controller freezes _slide_time on exactly those frames
+#     (see _apply_slide_velocity). Both clocks stop together and start again together, so the
+#     offset between them at the end of the hold is the offset they had going in.
+#   * The running value is pilot9.gd's `slide_time_scale` - 2.0 by default since
+#     2026-09-11 - and the controller advances _slide_time by delta * that same export. One
+#     number, read by both halves. See docs/specs/pilot9-slide-rate.md.
+#
+# What is still forbidden is a rate ONE side does not know about, and any rate that varies -
+# a lerped ease like the crouch's would drift by the integral of the ease every single time.
+#
+# Running at one rate is only half of staying in step, though: the two clocks also have to
+# START together, and the state machine's does not - it starts whenever the machine gets
+# round to entering the state, which is late by a frame at best and by a whole blocked fade
+# at worst. Hence the TimeSeek beside the TimeScale, which pilot9_animation.gd uses to drag
+# the clip onto pilot9.gd's `_slide_time` the frame the state opens. Seek what the state
+# machine got wrong; never scale it.
 func _ensure_slide_state(root: Node) -> bool:
 	var at := root.get_node_or_null("AnimationTree") as AnimationTree
 	if at == null:
@@ -639,9 +659,15 @@ func _ensure_slide_state(root: Node) -> bool:
 
 	var bt := AnimationNodeBlendTree.new()
 	bt.add_node("Clip", clip, Vector2(-160, 40))
-	bt.add_node(SLIDE_SCALE_NODE, scale, Vector2(140, 40))
+	bt.add_node(SLIDE_SEEK_NODE, AnimationNodeTimeSeek.new(), Vector2(0, 40))
+	bt.add_node(SLIDE_SCALE_NODE, scale, Vector2(180, 40))
 	bt.set_node_position("output", Vector2(440, 40))
-	bt.connect_node(SLIDE_SCALE_NODE, 0, "Clip")
+	# Clip -> SlideSeek -> SlideScale -> output. The seek sits INSIDE the scale on purpose:
+	# a seek request is a position, not a delta, so it reaches the clip unscaled and lands on
+	# the clip second it names whatever the scale is doing - including a scale of 0, which is
+	# what the hold pins it with.
+	bt.connect_node(SLIDE_SEEK_NODE, 0, "Clip")
+	bt.connect_node(SLIDE_SCALE_NODE, 0, SLIDE_SEEK_NODE)
 	bt.connect_node("output", 0, SLIDE_SCALE_NODE)
 
 	if sm.has_node(SLIDE_STATE):
@@ -674,7 +700,28 @@ func _ensure_slide_state(root: Node) -> bool:
 	# wiring; tests/test_pilot9_slide_stand.gd asserts its absence rather than trusting that.
 	_set_transition(sm, SLIDE_STATE, "Locomotion", 0.2, "not is_sliding", 2)
 
-	print("  state \"%s\" -> %s (TimeScale), %d states, %d transitions"
+	# RC's two landing transitions, re-stated here with a guard on top - the builder owns
+	# them now, so this is the place to change them.
+	#
+	# A fade in progress blocks every transition in the machine for its whole length,
+	# `jump_land -> slide` included. That is what broke the buffered slide: the tree reads
+	# is_on_floor() the moment move_and_slide() lands him, which is up to a frame BEFORE
+	# _handle_crouch_and_slide() spends the buffered press, so it would open a 0.2 s fade
+	# into `jump_land` and the slide could not start until that fade had run out. The clip
+	# was then a fifth of a second behind the controller's clock, and the hold froze it on
+	# whatever frame it had reached - 10 or 15 rather than SLIDE_HOLD_FRAME.
+	#
+	# So the landing yields: with a press already waiting for the ground, `fall` and `jump`
+	# hold for the one frame it takes the controller to start the slide, and the machine
+	# takes `-> slide` instead. Only that frame is affected - slide_pending() is false on
+	# every ordinary landing, and false again the instant the press is spent or dropped.
+	#
+	# The seek in the blend tree above still stands behind this: it covers the frames the
+	# tree needs to reach the state at all, and any other way it can arrive late.
+	_set_transition(sm, "fall", "jump_land", 0.2, "is_on_floor() and not slide_pending()", 1)
+	_set_transition(sm, "jump", "jump_land", 0.2, "is_on_floor() and not slide_pending()", 1)
+
+	print("  state \"%s\" -> %s (TimeScale + TimeSeek), %d states, %d transitions"
 		% [SLIDE_STATE, SLIDE_CLIP, sm.get_node_list().size(), sm.get_transition_count()])
 	return true
 
@@ -984,6 +1031,25 @@ func _ensure_camera_current(root: Node) -> bool:
 		return false
 	cam.current = true
 	print("  ", CAMERA_PATH, ".current = true")
+	return true
+
+
+# Physics interpolation is on project-wide, and the camera rig is the one branch that must opt
+# out of it: interpolated, mouse look is quantised to the physics tick and lands a frame late.
+# pilot9.gd::_process() instead places the pivot from his *interpolated* transform each drawn
+# frame, which it can only do if the pivot is detached from him - hence top_level.
+#
+# Asserted here for the same reason `current` is: RC's character.tscn ships neither flag, so a
+# --fresh build would silently hand the rig back with the camera welded to his stepped 60 Hz
+# position and judder on every turn - the exact bug this was added to fix.
+func _ensure_camera_interpolation(root: Node) -> bool:
+	var pivot := root.get_node_or_null(CAMERA_PIVOT_PATH) as Node3D
+	if pivot == null:
+		push_error("%s has no camera pivot at %s" % [OUT, CAMERA_PIVOT_PATH])
+		return false
+	pivot.top_level = true
+	pivot.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	print("  ", CAMERA_PIVOT_PATH, ".top_level = true, physics_interpolation_mode = OFF")
 	return true
 
 

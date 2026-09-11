@@ -42,6 +42,11 @@
 ## off `climb_motion_y` / `climb_motion_z` with collision off, and move_and_slide() is not
 ## called for its duration.
 ##
+## Also added: the slope tilt. On the floor the `character` mesh's up axis eases toward the
+## floor normal so a ramp reads as ground he is standing on - see _align_model_to_slope() and
+## docs/specs/pilot9-slope-align.md. The collision capsule never tilts; this is the same trade
+## player.gd makes for Setsuna, generalised from her pitch to a pitch and a roll.
+##
 ## Requires a CameraPivot (Node3D) and Camera3D as children, and a character mesh as a child node.
 extends CharacterBody3D
 
@@ -92,25 +97,40 @@ enum CameraMode {
 ## them.
 
 @export_group("Movement")
+## The three ground speeds are a DESIGN GRID, not taste. Against the 1.2 s airtime that
+## `jump_height` and `jump_time_to_apex` produce, 2.5 / 5.0 / 7.5 clear gaps of exactly
+## 3 / 6 / 9 m, so a gap in the map can be built to a whole number and read back as one.
+## Move any of them and the grid moves with it - `jump_air_time` is what to multiply by.
 @export_range(0.1, 20.0, 0.1, "or_greater") var speed: float = 5.0
 ## Speed when walking. Should be lower than normal speed.
 @export_range(0.1, 10.0, 0.1, "or_greater") var walk_speed: float = 2.5
 ## Speed multiplier when sprinting. Should be higher than normal speed.
-@export_range(0.1, 30.0, 0.1, "or_greater") var sprint_speed: float = 8.0
+##
+## 7.5, not 8.0, and the 0.5 is bought deliberately: at the 1.2 s airtime below it is what
+## turns a running sprint jump into a gap of exactly 9 m. See `jump_air_time`.
+@export_range(0.1, 30.0, 0.1, "or_greater") var sprint_speed: float = 7.5
 ## The jump, specified the way it reads on screen: how high, and how long to the top. The
 ## velocity and the gravity are DERIVED from these two - see `jump_velocity` and
 ## `jump_gravity` below - which is the whole reason the jump stopped being floaty. Tuning a
 ## velocity against a gravity nobody chose (stock Godot 9.8, real Earth) is two dials
 ## fighting over one arc; these two are independent, and time is the one that was wrong.
-## Height is deliberately unchanged from the 1.84 m the 6.0 m/s jump gave, so every mantle
-## band and every lip in the map keeps the relationship to his jump that it had.
+## Both are now ROUND ON PURPOSE - 2.0 m and 0.6 s - because a jump you cannot measure is a
+## jump you cannot build a map to. See docs/specs/pilot9-jump-grid.md.
+##
+## 3.0 m exactly, and a double jump peaks at 6.0 m. Height is the ONE dial that moves
+## without disturbing the gap grid: airtime is `jump_time_to_apex` and the fall multiplier,
+## neither of which has a height in it, so 3 / 6 / 9 m of horizontal reach survives this
+## untouched. What it does move is everything he CLIMBS - see the note on `climb_band_min`,
+## because the lips a single jump can now mantle went up with it.
 ## See docs/specs/pilot9-jump-feel.md.
-@export_range(0.2, 5.0, 0.05) var jump_height: float = 1.84
+@export_range(0.2, 5.0, 0.05) var jump_height: float = 3.0
 ## Seconds from the floor to the top of the jump. The floatiness dial, and the first thing to
-## turn when the jump is retuned. 0.61 s is the pre-reset arc, restored: it is what a 6.0 m/s
-## jump under Godot's default 9.8 worked out to, and it is what pilot9 was actually played
-## with. 0.38 was the 2026-09-10 jump-feel pass, parked with the rest of it.
-@export_range(0.05, 1.5, 0.01) var jump_time_to_apex: float = 0.61
+## turn when the jump is retuned. 0.60 s is the 0.61 s pre-reset arc rounded - a 10 ms move,
+## below what anyone feels - and rounding it is what makes the airtime exactly 1.2 s and the
+## gap grid whole. 0.38 was the 2026-09-10 jump-feel pass, parked with the rest of it.
+##
+## Turning this dial moves every gap in the map: see `jump_air_time`.
+@export_range(0.05, 1.5, 0.01) var jump_time_to_apex: float = 0.60
 ## How much harder he falls than he rises, as a multiple of `jump_gravity`. 1.0 is symmetric
 ## real physics and reads as swimming - a rise is commitment, a slow fall is nothing. Every
 ## platformer worth the name runs somewhere in 1.5 - 2.5, and 1.9 is where this sat before
@@ -207,6 +227,21 @@ enum CameraMode {
 ## Speed while crouched. Slower than walk_speed - the crouch clip's own cadence is what
 ## this is matched against, so changing one without the other makes him skate or moonwalk.
 @export_range(0.1, 10.0, 0.1, "or_greater") var crouch_speed: float = 1.6
+## How much of the grade the MESH lies along, heading-wise: 1.0 puts his nose down the hill
+## going down and up it going up, 0.0 leaves him bolt upright as he was before 2026-09-11.
+## Only the `character` child tilts - the collision capsule stays vertical, which is the whole
+## trade (see docs/specs/pilot9-slope-align.md). Pairs with `slope_align_roll` below; the two
+## together at 1.0 are "parallel with the slope" exactly.
+@export_range(0.0, 1.0, 0.05) var slope_align_pitch: float = 1.0
+## The same across his heading: 1.0 tips him downhill when the ground falls away to one side,
+## which is the half of "parallel" that a pitch alone cannot reach - crossing a ramp sideways.
+## 0.0 is Setsuna's shipped behaviour (`player.gd::_slope_pitch()` is pitch-only), and is the
+## dial to reach for first if the hillside lean reads as skiing rather than as footing.
+@export_range(0.0, 1.0, 0.05) var slope_align_roll: float = 1.0
+## How fast that tilt chases a change in grade, in radians per second of blend weight. Kept
+## equal to `rotation_speed` so cresting a ramp sweeps the same way a turn does rather than
+## snapping. This is also the rate he levels out on leaving the ground.
+@export_range(0.0, 40.0, 0.5) var slope_align_speed: float = 10.0
 
 ## Slide Settings
 ## -----------------------------------------------------------------------------
@@ -246,6 +281,22 @@ enum CameraMode {
 ## The builder never writes this, so a value tuned in the inspector survives a rig swap -
 ## unlike the three baked properties below, which it overwrites on every sync.
 @export_range(0.1, 3.0, 0.05) var slide_scale: float = 1.0
+## How fast the slide plays - BOTH clocks, which is the only way this is allowed to exist.
+## 2.0 is the clip at double rate: the run-in reaches the hold pose in 0.25 s instead of
+## 0.50, the whole clip runs 0.625 s instead of 1.25, and every speed the curve produces
+## doubles with it. The distance does not move - that is `slide_scale`, and the two compose.
+##
+## The clip and the distance curve are two separate clocks (see slide_duration below) and
+## they agree only while they run at the SAME rate. This is that rate: scripts/
+## pilot9_animation.gd writes it onto the `slide` state's TimeScale and _apply_slide_velocity
+## advances _slide_time by delta * this. Anything that scales one without the other - or any
+## rate that VARIES, like the crouch's eased scale - drifts the pose away from the travel
+## with nothing in the log. See docs/specs/pilot9-slide-rate.md.
+##
+## Wall-clock tuning is deliberately NOT scaled by it: slide_boost_time, slide_cooldown,
+## slide_friction and slide_slope_accel all still integrate against real time. 1.0 is the
+## slide exactly as it shipped before 2026-09-11.
+@export_range(0.1, 4.0, 0.05) var slide_time_scale: float = 2.0
 ## Kept short deliberately: without it, sprint held and `crouch` tapped re-enters the slide
 ## on the frame it leaves and he never stands up.
 @export_range(0.0, 2.0, 0.05) var slide_cooldown: float = 0.4
@@ -267,9 +318,10 @@ enum CameraMode {
 ## itself. Distance travelled as a fraction of the total (Y) against time as a fraction of
 ## the clip (X), both 0..1. Editing these by hand is wasted work; the next sync rewrites them.
 @export var slide_motion: Curve
-## BAKED - the slide clip's length in seconds. The state machine plays the clip on its own
-## clock and this one runs in _physics_process; they agree only because both are real time,
-## which is why there is no TimeScale anywhere near the `slide` state.
+## BAKED - the slide clip's length in SECONDS OF CLIP, not of wall clock. The state machine
+## plays the clip on its own clock and this one runs in _physics_process; they agree only
+## because both run at `slide_time_scale`, which is the one thing the TimeScale on the
+## `slide` state is allowed to be.
 @export var slide_duration: float = 0.0
 ## BAKED - metres the clip's Hips travel forward, the scale `slide_motion` is normalised by.
 @export var slide_distance: float = 0.0
@@ -289,7 +341,7 @@ enum CameraMode {
 ## opening at 10.8 m/s. 1.0 is no burst at all and is where the 2026-09-10 reset parks it.
 ##
 ## Note 1.0 does NOT remove the floor, only the burst: _slide_speed_floor_at() still holds
-## the slide at the speed he entered at, so a slide out of a sprint carries 8.0 m/s rather
+## the slide at the speed he entered at, so a slide out of a sprint carries 7.5 m/s rather
 ## than falling to the clip's own ~5.2. That is the one layer in this file with no off
 ## switch, and it is left standing on purpose - it is also the only thing stopping the slide
 ## from being a brake, and the 2026-09-10 session explicitly ranked control over the clip's
@@ -318,7 +370,7 @@ enum CameraMode {
 ## to the clip's speed, which is what leaves the flat-ground hold the constant unending one
 ## docs/specs/pilot9-slide-hold.md called for: on the flat there is nothing else to decay.
 @export_range(0.0, 20.0, 0.1) var slide_friction: float = 2.0
-## Ceiling on a slide's total horizontal speed, clip plus bonus. 2.5x a sprint.
+## Ceiling on a slide's total horizontal speed, clip plus bonus. About 2.7x a sprint.
 @export_range(1.0, 60.0, 0.5) var slide_max_speed: float = 20.0
 ## Steep ground slides him whether he asked for it or not - no press, no sprint needed, and
 ## he cannot stand up until it flattens. `jump` still leaves.
@@ -355,8 +407,14 @@ enum CameraMode {
 ## The mantle band, in metres of lip height above his feet at the moment he presses `jump`.
 ## THIS is the whole filter - there is no climbable layer and no tag, so any static
 ## collider with an up-facing top in the band offers a mantle. Wide enough that the press
-## does not have to be frame-perfect; narrow enough that the tall blocks in TrainingV
-## (4.2 / 8.6 / 13.3 m) are only ever in band from the top of a double jump.
+## does not have to be frame-perfect.
+##
+## What this band actually reaches is `peak + climb_band_max`, because the probe fires every
+## airborne frame and he passes through every height on the way up and down - not just the
+## apex. At the 2026-09-11 grid that is **4.9 m off a single jump and 7.9 m off a double**.
+## The 3.0 m height moved the first of those a full metre: TrainingV's 4.2 m block used to
+## need a double jump and is now a single-jump mantle. The 8.6 and 13.3 m blocks are out of
+## reach either way and always were.
 @export_range(0.2, 3.0, 0.05) var climb_band_min: float = 0.9
 @export_range(0.2, 3.0, 0.05) var climb_band_max: float = 1.9
 ## How far off level the lip may be and still be a floor to land on, in degrees.
@@ -376,12 +434,14 @@ enum CameraMode {
 ## its own clock and _climb_time runs in _physics_process; they agree because BOTH are scaled
 ## by `climb_speed` off real time - see that dial and docs/specs/pilot9-climb.md.
 @export var climb_duration: float = 0.0
-## BAKED - how much faster than authored the whole mantle plays (1.5 = one and a half times).
+## BAKED - how much faster than authored the whole mantle plays (2.25 = two and a quarter
+## times). Was 1.5 from the climb pass on 2026-09-07; raised 2026-09-11 because the pull-up
+## still read as a pause in the run. At 2.25 the 1.15 s clip plays in 0.51 s.
 ## Applied to both clocks: the clip through the `climb` state's custom timeline (built by
 ## _ensure_climb_state) and the path through _apply_climb_motion advancing _climb_time by
 ## delta * climb_speed. Baked rather than a live dial because a value the tree was not built
 ## against parts the two clocks with nothing in the log.
-@export var climb_speed: float = 1.5
+@export var climb_speed: float = 2.25
 ## BAKED - metres the body rises over the mantle: the height of the frame-1 hands above the
 ## ground his feet stand on at the end of the clip. NOT the clip's own Hips travel, which
 ## is 1.89 m and describes a ledge this pose does not actually reach - see the long note on
@@ -494,6 +554,12 @@ const FLOOR_SNAP_LENGTH := 0.5
 ## momentum branch of _apply_movement() off a velocity that is already at its target.
 const SPEED_EPSILON := 0.001
 
+## A grade shallower than this reads as flat and gets no tilt on that axis. Collision meshes
+## throw sub-degree normal changes across nominally flat floor, and without this he twitches
+## standing still. About 3 degrees, the same value and the same reason as player.gd's
+## MODEL_SLOPE_PITCH_DEADZONE. See _slope_align_angles().
+const SLOPE_ALIGN_DEADZONE := deg_to_rad(3.0)
+
 ## Metres per second at or under which he counts as stopped, for the one thing that reads it:
 ## the sprint toggle clearing itself on a standstill. See _update_sprint_stop().
 ##
@@ -550,6 +616,22 @@ var jump_velocity: float:
 var jump_gravity: float:
 	get: return 2.0 * jump_height / (jump_time_to_apex * jump_time_to_apex)
 
+## Seconds from leaving the floor to touching it again at the SAME height, derived. This is
+## the level designer's number: a gap is `jump_air_time * horizontal speed` wide, so at the
+## shipping 1.2 s the three ground speeds clear 3 / 6 / 9 m and a gap in the map can be
+## built to a whole metre. jump_distance() below does the multiply.
+##
+## The rise is `jump_time_to_apex`; the fall is that over the square root of
+## `jump_fall_multiplier`, which is why a heavier fall SHORTENS every jump in the map
+## rather than leaving the geometry alone. At the shipping 1.0 the two halves are equal.
+##
+## Two things it does NOT model, both because they are currently off and neither can be
+## expressed in closed form: the apex hang (`jump_apex_speed` 0.0) lengthens the arc, and
+## `jump_cut` (1.0) shortens a tapped one. Turn either on and this becomes the full-hold
+## lower bound rather than the measurement - which is the trade the grid is paying for.
+var jump_air_time: float:
+	get: return jump_air_time_for(jump_time_to_apex, jump_fall_multiplier)
+
 ## Air jumps not yet spent this flight. Refilled to `air_jumps` on every grounded frame:
 ## leave the floor and the count is what it was on the last frame he touched it. `coyote_time`
 ## is leniency on the FLOOR jump only and never refills this - a coyote jump is the floor
@@ -583,9 +665,10 @@ var is_sliding: bool = false
 ## and the `crouch` branch of _handle_crouch_and_slide() may write it.
 var is_slide_holding: bool = false
 
-## Seconds into the slide clip. Advanced in _apply_slide_velocity(), at the point the
-## distance for this frame is consumed, so the window sampled off `slide_motion` is always
-## the frame the motion is applied to. Frozen at `slide_hold_time` for the length of a hold.
+## Seconds into the slide clip - CLIP seconds, running at `slide_time_scale` x real time.
+## Advanced in _apply_slide_velocity(), at the point the distance for this frame is consumed,
+## so the window sampled off `slide_motion` is always the frame the motion is applied to.
+## Frozen at `slide_hold_time` for the length of a hold.
 var _slide_time: float = 0.0
 ## The speed the hold runs at, measured off the curve at the moment the hold begins and then
 ## held flat. Flat is still the right word: it is the CLIP's contribution to his speed, and
@@ -651,6 +734,11 @@ var _climb_jump_buffered: bool = false
 # Freeze the character. It may be useful when you want to pause the character.
 var frozen: bool = false
 
+## Where CameraPivot sits on him, matching its transform in scenes/pilot9.tscn (and the value
+## scripts/pilot9_build_scene.gd writes there). The pivot is top_level now, so this is the whole
+## of what _process() needs to place it each drawn frame.
+const CAMERA_PIVOT_OFFSET := Vector3(0.0, 1.5, 0.0)
+
 var target_camera_distance: float = 3.5
 var is_transitioning_camera: bool = false
 ## The length the camera MODE wants, with the walls not consulted - what spring_length used
@@ -667,6 +755,33 @@ var _camera_probe: PhysicsShapeQueryParameters3D = null
 ## this file would silently clobber whatever the Camera3D is tuned to in the editor and give
 ## no sign it had. Capturing it means the boost rides on top of the tuned value instead.
 var base_fov: float = 75.0
+
+## `jump_air_time` and jump_distance() below, taking their inputs as arguments instead of
+## reading them off `self`. They are the bodies of both, and both delegate here, so there is
+## still exactly one copy of each formula.
+##
+## They are STATIC for the editor's sake. scripts/jump_grid.gd generates its ruler from a
+## throwaway pilot9 in the editor viewport, and the editor will not instantiate a non-@tool
+## script: what it hands back is a PLACEHOLDER instance, which carries the exported
+## properties and nothing else. A method call on one fails outright - which is precisely how
+## the platform came to generate nothing in the editor while working in game. A static is
+## called on the script rather than on an instance, so it runs in both, and the grid can
+## derive its gaps from `jump_time_to_apex` and `jump_fall_multiplier`, which ARE exports.
+static func jump_air_time_for(time_to_apex: float, fall_multiplier: float) -> float:
+	return time_to_apex * (1.0 + 1.0 / sqrt(fall_multiplier))
+
+
+static func jump_distance_for(
+		horizontal_speed: float, time_to_apex: float, fall_multiplier: float) -> float:
+	return horizontal_speed * jump_air_time_for(time_to_apex, fall_multiplier)
+
+
+## How wide a flat-to-flat gap he clears at `horizontal_speed`, in metres. Defaults to a
+## run. Air control is not modelled - this is the distance for a jump taken at speed and
+## held straight, which is the one a gap should be measured against.
+func jump_distance(horizontal_speed: float = speed) -> float:
+	return jump_distance_for(horizontal_speed, jump_time_to_apex, jump_fall_multiplier)
+
 
 func _ready() -> void:
 	# Set here rather than on the scene so it cannot be lost to a rebuild of pilot9.tscn, and
@@ -696,32 +811,36 @@ func _physics_process(delta: float) -> void:
 	_handle_camera_transition(delta)
 	_handle_controller_camera(delta)
 
+	# Three ways through, and the tail below runs on all of them - which is why these are an
+	# if/elif chain and no longer two early returns. See _align_model_to_slope().
+	#
 	# A mantle owns his position outright. move_and_slide() is deliberately NOT called
 	# these frames - his collision shape is off and he is being written along a path over
 	# an edge, so a velocity step would only fight the curve.
 	if is_climbing:
 		_apply_climb_motion(delta)
-		return
-
-	if frozen:
+	elif frozen:
 		handle_frozen_movement()
 		move_and_slide()
-		return
-
-	_handle_movement_input()
-	# Before the rotation, and outside its THIRD_PERSON gate: the heading is what steers the
-	# body, so it has to turn even in a camera mode where nothing is drawing the mesh.
-	if is_sliding:
-		_steer_slide(delta)
-	if camera_mode == CameraMode.THIRD_PERSON:
-		_handle_character_rotation(delta)
-	# A slide owns his velocity outright: the curve says how fast, the steered heading says
-	# where, and the stick reaches it only through that heading.
-	if is_sliding:
-		_apply_slide_velocity(delta)
 	else:
-		_apply_movement(delta)
-	move_and_slide()
+		_handle_movement_input()
+		# Before the rotation, and outside its THIRD_PERSON gate: the heading is what steers
+		# the body, so it has to turn even in a camera mode where nothing is drawing the mesh.
+		if is_sliding:
+			_steer_slide(delta)
+		if camera_mode == CameraMode.THIRD_PERSON:
+			_handle_character_rotation(delta)
+		# A slide owns his velocity outright: the curve says how fast, the steered heading
+		# says where, and the stick reaches it only through that heading.
+		if is_sliding:
+			_apply_slide_velocity(delta)
+		else:
+			_apply_movement(delta)
+		move_and_slide()
+
+	# Last, and after move_and_slide() on the branches that call it: get_floor_normal() is
+	# that call's output, so a tilt taken any earlier is lying about last frame's grade.
+	_align_model_to_slope(delta)
 
 func handle_frozen_movement() -> void:
 	velocity.x = 0.0
@@ -1035,6 +1154,29 @@ func _enter_slide_hold() -> void:
 	is_slide_holding = true
 	_slide_hold_speed = _slide_speed_at(slide_hold_time)
 
+## -- what the AnimationTree reads ---------------------------------------------
+##
+## Two accessors rather than two exported flags, for the same reason is_sliding is a plain
+## var and `_slide_time` is not: these are the state machine's view of the slide, and the
+## state machine is allowed to know only what it needs to stay in step with the controller.
+## Both are read from scripts/pilot9_animation.gd and from advance expressions in
+## scenes/pilot9.tscn; nothing writes through them.
+
+## The slide clip's clock, in CLIP seconds. pilot9_animation.gd seeks the `slide` state onto
+## this whenever the state starts late, which is the only thing keeping the frozen hold pose
+## on the frame it was baked for - see _drive_slide() there and
+## docs/specs/pilot9-jump-slide.md.
+func slide_clip_time() -> float:
+	return _slide_time
+
+## True while an air `crouch` press is waiting for the ground. The `fall -> jump_land` and
+## `jump -> jump_land` transitions yield to it: a landing that is about to become a slide
+## must not start a 0.2 s fade into the landing clip first, because a fade in progress blocks
+## every other transition for its whole length - `jump_land -> slide` included. See
+## _ensure_slide_state() in scripts/pilot9_build_scene.gd.
+func slide_pending() -> bool:
+	return _slide_buffered
+
 ## The clip's own forward speed at `t` seconds in, in m/s, taken as the average across the
 ## SLIDE_SPEED_WINDOW ending there.
 ##
@@ -1052,7 +1194,10 @@ func _slide_speed_at(t: float) -> float:
 		return 0.0
 	var travelled := slide_motion.sample(t / slide_duration) \
 		- slide_motion.sample((t - window) / slide_duration)
-	return travelled * slide_distance * slide_scale / window
+	# `window` is clip seconds and the answer is metres per REAL second, so the rate the clip
+	# is being played at belongs in it - the hold carries this number for an unbounded time
+	# and a speed measured in the wrong clock never washes out.
+	return travelled * slide_distance * slide_scale * slide_time_scale / window
 
 ## The burst, in m/s, for this frame of this slide.
 func _slide_speed_floor() -> float:
@@ -1172,6 +1317,67 @@ static func _momentum_rate(agreement: float, drive: float, brake: float) -> floa
 func _on_auto_slide_slope() -> bool:
 	return can_auto_slide and is_on_floor() \
 		and _is_auto_slide_slope(get_floor_normal(), slide_auto_angle)
+
+## The pitch and roll, in radians, that lay the MESH along the grade it is standing on -
+## `(rotation.x, rotation.z)` for the `character` node, whose `rotation.y` is already the
+## heading `yaw`. Zero on flat ground, inside the deadzone, and for the zero normal
+## get_floor_normal() hands back with nothing underfoot.
+##
+## Rotate the normal back through the heading and it is expressed in his own frame, where
+## Godot's default Euler YXZ order (`R = Ry * Rx * Rz`) puts local +Y at
+##
+##     n_body = (-sin(roll), cos(roll) * cos(pitch), cos(roll) * sin(pitch))
+##
+## which inverts exactly, with no small-angle fudge: at weight 1.0 the basis these two build
+## maps +Y onto the floor normal. That YXZ order is also why this can be written onto
+## rotation.x and rotation.z without touching the heading - the yaw is applied outermost, so
+## _handle_character_rotation(), the slide's welded facing and the mantle's snap all keep
+## meaning exactly what they meant.
+##
+## Signs, which are the only part of this worth checking by hand - a flip leans him INTO the
+## hill, which reads as a broken clip rather than as a wrong sign:
+##   - A floor's normal leans downhill (see _downhill), so heading down a grade puts n_body.z
+##     positive, and positive rotation.x is nose-down. Same convention as player.gd.
+##   - `character`'s local +X points to his LEFT (the 180 degree basis on the node - see
+##     pilot9_animation.gd::_travel_blend), so ground falling away to his left gives a
+##     negative roll, which tips his head to the left. Downhill, as it should be.
+##
+## Static and fully parameterised for the reason every other slope function here is: without a
+## physics world there is no floor to stand him on, so this is the only form the arithmetic
+## can be tested in. See docs/specs/pilot9-slope-align.md.
+##
+## `deadzone` is a parameter with the shipping value as its default for one reason: it is the
+## only part of this that is NOT exact, so the round-trip test turns it off to assert the
+## alignment itself, and a separate test pins the default. Nothing in the game passes it.
+static func _slope_align_angles(yaw: float, floor_normal: Vector3, pitch_weight: float,
+		roll_weight: float, deadzone: float = SLOPE_ALIGN_DEADZONE) -> Vector2:
+	if floor_normal.length() <= 0.0001:
+		return Vector2.ZERO
+	var body := floor_normal.normalized().rotated(Vector3.UP, -yaw)
+	var pitch := atan2(body.z, body.y)
+	var roll := asin(clampf(-body.x, -1.0, 1.0))
+	if absf(pitch) < deadzone:
+		pitch = 0.0
+	if absf(roll) < deadzone:
+		roll = 0.0
+	return Vector2(pitch * pitch_weight, roll * roll_weight)
+
+## Tips the mesh along the grade so a ramp reads as ground he is standing on rather than one
+## he is skating across. Only the `character` child moves - the capsule that does the
+## colliding stays vertical - and it eases toward the target rather than snapping, so cresting
+## a ramp sweeps like a turn.
+##
+## Levelled out the moment he is airborne or mantling, on the same ease: an airborne body has
+## no grade to lie along, get_floor_normal() is stale once is_on_floor() goes false, and a
+## mantle is a scripted path over an edge that already owns his pose.
+func _align_model_to_slope(delta: float) -> void:
+	var target := Vector2.ZERO
+	if is_on_floor() and not is_climbing:
+		target = _slope_align_angles(character.rotation.y, get_floor_normal(),
+			slope_align_pitch, slope_align_roll)
+	var step := slope_align_speed * delta
+	character.rotation.x = lerp_angle(character.rotation.x, target.x, step)
+	character.rotation.z = lerp_angle(character.rotation.z, target.y, step)
 
 ## The automatic slide's entry test. The slide's own preconditions (it is enabled, the clip
 ## was baked) still apply - without a curve there is nothing to drive him with - but the
@@ -1657,11 +1863,17 @@ func _apply_slide_velocity(delta: float) -> void:
 	var entering := can_hold_slide and slide_hold_time > 0.0 and _slide_time < slide_hold_time
 	var limit := slide_hold_time if entering else slide_duration
 
+	# The frame's worth of CLIP, which is not the frame: `slide_time_scale` is the rate the
+	# state machine is playing the clip at, and reading the curve anywhere else would show a
+	# pose that is not the pose travelling. One multiply, in the one place the clock moves.
+	var clip_delta := delta * slide_time_scale
 	var from := _slide_time / slide_duration
-	var until := minf(_slide_time + delta, limit)
+	var until := minf(_slide_time + clip_delta, limit)
 	var travelled := (slide_motion.sample(until / slide_duration) - slide_motion.sample(from)) \
 		* slide_distance * slide_scale
-	var consumed := until - _slide_time
+	# Back into wall seconds for the split below - `consumed` is clip time, and the part of
+	# the frame the hold gets is whatever real time the curve did not use.
+	var consumed := (until - _slide_time) / slide_time_scale
 	_slide_time = until
 
 	# The frame that crosses into the hold is split rather than rounded either way: the curve
@@ -1835,6 +2047,10 @@ func _start_climb(lip: Vector3, wall_normal: Vector3) -> void:
 	_climb_start_position = lip - body * climb_hand_offset
 	_climb_end_position = lip + _climb_facing * climb_inset - body * climb_foot_offset
 	global_position = _climb_start_position
+	# A snap onto the lip, not travel toward it. Without this the interpolator would draw him -
+	# and the camera, which reads his interpolated transform - sliding in from wherever he
+	# jumped. The per-frame writes in _handle_climb() below are real motion and do interpolate.
+	reset_physics_interpolation()
 
 	# Measured off the detected lip rather than lifted out of the bake - see the note on
 	# _climb_detected_rise. The forward half is projected onto the heading because the
@@ -1879,6 +2095,8 @@ func _end_climb(completed: bool) -> void:
 	is_climbing = false
 	_climb_time = 0.0
 	global_position = _climb_end_position
+	# The hard snap the docstring above describes - not interpolated across, same as the entry.
+	reset_physics_interpolation()
 	velocity = Vector3.ZERO
 	if collision_shape:
 		collision_shape.set_deferred("disabled", false)
@@ -1886,6 +2104,29 @@ func _end_climb(completed: bool) -> void:
 		_climb_jump_buffered = false
 
 ## Handles mouse input for camera rotation with tilt limits.
+## Places the camera rig every drawn frame. Physics interpolation is on project-wide (see
+## project.godot), which means his body steps at the physics tick and is drawn at an
+## interpolated position in between - and a camera parented to it would have to be one of two
+## wrong things. Interpolated, mouse look gets quantised to the tick and lands a frame late,
+## which is precisely the authority over the view the movement work has been defending.
+## Not interpolated, it inherits his raw 60 Hz stepped position and judders on every turn.
+##
+## So CameraPivot is top_level with physics_interpolation_mode OFF, and its two halves run off
+## different clocks on purpose: position from his *interpolated* transform so the view travels
+## smoothly, rotation left exactly as _unhandled_input below set it so it does not lag. This is
+## the split the engine documents for this case.
+##
+## Only the position is written here. His pivot yaw and pitch are already world-absolute - the
+## body is never rotated, only the mesh child is - so nothing has to be recomputed for
+## top_level, and _unhandled_input stays the only thing that aims him.
+##
+## Note this runs while `frozen`, unlike almost everything else in this file. A frozen pilot9
+## still has to be drawn at the right place, and the mantle and the mech handover both move him
+## while the input handler is shut off.
+func _process(_delta: float) -> void:
+	camera_pivot.global_position = get_global_transform_interpolated() * CAMERA_PIVOT_OFFSET
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if frozen:
 		return
@@ -1961,10 +2202,17 @@ func _end_verbs_for_boarding() -> void:
 ## carries the facing, and camera_pivot's yaw IS the world yaw with nothing to subtract.
 func exit_vehicle(exit_position: Vector3, facing_yaw: float) -> void:
 	global_position = exit_position
+	# He is placed at the exit point, not walked there.
+	reset_physics_interpolation()
 	# The mesh, not the body. character.rotation.y = atan2(h.x, h.z) faces heading h, and
 	# atan2(sin yaw, cos yaw) is yaw itself, so the mech's `rotation.y` crosses over with no
 	# correction - see _handle_character_rotation and docs/specs/pilot9-turn-to-face.md.
 	character.rotation.y = facing_yaw
+	# And level. He is placed rather than walked, so a slope tilt carried in from wherever he
+	# boarded would be a lean against ground that is no longer under him - see
+	# _align_model_to_slope(), which eases it back on from zero if EXIA parked on a grade.
+	character.rotation.x = 0.0
+	character.rotation.z = 0.0
 	# Half a turn round from his facing: behind him, looking at the machine he climbed out of.
 	# mech-camera-handover.md's rule, and the fix for the handback dropping him staring at his
 	# own back. Written straight onto the pivot because the body is unrotated.

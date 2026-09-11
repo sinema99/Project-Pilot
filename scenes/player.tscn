@@ -83,6 +83,8 @@ active = true
 
 [node name="CameraPivot" type="Node3D" parent="." unique_id=2118882396]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.6725, 0)
+top_level = true
+physics_interpolation_mode = 2
 
 [node name="CameraPitch" type="Node3D" parent="CameraPivot" unique_id=1186148408]
 

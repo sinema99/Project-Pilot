@@ -2,6 +2,8 @@
 
 > **Status:** built 2026-09-06; **loosened 2026-09-06** after the first read of the feel -
 > see "The 2026-09-06 loosening" below. The revised feel is unjudged.
+> **Fixed 2026-09-11:** the clip froze on the wrong frame coming out of a jump - see
+> "The 2026-09-11 freeze" below. Unjudged on play.
 > **Scene:** `scenes/pilot9.tscn`. **Character:** `assets/pilot9.glb`.
 > **Follows:** `docs/specs/pilot9-slide.md`, which built the slide this only changes the
 > *entry* of.
@@ -204,6 +206,16 @@ the editor is wasted work.
 - `can_buffer_slide` is not in the builder's `SLIDE_BAKED` list.
 - `sprint_toggled` exists and starts false, `_update_sprint_toggle()` exists, and
   `_apply_movement()` drives `is_sprinting` from `sprint_toggled` rather than from `Input`.
+- `fall -> jump_land` and `jump -> jump_land` both need `is_on_floor() and not
+  slide_pending()`, and `slide_pending()` exists on the controller and follows
+  `_slide_buffered`.
+- The `slide` state's blend tree is `Clip -> SlideSeek -> SlideScale -> output`, with
+  `SlideSeek` an `AnimationNodeTimeSeek`.
+- `pilot9_animation.gd`'s `SLIDE_SEEK` names the path the builder builds, and the
+  AnimationTree exposes it.
+- `slide_clip_time()` exists and reports `_slide_time`.
+- `_sync_slide_clip()` seeks to `slide_clip_time()`, waits for `slide` to be the state
+  playing, re-arms when it is not, and is actually called from `_drive_slide()`.
 
 **What the headless tests cannot reach:** the happy-path landing consumption itself (needs
 `is_on_floor()` true and a live `Input` state), and the toggle flip itself (needs a live
@@ -211,3 +223,79 @@ the editor is wasted work.
 tap `crouch` any time during a sprint-jump and he should come down already sliding, no
 fumbled crouch, no lost run-up - and letting go of the sprint button mid-jump must not
 change that.
+
+## The 2026-09-11 freeze
+
+Raised on play, the day `slide_time_scale` went to 2.0: sliding out of a jump, pilot9
+*sometimes* froze on a pose out of the middle of his slide entry - "frame 10 or 15" - and
+held it for the rest of the slide, instead of the hold pose baked at `SLIDE_HOLD_FRAME`
+(30). A grounded slide was fine. The faster clip did not cause it; it made an old lag
+visible, because every frame the clip starts late is now two frames of clip.
+
+### What was actually happening
+
+The slide runs on two clocks - the controller's `_slide_time` and the state machine's own
+playback of the clip - kept in step only by running at the same rate
+(`docs/specs/pilot9-slide-rate.md`). Running at one rate is half of staying in step. The
+other half is starting together, and **the state machine's clock starts whenever the machine
+gets round to entering the state.**
+
+Godot's state machine will not take any transition while a cross-fade is in progress. That
+is what broke the buffered slide, in an order the player cannot control:
+
+1. `move_and_slide()` puts him on the floor at the end of a physics frame.
+2. The AnimationTree ticks on an idle frame - which very often falls *between* that physics
+   frame and the next one - sees `is_on_floor()`, and starts a 0.2 s fade into `jump_land`.
+   `is_sliding` is still false: the buffered press is spent at the top of the *next* physics
+   frame.
+3. That next physics frame starts the slide. `_slide_time` begins running at 2x.
+4. `jump_land -> slide` is now eligible and cannot fire, because the fade from step 2 is
+   still running. It waits it out - up to 0.2 s.
+5. The clip finally starts, ~0.2 s (24 frames of clip) behind the controller. A quarter of a
+   second after step 3, `_slide_time` reaches `slide_hold_time`, `_drive_slide()` writes a
+   TimeScale of 0, and the clip freezes wherever it had got to.
+
+"Sometimes" is step 2: with no idle tick in that window the machine goes straight
+`fall -> slide` (priority 0) and everything is in step. Measured against the real engine,
+not reasoned about - a throwaway probe of the same three states and fades reproduced both
+orderings exactly.
+
+### The fix, in two halves
+
+**The landing yields.** `fall -> jump_land` and `jump -> jump_land` now advance on
+`is_on_floor() and not slide_pending()`, where `slide_pending()` is the controller's
+`_slide_buffered`. A landing that is about to become a slide no longer opens the fade that
+would block it; `fall` holds for the one frame it takes the controller to start the slide
+and the machine takes `fall -> slide` instead. Only that frame is affected - `slide_pending()`
+is false on every ordinary landing, and false again the instant the press is spent or
+dropped. The builder owns both transitions now (`_ensure_slide_state()`), so this is a
+property of the generated scene rather than an editor edit.
+
+**The clip is seeked onto the clock.** An `AnimationNodeTimeSeek` sits in the `slide` blend
+tree between the clip and its TimeScale (`Clip -> SlideSeek -> SlideScale -> output`; a seek
+is a clip *position*, so it reaches the clip whatever the scale is doing, including the 0 of
+a hold). `pilot9_animation.gd::_sync_slide_clip()` writes `slide_clip_time()` into it on the
+frame `slide` becomes the state playing. Whatever the machine got wrong about *when* to
+start, the clip lands on the frame the body is actually travelling on.
+
+One seek per entry, not one per frame: once seeked, the two clocks agree, and running at one
+rate keeps them agreeing. A seek every frame would step the clip at the rate `_process` runs
+at instead of letting it play - the stutter the TimeScale arrangement exists to avoid. The
+flag re-arms whenever `slide` is not the state playing, so a slide the machine enters twice
+is seeked twice.
+
+Seeking to `_slide_time` is right even when the state opens *after* the hold has begun: the
+controller freezes that clock at `slide_hold_time`, so a very late entry lands straight on
+the hold pose.
+
+Half one is the fix; half two is the one that does not depend on getting the timing right.
+Both are cheap and they fail independently, which is the point - the second covers the frame
+of lag the first still leaves, and any other way the state can arrive late.
+
+### On play
+
+Sprint, jump, tap `crouch` in the air, land. He should go into the slide with its entry
+playing from the top, and should park on the same hold pose a grounded slide parks on -
+every time, not sometimes. If a frozen pose ever looks like the middle of the entry again,
+the clip is starting late by some route the seek is not seeing; the clock to print is
+`slide_clip_time()` against `AnimationNodeStateMachinePlayback.get_current_play_position()`.

@@ -320,6 +320,10 @@ func test_the_bonus_reaches_the_run_in_speed() -> void:
 	if root == null:
 		fail("scenes/pilot9.tscn did not load")
 		return
+	# The ceiling lifted for this one: the run-in opens near 17 m/s at slide_time_scale 2.0
+	# and 4 m/s on top of it lands past slide_max_speed, so both readings would come back
+	# clamped to 20 and the sum would be untestable. The cap is asserted on its own below.
+	root.set("slide_max_speed", 1000.0)
 	_begin_slide(root)
 	_run_slide(root, 3)
 	var plain := (root.get("velocity") as Vector3).z

@@ -233,6 +233,12 @@ func test_the_jump_feel_values_still_produce_the_specced_arc() -> void:
 #
 # Checked with the hang off, because that is where the property is exact. See the test below
 # for the one thing that spoils it.
+#
+# Tolerance is ONE FRAME, not a sub-millisecond epsilon. _arc() integrates at 60 Hz and counts
+# whole frames, so which side of a frame boundary the landing falls on is worth 16.7 ms of
+# measured airtime on its own - and a taller jump moves faster through the last frame, so it
+# lands on a different side of it. That is quantisation, not a height term. A real leak would
+# scale with the height ratio and blow straight past a frame.
 func test_height_does_not_change_the_airtime() -> void:
 	var root := _scene()
 	if root == null:
@@ -242,9 +248,9 @@ func test_height_does_not_change_the_airtime() -> void:
 	root.jump_height = 1.0
 	var short := _arc(root, true, 0.0)
 	check(short[0] < tall[0] * 0.6, "lowering jump_height did not lower the apex")
-	approx(short[1], tall[1], 0.001,
-		"a 1.0 m jump and a 2.3 m jump have different airtimes - height is leaking into the " +
-		"clock, which means it is also leaking into how far a running jump carries")
+	approx(short[1], tall[1], DT + 0.0001,
+		"a 1.0 m jump and a 3.0 m jump differ by more than a frame of airtime - height is " +
+		"leaking into the clock, and therefore into how far a running jump carries")
 
 # ...and the exception, which is worth knowing about before someone tunes the height a long
 # way down. `jump_apex_speed` is an absolute m/s band, so a SHORTER jump - which is a weaker

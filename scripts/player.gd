@@ -110,6 +110,10 @@ const EXIT_PITCH = 0.0
 # CROUCH_HEIGHT is NOT derived from it - it is a gameplay number, what gap she can duck under,
 # and it stays where it was tuned.
 const STAND_HEIGHT = 1.6725
+# Where CameraPivot sits on her, and the whole of what _process() needs to place it now that it
+# is top_level. Matches the pivot's transform in scenes/player.tscn; the camera deliberately
+# stays at standing eye height in every state, crouch included - see _physics_process.
+const CAMERA_PIVOT_OFFSET := Vector3(0.0, STAND_HEIGHT, 0.0)
 const CROUCH_HEIGHT = 1.0
 # How fast the debug keys move the placeholder meters, in fraction per second.
 const DEBUG_METER_RATE = 0.6
@@ -256,10 +260,13 @@ func begin_embark(mount_position: Vector3, mount_yaw: float) -> float:
 	anim_tree.active = false
 	global_position = mount_position
 	rotation.y = mount_yaw
+	# A jump, not a movement. Without this the interpolator would draw her - and the camera that
+	# reads her interpolated transform - sliding to the mark from wherever she was standing.
+	reset_physics_interpolation()
 	# Her camera keeps looking the way it was looking. It is only carried along for the first
 	# fraction of the climb - the vehicle pans out of it - but the pan sets off from this shot,
 	# and without this the snap onto the mark would swing it by however far she was turned.
-	camera_pivot.rotation.y = camera_yaw - rotation.y
+	camera_pivot.rotation.y = camera_yaw
 	_hand_over_controls()
 	# The run lift and the slope tilt are both left on by a freeze mid-stride, and the climb is
 	# neither a run nor on a slope.
@@ -355,9 +362,11 @@ func exit_vehicle(exit_position: Vector3, facing_yaw: float) -> void:
 	# transform from scratch so she is upright at unit scale however ride() left her.
 	global_transform = Transform3D(Basis.IDENTITY, exit_position)
 	rotation.y = facing_yaw
+	# As in begin_embark(): she is placed, not moved.
+	reset_physics_interpolation()
 	camera_yaw = yaw_behind(facing_yaw)
 	camera_pitch = EXIT_PITCH
-	camera_pivot.rotation.y = camera_yaw - rotation.y
+	camera_pivot.rotation.y = camera_yaw
 	camera_pitch_node.rotation.x = camera_pitch
 	velocity = Vector3.ZERO
 	visible = true
@@ -376,6 +385,26 @@ func exit_vehicle(exit_position: Vector3, facing_yaw: float) -> void:
 # where that convention is written down.
 static func yaw_behind(body_yaw: float) -> float:
 	return wrapf(body_yaw + PI, -PI, PI)
+
+## Places the camera rig every drawn frame. This exists because physics interpolation is on
+## project-wide (see project.godot): her body is stepped at the physics tick and drawn at an
+## interpolated position in between, and a camera parented to it would have to pick one of two
+## bad options. Interpolated, mouse look gets quantised to the tick and lags a frame behind the
+## mouse - which is exactly the authority over the view the movement work has been protecting.
+## Not interpolated, it inherits her raw 60 Hz stepped position and judders on every turn.
+##
+## So CameraPivot is top_level with physics_interpolation_mode OFF (scenes/player.tscn), and the
+## two halves are driven from different clocks on purpose: position from her *interpolated*
+## transform so the view travels smoothly, rotation straight from the mouse so it does not lag.
+## This is the split the engine docs recommend for exactly this case.
+##
+## Yaw and pitch are also written in _physics_process, one frame ahead of here - that write is
+## what the movement block reads back off the pivot basis, so it stays.
+func _process(_delta: float) -> void:
+	camera_pivot.global_position = get_global_transform_interpolated() * CAMERA_PIVOT_OFFSET
+	camera_pivot.rotation.y = camera_yaw
+	camera_pitch_node.rotation.x = camera_pitch
+
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
@@ -572,8 +601,8 @@ func _physics_process(delta: float) -> void:
 	mesh_instance.mesh.height = current_height
 	mesh_instance.position.y = current_height / 2.0
 	# The camera stays at standing eye height in every state - crouching shrinks the collider
-	# and the mesh, but dropping the view with it makes the camera feel like it's bobbing.
-	camera_pivot.position.y = STAND_HEIGHT
+	# and the mesh, but dropping the view with it makes the camera feel like it's bobbing. That
+	# height is CAMERA_PIVOT_OFFSET, applied every drawn frame by _process().
 
 	# Landing is deliberately uneventful for gameplay - you keep your speed and your control.
 	# There is no landing clip at all since the 2026-09-03 export: touchdown is a crossfade out
@@ -747,7 +776,7 @@ func _physics_process(delta: float) -> void:
 	var heading_lag := angle_difference(rotation.y, atan2(direction.x, direction.z)) if pressing else 0.0
 	anim_tree["parameters/CROUCH/blend_position"] = _step_crouch_lean(heading_lag, delta)
 
-	camera_pivot.rotation.y = camera_yaw - rotation.y
+	camera_pivot.rotation.y = camera_yaw
 	camera_pitch_node.rotation.x = camera_pitch
 
 	# The CROUCH clips animate the mesh down themselves, so the root stays put while crouching.

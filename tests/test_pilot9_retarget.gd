@@ -227,6 +227,25 @@ func test_trial_has_exactly_one_current_camera_and_it_is_the_rc_rig_camera() -> 
 			check(not (c as Camera3D).current,
 				"EXIA's %s must not be current in a parked trial" % root.get_path_to(c))
 
+# The camera rig must stay opted OUT of the project-wide physics interpolation, and detached
+# from pilot9 so pilot9.gd::_process() can place it from his interpolated transform instead.
+# Both flags come from scripts/pilot9_build_scene.gd::_ensure_camera_interpolation(), and RC's
+# character.tscn ships neither - so a --fresh build that lost the call would hand the rig back
+# with the camera welded to his stepped 60 Hz position, which is the judder-on-turn bug this
+# was added to fix. Silent in every other way, hence the test.
+func test_pilot9_camera_pivot_opts_out_of_physics_interpolation() -> void:
+	var root := _instantiate(TRIAL_TSCN)
+	if root == null:
+		fail("trial.tscn did not load"); return
+	var pivot := root.get_node_or_null("Pilot9/CameraPivot") as Node3D
+	check(pivot != null, "trial.tscn has no Pilot9/CameraPivot")
+	if pivot == null:
+		return
+	check(pivot.top_level,
+		"CameraPivot must be top_level, or it inherits pilot9's un-interpolated 60 Hz position")
+	eq(pivot.physics_interpolation_mode, Node.PHYSICS_INTERPOLATION_MODE_OFF,
+		"CameraPivot must not interpolate, or mouse look lags a physics tick behind the mouse")
+
 func test_trial_still_carries_the_cel_pass_on_pilot9() -> void:
 	# Cel look started OFF for the first look (spec), then flipped ON once the retarget
 	# checked out on 2026-09-05. The node and its cel_character material must still be

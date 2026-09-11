@@ -66,20 +66,20 @@ func test_jump_assists_are_all_off() -> void:
 	approx(p.jump_buffer_time, 0.0, 0.0001, "the jump buffer is back on")
 
 # The arc itself, not the assists. These two ARE the jump's parameterisation and are meant to
-# be tuned - but they are reset to the pre-2026-09-10 arc, and that arc is what every mantle
-# band and every lip in the map was placed against. Moving them is a level-design decision.
-func test_the_arc_is_the_one_the_map_was_built_against() -> void:
+# be tuned - and on 2026-09-11 they were, from the reset's 1.84 / 0.61 to a round 2.0 / 0.60.
+# That is a level-design decision and this is where it is recorded: see
+# docs/specs/pilot9-jump-grid.md and test_pilot9_jump_grid.gd for what the round numbers buy.
+func test_the_arc_is_the_grid_the_map_is_built_against() -> void:
 	var p := _scene()
 	if p == null:
 		return
-	approx(p.jump_height, 1.84, 0.001,
-		"jump_height moved - climb_band_min/max and every lip in the map are tuned to 1.84 m")
-	approx(p.jump_time_to_apex, 0.61, 0.001, "jump_time_to_apex moved")
+	approx(p.jump_height, 3.0, 0.001,
+		"jump_height moved off the grid - 3.0 m is what a single jump is measured against")
+	approx(p.jump_time_to_apex, 0.60, 0.001,
+		"jump_time_to_apex moved - the 1.2 s airtime is what makes the gap grid whole")
 	# The derived pair, which is the whole point of the parameterisation. 2h/t and 2h/t^2.
-	approx(p.jump_velocity, 6.032, 0.01,
-		"the derived launch speed is no longer the 6.0 m/s he was played with")
-	approx(p.jump_gravity, 9.89, 0.01,
-		"the derived rise gravity is no longer within a whisker of Godot's default 9.8")
+	approx(p.jump_velocity, 10.0, 0.01, "the derived launch speed does not follow the grid")
+	approx(p.jump_gravity, 16.667, 0.01, "the derived rise gravity does not follow the grid")
 
 # max_fall_speed is NOT part of the reset - it is a bound, not an assist. Asserted so that a
 # future reader does not "finish the job" by zeroing it, which would let a long drop
@@ -89,11 +89,14 @@ func test_terminal_velocity_survived_the_reset() -> void:
 	if p == null:
 		return
 	approx(p.max_fall_speed, 28.0, 0.01, "max_fall_speed was reset - it is a bound, not a feel layer")
-	# Under the restored symmetric gravity it is ~39 m into a drop, which nothing in the map
-	# reaches. If that stops being true the number needs revisiting, not deleting.
+	# It is a bound and it is meant to stay out of play: nothing he falls off in the map
+	# should reach it. Under the 2026-09-11 grid's gravity that is 23.5 m into a drop, and
+	# the tallest block in TrainingV is 13.3 m - so a fall from the top of the map arrives
+	# at about 21 m/s, comfortably under the cap. The floor here is that height plus a
+	# margin; if a map ever gets tall enough to trip it, the CAP needs revisiting, not this.
 	var reach: float = (p.max_fall_speed * p.max_fall_speed) / (2.0 * p.jump_gravity)
-	check(reach > 30.0,
-		"terminal velocity is now reached inside %.1f m - short hops will meet it" % reach)
+	check(reach > 20.0,
+		"terminal velocity is now reached inside %.1f m - a drop in the map will meet it" % reach)
 
 func test_with_the_assists_off_gravity_is_one_everywhere() -> void:
 	var s := _script()
@@ -217,7 +220,9 @@ func test_the_untouched_dials_are_still_untouched() -> void:
 		return
 	approx(p.speed, 5.0, 0.0001, "speed drifted from stock Real Controller")
 	approx(p.walk_speed, 2.5, 0.0001, "walk_speed drifted from stock Real Controller")
-	approx(p.sprint_speed, 8.0, 0.0001, "sprint_speed drifted from stock Real Controller")
+	# The one exception, and it is deliberate: 8.0 -> 7.5 on 2026-09-11, because 7.5 is what
+	# clears exactly 9 m in the 1.2 s airtime. See docs/specs/pilot9-jump-grid.md.
+	approx(p.sprint_speed, 7.5, 0.0001, "sprint_speed drifted off the jump grid")
 	approx(p.crouch_speed, 1.6, 0.0001, "crouch_speed drifted from its authored value")
 	approx(p.rotation_speed, 10.0, 0.0001, "rotation_speed drifted from stock Real Controller")
 	approx(p.slide_scale, 1.0, 0.0001, "slide_scale drifted - the clip is no longer the slide")

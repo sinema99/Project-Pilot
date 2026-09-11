@@ -116,6 +116,10 @@ var _pilot_board := Transform3D.IDENTITY
 # index is -1 when the export has no spine.003, which is the switch that skips the canopy carry.
 var _skeleton: Skeleton3D = null
 var _cockpit_bone := -1
+# Where CameraPivot sits on EXIA, matching its transform in scenes/mech.tscn. The pivot is
+# top_level now, so this is what _process() places it from every drawn frame - see _process.
+const CAMERA_PIVOT_OFFSET := Vector3(0.0, 7.9, 0.0)
+
 var camera_yaw := 0.0
 var camera_pitch := 0.0
 var was_moving := false
@@ -442,7 +446,7 @@ static func handover_ease(elapsed: float, duration: float) -> float:
 	return t * t * (3.0 - 2.0 * t)
 
 func _aim_camera() -> void:
-	camera_pivot.rotation.y = camera_yaw - rotation.y
+	camera_pivot.rotation.y = camera_yaw
 	camera_pitch_node.rotation.x = camera_pitch
 
 # Starts a pan from `watching` to `destination`, which is the mech's own camera on the way in
@@ -470,7 +474,23 @@ func _begin_handover(watching: Camera3D, destination: Camera3D) -> void:
 	handover_camera.current = true
 	set_process(true)
 
+## Places the camera rig every drawn frame, then runs the handover pan if one is in flight.
+##
+## The placement is here rather than in _physics_process because physics interpolation is on
+## project-wide (see project.godot). EXIA steps at the physics tick and is drawn at an
+## interpolated position between ticks; a camera parented to it would either interpolate too -
+## quantising mouse look to the tick and lagging it a frame - or inherit the raw stepped
+## position and judder through every turn. So CameraPivot is top_level with interpolation OFF
+## (scenes/mech.tscn) and gets its position from EXIA's *interpolated* transform while its
+## rotation comes straight off the mouse. Same split as player.gd::_process and pilot9.gd's.
+##
+## _aim_camera() still writes the same yaw and pitch in the physics step; that write is what the
+## movement block reads back off the pivot basis, so both stay.
 func _process(delta: float) -> void:
+	camera_pivot.global_position = get_global_transform_interpolated() * CAMERA_PIVOT_OFFSET
+	camera_pivot.rotation.y = camera_yaw
+	camera_pitch_node.rotation.x = camera_pitch
+
 	if handover_left <= 0.0:
 		return
 	if not is_instance_valid(_handover_to):

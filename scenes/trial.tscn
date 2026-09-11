@@ -6,10 +6,13 @@
 [ext_resource type="Material" uid="uid://csrta6agxh215" path="res://resources/cel_ground.tres" id="4_ground"]
 [ext_resource type="Material" uid="uid://c7etxtnthghch" path="res://resources/cel_character.tres" id="5_char"]
 [ext_resource type="Shader" uid="uid://dcg01gsjj5mpj" path="res://shaders/pixelate.gdshader" id="6_pixelate"]
+[ext_resource type="Script" uid="uid://yxw7w7viuhmd" path="res://scripts/blockout_box.gd" id="7_o74lt"]
 [ext_resource type="Script" uid="uid://csg3i1yfc2wog" path="res://scripts/rendering/pixelate.gd" id="7_pixctl"]
 [ext_resource type="PackedScene" uid="uid://b745modfj23k4" path="res://assets/TrainingV.glb" id="9_training"]
 [ext_resource type="PackedScene" path="res://scenes/mech.tscn" id="10_mech"]
 [ext_resource type="PackedScene" uid="uid://ddbskbkf8wj8v" path="res://assets/mission1.glb" id="11_mission1"]
+[ext_resource type="PackedScene" path="res://scenes/jump_grid.tscn" id="12_jumpgrid"]
+[ext_resource type="Script" uid="uid://d0hawwyixvdp5" path="res://scripts/blockout.gd" id="13_blockout"]
 
 [sub_resource type="Sky" id="Sky_cel"]
 sky_material = ExtResource("3_sky")
@@ -54,7 +57,103 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.08662796, 0, 0.036067963)
 transform = Transform3D(-4.371139e-08, 0, 1, 0, 1, 0, -1, 0, -4.371139e-08, 143.99373, -76.40996, 0)
 
 [node name="Pilot9" parent="." unique_id=530713254 instance=ExtResource("1_pilot")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.004591346, 0.17800736, -0.002503395)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -95, 1.678, 0)
+
+[node name="JumpGrid" parent="." unique_id=284119061 instance=ExtResource("12_jumpgrid")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -95, 1.5, 0)
+
+[node name="Blockout" type="Node3D" parent="." unique_id=284119062]
+script = ExtResource("13_blockout")
+
+[node name="Box" type="StaticBody3D" parent="Blockout" unique_id=1489306432]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -111.97691, -1.003623, 0.014294624)
+script = ExtResource("7_o74lt")
+size = Vector3(20, 1, 6)
+
+[node name="Box2" type="StaticBody3D" parent="Blockout" unique_id=2129512197]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -134.97691, -1.003623, 0.014294624)
+script = ExtResource("7_o74lt")
+size = Vector3(14, 1, 6)
+
+[node name="Box3" type="StaticBody3D" parent="Blockout" unique_id=2069117258]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -158.47691, -1.003623, 0.014294624)
+script = ExtResource("7_o74lt")
+size = Vector3(15, 1, 6)
+
+[node name="Box5" type="StaticBody3D" parent="Blockout" unique_id=610830809]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -188.47691, 2.996377, 0.014294624)
+script = ExtResource("7_o74lt")
+size = Vector3(15, 1, 6)
+
+[node name="Box4" type="StaticBody3D" parent="Blockout" unique_id=215327445]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -173.47691, -1.003623, 0.014294624)
+script = ExtResource("7_o74lt")
+size = Vector3(15, 5, 21)
+
+[node name="Box12" type="StaticBody3D" parent="Blockout" unique_id=1464585280]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -173.47691, 15.996377, 0.014294624)
+script = ExtResource("7_o74lt")
+size = Vector3(15, 1, 21)
+
+[node name="Box13" type="StaticBody3D" parent="Blockout" unique_id=1897250501]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -169.22691, 8.996377, 7.2642946)
+script = ExtResource("7_o74lt")
+size = Vector3(5.5, 1, 5.5)
+
+[node name="Box15" type="StaticBody3D" parent="Blockout" unique_id=2004114150]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -169.22691, 8.996377, -7.2357054)
+script = ExtResource("7_o74lt")
+size = Vector3(5.5, 1, 5.5)
+
+[node name="Box16" type="StaticBody3D" parent="Blockout" unique_id=727846350]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -177.72691, 10.996377, -7.2357054)
+script = ExtResource("7_o74lt")
+size = Vector3(5.5, 1, 5.5)
+
+[node name="Box14" type="StaticBody3D" parent="Blockout" unique_id=388028555]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -177.72691, 5.996377, 7.2642946)
+script = ExtResource("7_o74lt")
+size = Vector3(5.5, 1, 5.5)
+
+[node name="Box6" type="StaticBody3D" parent="Blockout" unique_id=1566967266]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -173.47691, 3.996377, 10.264295)
+script = ExtResource("7_o74lt")
+size = Vector3(15, 12, 0.5)
+
+[node name="Box7" type="StaticBody3D" parent="Blockout" unique_id=820030485]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -173.47691, 3.996377, -10.235705)
+script = ExtResource("7_o74lt")
+size = Vector3(15, 12, 0.5)
+
+[node name="Box8" type="StaticBody3D" parent="Blockout" unique_id=1260872716]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -166.22691, 3.996377, -6.4857054)
+script = ExtResource("7_o74lt")
+size = Vector3(0.5, 12, 7)
+
+[node name="Box17" type="StaticBody3D" parent="Blockout" unique_id=1537840341]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -166.22691, 9.996377, 0.014294624)
+script = ExtResource("7_o74lt")
+size = Vector3(0.5, 6, 6)
+
+[node name="Box18" type="StaticBody3D" parent="Blockout" unique_id=1766559938]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -180.72691, 9.996377, 0.014294624)
+script = ExtResource("7_o74lt")
+size = Vector3(0.5, 6, 6)
+
+[node name="Box9" type="StaticBody3D" parent="Blockout" unique_id=317726686]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -166.22691, 3.996377, 6.5142946)
+script = ExtResource("7_o74lt")
+size = Vector3(0.5, 12, 7)
+
+[node name="Box10" type="StaticBody3D" parent="Blockout" unique_id=2104229220]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -180.72691, 3.996377, -6.4857054)
+script = ExtResource("7_o74lt")
+size = Vector3(0.5, 12, 7)
+
+[node name="Box11" type="StaticBody3D" parent="Blockout" unique_id=1992231496]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -180.72691, 3.996377, 6.5142946)
+script = ExtResource("7_o74lt")
+size = Vector3(0.5, 12, 7)
 
 [node name="EXIA" parent="." unique_id=612094488 instance=ExtResource("10_mech")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.04, -12)

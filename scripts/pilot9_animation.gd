@@ -8,8 +8,10 @@
 ##    _travel_blend(). Required by turn-to-face; docs/specs/pilot9-turn-to-face.md.
 ## 2. The crouch TimeScale at the bottom of _process. RC has no crouch.
 ## 3. The `air_jumped` listener. RC has no double jump.
-## 4. The slide TimeScale beside the crouch's, which freezes the slide clip on its hold
-##    pose. RC has no slide; docs/specs/pilot9-slide-hold.md.
+## 4. The slide TimeScale beside the crouch's, which plays the slide clip at the rate the
+##    controller reads its distance curve at and freezes it on the hold pose, and the
+##    TimeSeek that starts it on the right frame - see _sync_slide_clip(). RC has no slide;
+##    docs/specs/pilot9-slide-hold.md, pilot9-slide-rate.md and pilot9-jump-slide.md.
 extends Node
 
 ## The scale on the `crouch` state's TimeScale node, built by
@@ -29,6 +31,12 @@ const CROUCH_SCALE_EPSILON := 0.01
 ## so he would come up out of the slide and then keep travelling flat on his feet.
 const SLIDE_SCALE := "parameters/slide/SlideScale/scale"
 
+## The TimeSeek in the same blend tree, and the name of the state that holds both. Writing a
+## clip second here drags the slide clip onto it on the tree's next process; the node resets
+## the parameter to -1 itself, so this is a one-shot rather than a value to hold.
+const SLIDE_SEEK := "parameters/slide/SlideSeek/seek_request"
+const SLIDE_STATE := &"slide"
+
 ## The state the double jump restarts. There is no second-jump clip and no fall -> jump
 ## transition in the tree, so the air jump replays this one - see _on_air_jumped().
 const JUMP_STATE := "jump"
@@ -38,6 +46,11 @@ const JUMP_STATE := "jump"
 @onready var player: CharacterBody3D = $".."
 
 var target_direction: Vector2 = Vector2.ZERO
+
+## Whether the clip has been dragged onto the controller's clock for the slide currently
+## running. Re-armed every frame the `slide` state is not the one playing, so a slide the
+## state machine enters twice is seeked twice. See _sync_slide_clip().
+var _slide_clip_synced: bool = false
 
 func _ready() -> void:
 	if player != null and player.has_signal("air_jumped"):
@@ -115,7 +128,13 @@ func _travel_blend() -> Vector2:
 	# clears input_dir and nothing else), so without this he keeps running on the spot.
 	if player.input_dir == Vector2.ZERO:
 		return Vector2.ZERO
-	var b: Basis = player.character.transform.basis
+	# Yaw only, not the mesh's whole basis. Since 2026-09-11 the `character` node also carries
+	# a slope pitch and roll (pilot9.gd::_align_model_to_slope), and those tip b.x and b.z out
+	# of horizontal - the dots below would then shrink by cos(pitch) and ask the blend space
+	# for 0.8 of a run on a 35 degree ramp. Identical to the old value on level ground, and
+	# rotation.y is still the exact heading because Godot's Euler order is YXZ, applying the
+	# yaw outermost. See docs/specs/pilot9-slope-align.md.
+	var b := Basis(Vector3.UP, player.character.rotation.y)
 	# input_strength, not direction's own length: it is already clamped to 1, so a keyboard
 	# diagonal lands on the unit circle where the clips are instead of sqrt(2) past it.
 	return Vector2(-player.direction.dot(b.x), player.direction.dot(b.z)) * player.input_strength
@@ -135,21 +154,26 @@ func _drive_crouch(delta: float) -> void:
 		smooth = 0.0
 	animation_tree.set(CROUCH_SCALE, smooth)
 
-## Freezes the slide clip on its hold pose, and nothing else. The controller decides when -
-## `is_slide_holding` is set the frame `_slide_time` reaches the baked hold point and
-## cleared on the `crouch` that ends the hold - and this only mirrors it onto the tree.
+## Runs the slide clip at the controller's own rate, and freezes it on the hold pose. The
+## controller decides both - `is_slide_holding` is set the frame `_slide_time` reaches the
+## baked hold point and cleared on the `crouch` that ends the hold - and this only mirrors
+## them onto the tree.
 ##
-## Hard 0/1, deliberately unlike the crouch's eased scale right above. The state machine's
-## clip clock and the controller's _slide_time are two separate clocks kept in step only by
-## both being real time, so anything between 0 and 1 is drift the animation never gets back
-## (see _ensure_slide_state in scripts/pilot9_build_scene.gd). Stopping and starting them
-## together is exactly what this is allowed to do; running them at different rates is not.
+## Hard `slide_time_scale`-or-0, deliberately unlike the crouch's eased scale right above.
+## The state machine's clip clock and the controller's _slide_time are two separate clocks
+## kept in step only by running at the SAME rate, and `slide_time_scale` is that rate on both
+## sides: _apply_slide_velocity() advances its clock by delta * it (see _ensure_slide_state in
+## scripts/pilot9_build_scene.gd, and docs/specs/pilot9-slide-rate.md). Stopping and starting
+## them together is exactly what this is allowed to do, and so is running them both at that
+## one rate; running them at rates that differ - or at a rate that varies, like the crouch's -
+## is drift the animation never gets back.
 ##
 ## The hold pose is the read here, not a cycle, so there is nothing for an ease to smooth
 ## anyway - freezing the pose he is in IS the animation.
 func _drive_slide() -> void:
 	if animation_tree.get(SLIDE_SCALE) == null:
 		return   # slide state absent - a pilot9.tscn built before _ensure_slide_state
+	_sync_slide_clip()
 	# Frozen while holding, AND while the state blends out after the slide has ended:
 	# is_sliding is already false by then, and letting the clip run would advance it under a
 	# cross-fade nothing is driving. On the ordinary exit that parks it on the last frame of
@@ -158,4 +182,39 @@ func _drive_slide() -> void:
 	# Re-entering `slide` restarts the clip from 0, so a scale left at 0 here never carries
 	# into the next slide.
 	var hold_pose: bool = player.is_slide_holding or not player.is_sliding
-	animation_tree.set(SLIDE_SCALE, 0.0 if hold_pose else 1.0)
+	animation_tree.set(SLIDE_SCALE, 0.0 if hold_pose else player.slide_time_scale)
+
+## Drags the slide clip onto `_slide_time` the frame the `slide` state starts playing, and
+## is the whole reason the hold freezes on the pose it was baked for.
+##
+## The two clocks run at one rate (see above) but they do not START together. The controller
+## starts its own the frame the slide starts; the state machine starts the clip whenever it
+## reaches the state, which is a frame later at best - and far worse coming out of a jump,
+## because a fade in progress blocks every transition in the machine until it finishes.
+## A buffered slide landing into a 0.2 s fade toward `jump_land` opens the clip a fifth of a
+## second late, and at slide_time_scale 2.0 that is 24 frames of clip: the controller hits
+## `slide_hold_time` and writes a scale of 0 while the clip is still down at frame 10 or 15,
+## and pilot9 holds a pose out of the middle of his entry for the rest of the slide.
+## The transition guard in _ensure_slide_state() closes that particular hole; this closes
+## every other one, by making the clip's start position something the tree does not get to
+## decide.
+##
+## One seek per entry rather than a correction every frame, deliberately. Once seeked the two
+## clocks agree and running at the same rate keeps them agreeing, so there is nothing left to
+## correct - and a seek issued every frame would step the clip at the rate this runs at
+## instead of letting it play, which is the stutter the whole TimeScale arrangement exists to
+## avoid.
+##
+## Seeking to `_slide_time` is right even when the state opens after the hold has begun:
+## the controller freezes that clock at `slide_hold_time`, so a very late entry lands
+## straight on the hold pose rather than on the frame it would have reached.
+func _sync_slide_clip() -> void:
+	if playback == null or animation_tree.get(SLIDE_SEEK) == null:
+		return   # a pilot9.tscn built before the TimeSeek - the clip runs unseeked, as it did
+	if not (player.is_sliding and playback.get_current_node() == SLIDE_STATE):
+		_slide_clip_synced = false
+		return
+	if _slide_clip_synced:
+		return
+	_slide_clip_synced = true
+	animation_tree.set(SLIDE_SEEK, player.slide_clip_time())

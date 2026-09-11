@@ -65,36 +65,57 @@ framing, and only the framing).
 
 ## Dimensions — the modeling reference
 
-Every number below is measured from the project, not chosen. `project.godot` still does not
-override gravity — **but pilot9 no longer uses it.** As of the jump pass
-(`docs/specs/pilot9-jump-feel.md`) he carries his own `jump_gravity`, **31.9 m/s² rising and
-60.5 falling**, derived from `jump_height` and `jump_time_to_apex`. Godot's default 9.8 is
-still what EXIA, Setsuna and the *slide's* slope acceleration run on, so any derivation below
-has to say which of the two it means.
+Every number below is measured from the project. The jump's own numbers are the exception,
+and the exception is the point: **as of 2026-09-11 the jump is CHOSEN, in whole metres.**
+See `docs/specs/pilot9-jump-grid.md`.
 
-**The jump pass shortened every gap by 40% and raised the apex by 0.6 m.** Airtime went from
-1.22 s to 0.73 s at unchanged speeds, and horizontal jump distance is nothing but airtime ×
-speed — so anything he *crosses* moved a long way out of reach. Anything he *climbs* moved the
-other way: the apex went 1.84 m → 2.42 m. **Gaps authored against the old numbers need
-re-measuring, and so does anything deliberately placed just out of jumping reach.**
+| He is going | at | he clears |
+|---|---|---|
+| walking | 2.5 m/s | **3 m** |
+| running | 5.0 m/s | **6 m** |
+| sprinting | 7.5 m/s | **9 m** |
+
+3.0 m high, 6.0 m at the top of a double jump, **1.2 s in the air**. Build a gap to a whole
+number of metres and it says out loud which speed it demands: 6 m is a run, 7 m is a sprint or
+nothing, 9 m is a sprint exactly and punishes a player who eased off. Past 9 m is a double-jump
+gap. A gap is `jump_air_time × horizontal speed` and `pilot9.jump_distance()` will do the
+multiply — read those rather than re-deriving by hand.
+
+**Height and distance are independent dials.** Airtime has no height term in it, so
+`jump_height` can be raised or dropped without moving a single gap — it was taken 2 m → 3 m
+after the grid was set and the table above did not change. What height *does* move is
+everything he climbs: a mantle reaches `peak + 1.9 m`, so **4.9 m off a single jump and 7.9 m
+off a double**, both a metre higher than they were. Anything placed to be just out of reach
+wants re-checking.
+
+`project.godot` still does not override gravity — **but pilot9 no longer uses it.** He carries
+his own `jump_gravity`, **16.7 m/s² rising and the same falling**, derived from `jump_height`
+and `jump_time_to_apex`. Godot's default 9.8 is still what EXIA, Setsuna and the *slide's*
+slope acceleration run on, so any derivation below has to say which of the two it means.
+
+**Three dials hold the grid up, all of them parked off by the 2026-09-10 movement reset:**
+`jump_fall_multiplier` (1.0 — at 1.9 the 6 m gap silently becomes 5.1 m), `jump_cut` (1.0 —
+turn it on and the table above is what a *held* jump clears) and the apex hang
+(`jump_apex_speed` 0.0 — it lengthens the arc and cannot be modelled in closed form). Turning
+any of them back on is a decision to re-measure the maps. `test_pilot9_jump_grid.gd` fails
+loudly if one moves.
 
 Airtime belongs to `jump_time_to_apex` alone — fall time is `t_apex / √fall_multiplier`, which
 has no height in it — so `jump_height` can be tuned on its own without giving the float back.
-The one leak is the apex hang, which is an absolute m/s band and so adds slightly more time to
-a shorter jump; ~50 ms across the 1.0 – 2.3 m range, and fenced by a test.
 
 | Thing | Value | Source |
 |---|---|---|
 | pilot9 body | **1.96 m tall, 0.68 m wide** | `pilot9.tscn` capsule |
-| Walk / run / sprint | **2.5 / 5.0 / 8.0 m/s** | `pilot9.gd` |
-| Mantle-able ledge | **0.9 – 1.9 m** | `climb_band_min` / `climb_band_max` |
+| Walk / run / sprint | **2.5 / 5.0 / 7.5 m/s** | `pilot9.gd` |
+| Mantle-able ledge | **0.9 – 1.9 m** above his feet | `climb_band_min` / `climb_band_max` |
+| Highest lip he can mantle | **4.9 m** single, **7.9 m** double | peak + `climb_band_max` |
 | Mantle needs | **0.6 m lip depth, 2.0 m headroom** | `climb_probe_reach`, `climb_headroom` |
-| Jump apex | **2.42 m** | `jump_height: 2.3` (+ the apex hang) |
-| Tap hop apex | **0.62 m** | `jump_cut: 0.4` |
-| Airtime | **0.73 s** | `jump_time_to_apex: 0.38`, `jump_fall_multiplier: 1.9` |
-| Gap at run | ~3.7 m theoretical — **~3 m usable** | derived |
-| Gap at sprint | ~5.9 m theoretical — **~4.5 m usable** | derived |
-| Terminal velocity | **28 m/s**, reached 6.8 m into a drop | `max_fall_speed` |
+| Jump apex | **3.0 m** — 6.0 m off a double | `jump_height: 3.0` |
+| Tap hop apex | **3.0 m** — the cut is off, a tap is a full jump | `jump_cut: 1.0` |
+| Airtime | **1.2 s** | `jump_time_to_apex: 0.60`, `jump_fall_multiplier: 1.0` |
+| Gap at walk / run / sprint | **3 / 6 / 9 m**, exactly | `jump_distance()` |
+| Terminal velocity reached | **23.5 m into a drop** — out of play | `max_fall_speed` |
+| Terminal velocity | **28 m/s** | `max_fall_speed` |
 | EXIA body | **4 × 8.55 × 3 m** | `mech.tscn` `BoxShape3D_body` |
 | EXIA speed | **7.0 m/s** — *slower than a sprinting pilot* | `mech.gd` |
 | EXIA lane clearance | **≥6 m wide, ≥11 m tall** | body + margin |

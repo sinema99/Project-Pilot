@@ -188,20 +188,34 @@ func test_the_burst_decays_through_a_hold() -> void:
 	if float(root.get("slide_hold_time")) <= 0.0:
 		fail("no baked hold to test")
 		return
+	var bare := _scene()
+	if bare == null:
+		fail("scenes/pilot9.tscn did not load")
+		return
 	_boosted(root)
 	var sprint := float(root.get("sprint_speed"))
 	var boost_time := float(root.get("slide_boost_time"))
+	var frames := int((boost_time + 1.0) / STEP)
+	# Against an unboosted twin rather than against a number. What "the burst decayed" means
+	# is that the slide is doing what it would have done without one, and since
+	# docs/specs/pilot9-slide-rate.md that is no longer the same thing as "running at a
+	# sprint": at slide_time_scale 2.0 the clip's own hold speed is about 12 m/s, well above
+	# the 7.5 the floor would hold him at, so the floor is simply irrelevant by then. The
+	# twin says so at whatever rate the slide is tuned to.
 	_begin_slide(root, sprint)
+	_begin_slide(bare, sprint)
 	var early := _run_slide(root, 2)
-	# Well past the end of the burst, all of it spent inside the hold.
-	var late := _run_slide(root, int((boost_time + 1.0) / STEP))
+	var bare_early := _run_slide(bare, 2)
+	var late := _run_slide(root, frames)
+	var bare_late := _run_slide(bare, frames)
 	check(bool(root.get("is_slide_holding")),
 		"the slide left the hold on its own - this test is no longer measuring one")
-	check(late[late.size() - 1] < early[0] - 0.5,
-		"the burst was still running %.1fs in: %.2f m/s against %.2f at the start" %
-			[boost_time + 1.0, late[late.size() - 1], early[0]])
-	approx(late[late.size() - 1], sprint, 0.1,
-		"a held slide past the burst is not running at a sprint")
+	check(early[0] > bare_early[0] + 0.5,
+		"the burst is not visible at the start: %.2f m/s against the plain slide's %.2f" %
+			[early[0], bare_early[0]])
+	approx(late[late.size() - 1], bare_late[bare_late.size() - 1], 0.1,
+		"the burst was still running %.1fs in: %.2f m/s against an unboosted slide's %.2f" %
+			[boost_time + 1.0, late[late.size() - 1], bare_late[bare_late.size() - 1]])
 
 # A floor RAISES. It never takes anything away, on any frame, which is the one property
 # that lets this be layered on top of two shipped specs without re-tuning either of them.
@@ -266,8 +280,11 @@ func test_no_reference_leaves_the_clip_alone() -> void:
 	var distance := float(root.get("slide_distance"))
 	var hold := float(root.get("slide_hold_time"))
 	_begin_slide(root, 0.0)
-	# Up to the hold, which is the one stretch driven purely by the curve.
-	var steps := int(hold / STEP)
+	# Up to the hold, which is the one stretch driven purely by the curve. In WALL frames:
+	# the hold is quoted in clip seconds and the clip runs at `slide_time_scale`, so stepping
+	# `hold / STEP` frames would carry a fast slide well into the run-out and measure the
+	# whole clip. See docs/specs/pilot9-slide-rate.md.
+	var steps := int((hold / float(root.get("slide_time_scale"))) / STEP)
 	var travelled := 0.0
 	for v in _run_slide(root, steps):
 		travelled += v * STEP

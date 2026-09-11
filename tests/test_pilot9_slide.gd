@@ -447,6 +447,11 @@ func test_slide_scale_is_not_a_baked_property() -> void:
 func _integrate_slide(root: Node, steps: int) -> Dictionary:
 	root.set("can_hold_slide", false)
 	root.set("is_slide_holding", false)
+	# The ceiling out of the way. It is a separate rule with its own tests
+	# (tests/test_pilot9_slope_momentum.gd), and since the slide runs at slide_time_scale 2.0
+	# a doubled `slide_scale` on top would spend most of this integral clamped at 20 m/s -
+	# which measures the clamp rather than the differentiation this is here for.
+	root.set("slide_max_speed", 1000.0)
 	root.set("_slide_direction", Vector3(0.0, 0.0, 1.0))
 	root.set("_slide_time", 0.0)
 	root.set("is_sliding", true)

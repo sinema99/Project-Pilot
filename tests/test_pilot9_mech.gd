@@ -175,6 +175,23 @@ func test_exit_vehicle_places_faces_and_aims_him() -> void:
 	approx(p.camera_pivot.rotation.x, PilotScript.EXIT_PITCH, 0.001, "and at the fixed exit pitch")
 	check(p.camera_3d.current, "his camera takes the picture; mech.gd then pans the view into it")
 
+func test_exit_vehicle_lands_him_level() -> void:
+	var p := _pilot9()
+	if p == null:
+		fail("scenes/pilot9.tscn did not load"); return
+	# Boarded off a ramp, so the mesh is carrying a slope tilt - see
+	# pilot9.gd::_align_model_to_slope() and docs/specs/pilot9-slope-align.md. He is PLACED at
+	# the exit point rather than walked there, so that lean is against ground that is no longer
+	# under him; _align_model_to_slope eases it back on from level if EXIA parked on a grade.
+	p.character.rotation.x = 0.5
+	p.character.rotation.z = -0.4
+	p.enter_vehicle(null)
+	p.exit_vehicle(Vector3.ZERO, 0.7)
+	approx(p.character.rotation.x, 0.0, 0.0001,
+		"he stepped out of EXIA still pitched from the ramp he boarded on")
+	approx(p.character.rotation.z, 0.0, 0.0001,
+		"he stepped out of EXIA still rolled from the ramp he boarded on")
+
 func test_exit_vehicle_restores_his_body_and_starts_locomotion() -> void:
 	var p := _pilot9()
 	if p == null:

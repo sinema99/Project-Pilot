@@ -15,6 +15,7 @@ extends "res://tests/test_case.gd"
 
 const PILOT_TSCN := "res://scenes/pilot9.tscn"
 const BUILDER := preload("res://scripts/pilot9_build_scene.gd")
+const ANIM_SCRIPT := preload("res://scripts/pilot9_animation.gd")
 
 var _instances: Array[Node] = []
 
@@ -118,6 +119,164 @@ func test_the_locomotion_entry_is_still_there() -> void:
 	check(t != null, "the Locomotion -> slide entry went missing - the grounded slide is broken")
 	if t:
 		eq(t.advance_expression, "is_sliding", "Locomotion -> slide fires on the wrong expression")
+
+# --- the landing yields, and the clip is seeked -------------------------------
+#
+# The 2026-09-11 bug, and the two halves of its fix. A fade in progress blocks every
+# transition in the machine until it finishes. The tree sees is_on_floor() up to a frame
+# before _handle_crouch_and_slide() spends the buffered press, so it would open a 0.2 s fade
+# into `jump_land`, and `jump_land -> slide` could not fire until that fade had run out: the
+# clip started a fifth of a second late, and at slide_time_scale 2.0 the hold froze it 20-odd
+# frames short of SLIDE_HOLD_FRAME - the pose out of the middle of his entry the player saw.
+
+# Half one: the landing transitions stand aside for a press already waiting for the ground,
+# so the machine never starts the fade that would block the slide.
+func test_the_landing_yields_to_a_buffered_slide() -> void:
+	var root := _scene()
+	if root == null:
+		fail("scenes/pilot9.tscn did not load")
+		return
+	var sm := _state_machine(root)
+	if sm == null:
+		fail("no state machine")
+		return
+	for from in ["fall", "jump"]:
+		var t := _transition(sm, from, "jump_land")
+		check(t != null, "no %s -> jump_land transition - RC's landing went missing" % from)
+		if t:
+			check(t.advance_expression.contains("slide_pending()"),
+				("%s -> jump_land fires on `%s`, which does not stand aside for a queued " +
+				"slide: the landing opens a %.2f s fade, and nothing - jump_land -> slide " +
+				"included - can transition until it ends")
+				% [from, t.advance_expression, t.xfade_time])
+			check(t.advance_expression.contains("is_on_floor()"),
+				"%s -> jump_land must still need the floor" % from)
+
+func test_the_controller_answers_slide_pending() -> void:
+	var root := _scene()
+	if root == null:
+		fail("scenes/pilot9.tscn did not load")
+		return
+	check(root.has_method("slide_pending"),
+		"scripts/pilot9.gd has no slide_pending() - the two `-> jump_land` expressions name " +
+		"a method that does not exist, and an expression that cannot be evaluated never fires")
+	if not root.has_method("slide_pending"):
+		return
+	root.set("_slide_buffered", false)
+	check(root.call("slide_pending") == false, "slide_pending() is true with nothing queued")
+	root.set("_slide_buffered", true)
+	check(root.call("slide_pending") == true,
+		"slide_pending() does not follow _slide_buffered, so the landing never yields")
+
+# Half two, and the one that does not depend on getting the timing right: whenever the state
+# machine opens the `slide` state late, the clip is dragged onto the controller's clock. The
+# freeze frame is then the baked one however late the state arrived.
+func test_the_slide_state_has_a_timeseek_before_its_timescale() -> void:
+	var root := _scene()
+	if root == null:
+		fail("scenes/pilot9.tscn did not load")
+		return
+	var sm := _state_machine(root)
+	if sm == null:
+		fail("no state machine")
+		return
+	var bt := sm.get_node(BUILDER.SLIDE_STATE) as AnimationNodeBlendTree
+	if bt == null:
+		fail("the slide state is not a blend tree - _ensure_slide_state() did not run")
+		return
+	check(bt.has_node(BUILDER.SLIDE_SEEK_NODE),
+		"the slide state has no '%s' AnimationNodeTimeSeek - a slide entered late (out of a " % BUILDER.SLIDE_SEEK_NODE +
+		"jump, mostly) plays from frame 0 against a clock already part-way through, and the " +
+		"hold freezes it on whatever frame it had reached")
+	if not bt.has_node(BUILDER.SLIDE_SEEK_NODE):
+		return
+	check(bt.get_node(BUILDER.SLIDE_SEEK_NODE) is AnimationNodeTimeSeek,
+		"'%s' is not an AnimationNodeTimeSeek" % BUILDER.SLIDE_SEEK_NODE)
+	# Clip -> SlideSeek -> SlideScale -> output. The seek has to sit inside the scale: a
+	# request is a clip position, and it must reach the clip whatever the scale is doing -
+	# including the 0 the hold pins it with.
+	var wired := _input_zero(bt)
+	eq(str(wired.get(BUILDER.SLIDE_SEEK_NODE, "")), "Clip",
+		"the TimeSeek does not feed off the slide clip")
+	eq(str(wired.get(BUILDER.SLIDE_SCALE_NODE, "")), BUILDER.SLIDE_SEEK_NODE,
+		"the TimeScale does not read through the TimeSeek, so a seek cannot reach the clip")
+	eq(str(wired.get("output", "")), BUILDER.SLIDE_SCALE_NODE,
+		"the blend tree's output does not come through the TimeScale")
+
+# Blend tree connections come back as one flat array of (to, input index, from) triples -
+# there is no per-node accessor on AnimationNodeBlendTree - so this reduces it to
+# "what feeds each node's input 0", which is all a single chain has.
+func _input_zero(bt: AnimationNodeBlendTree) -> Dictionary:
+	var out := {}
+	var flat: Array = bt.get("node_connections")
+	for i in range(0, flat.size(), 3):
+		if int(flat[i + 1]) == 0:
+			out[str(flat[i])] = str(flat[i + 2])
+	return out
+
+# The same silent seam CROUCH_SCALE and SLIDE_SCALE are pinned on: AnimationTree.set() stores
+# an unknown parameter path without complaining, so a rename on either side leaves the clip
+# unseeked and the bug back, with nothing in the log.
+func test_the_animation_script_seeks_the_path_the_builder_built() -> void:
+	var expected := "parameters/%s/%s/seek_request" % [BUILDER.SLIDE_STATE, BUILDER.SLIDE_SEEK_NODE]
+	eq(ANIM_SCRIPT.SLIDE_SEEK, expected,
+		"pilot9_animation.gd seeks a path the builder does not build")
+
+func test_the_tree_exposes_the_slide_seek_parameter() -> void:
+	var root := _scene()
+	if root == null:
+		fail("scenes/pilot9.tscn did not load")
+		return
+	var at := root.get_node_or_null("AnimationTree") as AnimationTree
+	if at == null:
+		fail("no AnimationTree on pilot9.tscn")
+		return
+	var found := false
+	for p in at.get_property_list():
+		if String(p.name) == ANIM_SCRIPT.SLIDE_SEEK:
+			found = true
+			break
+	check(found, "the AnimationTree exposes no '%s' - nothing can put the clip back in step" %
+		ANIM_SCRIPT.SLIDE_SEEK)
+
+# What the seek is aimed at. `_slide_time` is the clip's clock and the controller freezes it
+# at slide_hold_time for a hold, which is what makes one seek right in every case - including
+# a state that opens after the hold has already begun.
+func test_the_controller_reports_the_clip_clock() -> void:
+	var root := _scene()
+	if root == null:
+		fail("scenes/pilot9.tscn did not load")
+		return
+	check(root.has_method("slide_clip_time"),
+		"scripts/pilot9.gd has no slide_clip_time() - the animation script cannot see the " +
+		"clock it is meant to seek the clip onto")
+	if not root.has_method("slide_clip_time"):
+		return
+	root.set("_slide_time", 0.375)
+	approx(float(root.call("slide_clip_time")), 0.375, 0.0001,
+		"slide_clip_time() does not report _slide_time")
+
+# Once per entry, not once per frame. A seek every frame would step the clip at the rate
+# _process runs at instead of letting it play - the stutter the TimeScale arrangement exists
+# to avoid - and the flag has to re-arm whenever `slide` is not the state playing, or a slide
+# the machine enters twice is only ever seeked once.
+func test_the_clip_is_seeked_once_per_entry() -> void:
+	var text := FileAccess.get_file_as_string("res://scripts/pilot9_animation.gd")
+	var at := text.find("func _sync_slide_clip")
+	check(at != -1, "pilot9_animation.gd has no _sync_slide_clip() - nothing seeks the clip")
+	if at == -1:
+		return
+	var body := text.substr(at)
+	check(body.contains("player.slide_clip_time()"),
+		"_sync_slide_clip() seeks to something other than the controller's clip clock")
+	check(body.contains("get_current_node() == SLIDE_STATE"),
+		"_sync_slide_clip() does not wait for `slide` to be the state playing, so it seeks a " +
+		"clip that has not started yet")
+	check(body.contains("_slide_clip_synced = false"),
+		"_sync_slide_clip() never re-arms, so a slide the machine enters twice runs unseeked " +
+		"the second time")
+	check(text.find("_sync_slide_clip()") < at,
+		"_drive_slide() does not call _sync_slide_clip() - the seek is dead code")
 
 # --- the controller side -------------------------------------------------------
 
