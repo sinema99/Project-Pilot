@@ -50,6 +50,21 @@ func _run_slide(root: Node, count: int) -> PackedFloat32Array:
 		root.call("_apply_slide_velocity", STEP)
 		speeds.append((root.get("velocity") as Vector3).z)
 	return speeds
+# The slide-boost pass's own values, applied to an instance so the tests below measure the
+# MECHANISM rather than whatever the exports currently happen to be.
+#
+# Same story as tests/test_pilot9_jump_feel.gd::_tuned(): the 2026-09-10 movement reset
+# parked `slide_entry_boost` at 1.0 and `slide_boost_time` at 0.0, and the two tests that
+# read them off the scene started failing while the burst itself was untouched. The parked
+# values are guarded by tests/test_pilot9_movement_reset.gd. Here we switch the burst on and
+# check it still behaves, so it stays covered while it is off.
+#
+# See docs/specs/pilot9-slide-boost.md.
+func _boosted(p: Node) -> Node:
+	p.slide_entry_boost = 1.35
+	p.slide_boost_time = 2.0
+	return p
+
 
 # --- the shape of the floor -------------------------------------------------
 
@@ -152,6 +167,7 @@ func test_the_slide_opens_faster_than_a_sprint() -> void:
 	if root == null:
 		fail("scenes/pilot9.tscn did not load")
 		return
+	_boosted(root)
 	var sprint := float(root.get("sprint_speed"))
 	var boost := float(root.get("slide_entry_boost"))
 	if boost <= 1.0:
@@ -172,6 +188,7 @@ func test_the_burst_decays_through_a_hold() -> void:
 	if float(root.get("slide_hold_time")) <= 0.0:
 		fail("no baked hold to test")
 		return
+	_boosted(root)
 	var sprint := float(root.get("sprint_speed"))
 	var boost_time := float(root.get("slide_boost_time"))
 	_begin_slide(root, sprint)

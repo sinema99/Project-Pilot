@@ -53,6 +53,27 @@ func _body(text: String, header: String) -> String:
 	var stop := rest.find("\nfunc ")
 	return rest if stop < 0 else rest.substr(0, stop)
 
+# The jump-feel pass's own values, applied to an instance so the tests below measure the
+# MECHANISM rather than whatever the exports currently happen to be.
+#
+# They stopped being the same thing on 2026-09-10: the movement reset parked every assist in
+# this file at a neutral value, and these tests were reading those exports straight off the
+# scene, so all four of them started failing while the code they cover was untouched. The
+# defaults are now guarded by tests/test_pilot9_movement_reset.gd, which is where a changed
+# shipping value SHOULD fail. Here we switch the layer on and check it still works, so the
+# feature stays covered while it is parked and the next tuning pass has something to trust.
+#
+# See docs/specs/pilot9-jump-feel.md for where each number comes from.
+func _tuned(p: Node) -> Node:
+	p.jump_height = 2.3
+	p.jump_time_to_apex = 0.38
+	p.jump_fall_multiplier = 1.9
+	p.jump_cut = 0.4
+	p.jump_apex_speed = 1.5
+	p.jump_apex_scale = 0.6
+	p.max_fall_speed = 28.0
+	return p
+
 # One jump, integrated the way _physics_process actually runs it: velocity is stepped first
 # and the body moves on the stepped value (semi-implicit Euler, which is what move_and_slide()
 # gives us), and the jump frame itself moves on the launch velocity before gravity has been
@@ -184,13 +205,18 @@ func test_the_derived_pair_tracks_the_dials() -> void:
 # --- the shipping arc ------------------------------------------------------
 
 # The regression fence. These are the numbers the pass was built to produce, integrated
-# through the real functions at the real tick rate. They are not sacred - they are exports -
-# but they should not move without someone meaning it.
-func test_the_shipping_jump_is_the_specced_arc() -> void:
+# through the real functions at the real tick rate.
+#
+# NOT the shipping arc any more - the 2026-09-10 reset parked it, and pilot9 currently jumps
+# the slower pre-pass arc. This measures what the jump-feel values DO when they are switched
+# back on, which is the thing worth fencing: the arc a future tuning pass will be restoring
+# toward. tests/test_pilot9_movement_reset.gd owns what actually ships.
+func test_the_jump_feel_values_still_produce_the_specced_arc() -> void:
 	var root := _scene()
 	if root == null:
 		fail("scenes/pilot9.tscn did not load")
 		return
+	_tuned(root)
 	approx(root.jump_velocity, 12.1053, 0.001, "the launch speed moved")
 	approx(root.jump_gravity, 31.8560, 0.001, "the rise gravity moved")
 	var arc := _arc(root, true)
@@ -232,6 +258,7 @@ func test_the_apex_hang_is_the_one_thing_height_leaks_through() -> void:
 	if root == null:
 		fail("scenes/pilot9.tscn did not load")
 		return
+	_tuned(root)
 	var tall := _arc(root, true)
 	root.jump_height = 1.0
 	var short := _arc(root, true)
@@ -250,6 +277,7 @@ func test_the_jump_is_faster_than_the_one_it_replaced() -> void:
 	if root == null:
 		fail("scenes/pilot9.tscn did not load")
 		return
+	_tuned(root)
 	var arc := _arc(root, true)
 	check(arc[1] < 0.85,
 		("airtime is %.3f s - the jump this pass replaced was 1.22 s and the complaint was " +
@@ -261,6 +289,7 @@ func test_a_tap_is_a_hop_and_a_hold_is_the_full_arc() -> void:
 	if root == null:
 		fail("scenes/pilot9.tscn did not load")
 		return
+	_tuned(root)
 	var tap := _arc(root, false)
 	var hold := _arc(root, true)
 	check(tap[0] < hold[0] * 0.5,

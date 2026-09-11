@@ -78,6 +78,18 @@ enum CameraMode {
 ## Movement Settings
 ## -----------------------------------------------------------------------------
 ## Configure the character's movement speed and jump behavior.
+##
+## RESET 2026-09-10. Every feel layer below is parked at its own off value - the jump cut,
+## the apex hang, the fall multiplier, coyote time, the jump buffer and all four momentum
+## dials. Nothing was deleted: the code paths are live and still tested, they just stop
+## changing the answer. The reason is that four passes stacked their assists on top of each
+## other without a neutral baseline in between, and the result read as lag rather than as
+## polish - *"our control over pilot needs to be increased"*. They come back one at a time,
+## played between each. See docs/specs/pilot9-movement-reset.md.
+##
+## `speed`, `walk_speed`, `sprint_speed` and `crouch_speed` are NOT part of that reset and
+## never were: they have sat at their authored values since the port and no pass has moved
+## them.
 
 @export_group("Movement")
 @export_range(0.1, 20.0, 0.1, "or_greater") var speed: float = 5.0
@@ -93,39 +105,54 @@ enum CameraMode {
 ## Height is deliberately unchanged from the 1.84 m the 6.0 m/s jump gave, so every mantle
 ## band and every lip in the map keeps the relationship to his jump that it had.
 ## See docs/specs/pilot9-jump-feel.md.
-@export_range(0.2, 5.0, 0.05) var jump_height: float = 2.3
-## Seconds from the floor to the top of the jump. The floatiness dial. 0.61 s is what the
-## old numbers worked out to; 0.38 is this pass.
-@export_range(0.05, 1.5, 0.01) var jump_time_to_apex: float = 0.38
+@export_range(0.2, 5.0, 0.05) var jump_height: float = 1.84
+## Seconds from the floor to the top of the jump. The floatiness dial, and the first thing to
+## turn when the jump is retuned. 0.61 s is the pre-reset arc, restored: it is what a 6.0 m/s
+## jump under Godot's default 9.8 worked out to, and it is what pilot9 was actually played
+## with. 0.38 was the 2026-09-10 jump-feel pass, parked with the rest of it.
+@export_range(0.05, 1.5, 0.01) var jump_time_to_apex: float = 0.61
 ## How much harder he falls than he rises, as a multiple of `jump_gravity`. 1.0 is symmetric
 ## real physics and reads as swimming - a rise is commitment, a slow fall is nothing. Every
-## platformer worth the name runs somewhere in 1.5 - 2.5.
-@export_range(1.0, 4.0, 0.05) var jump_fall_multiplier: float = 1.9
+## platformer worth the name runs somewhere in 1.5 - 2.5, and 1.9 is where this sat before
+## the reset. Currently 1.0: symmetric, floaty, and deliberately so - it is the baseline the
+## asymmetry has to earn its way back from.
+@export_range(1.0, 4.0, 0.05) var jump_fall_multiplier: float = 1.0
 ## Variable jump height. Releasing `jump` while still rising clamps his upward speed to this
 ## fraction of `jump_velocity`, so a tap is a hop and a hold is the full arc. 1.0 turns it
-## off and every jump is the same jump again, which is what he had before this pass and half
-## of what made it feel floaty: the player had no authority over the arc.
-@export_range(0.0, 1.0, 0.05) var jump_cut: float = 0.4
+## off and every jump is the same jump again - which is where the reset parks it, and which
+## is the honest trade: it costs the player authority over the arc, and it stops a tap from
+## being clipped into a stub. 0.4 was the pre-reset value and is the single dial most
+## answerable for *"the jump feels like youre not even getting off the ground"*, because a
+## real tap at 60 Hz was cut within a few frames of a 0.38 s rise. When it comes back it
+## comes back higher.
+@export_range(0.0, 1.0, 0.05) var jump_cut: float = 1.0
 ## The apex hang. Within this many m/s of the top of the arc - up or down - gravity is scaled
 ## by `jump_apex_scale`. Celeste's half-gravity trick, and it makes the jump feel SNAPPIER
 ## rather than floatier: the airtime it adds is spent at the one part of the arc the player
-## is actually aiming from. 0.0 turns it off.
-@export_range(0.0, 6.0, 0.1) var jump_apex_speed: float = 1.5
+## is actually aiming from. 0.0 turns it off, which is where the reset parks it - 1.5 was the
+## pre-reset band. Of every layer switched off here this is the one most likely to come back
+## first: it buys snappiness rather than spending it.
+@export_range(0.0, 6.0, 0.1) var jump_apex_speed: float = 0.0
 ## What gravity is multiplied by inside the apex band. 1.0 also turns the hang off.
-@export_range(0.1, 1.0, 0.05) var jump_apex_scale: float = 0.6
-## Terminal velocity, m/s. He stops accelerating downward here - reached 8.1 m into a drop at
-## the shipping numbers, so short hops never meet it and the map's long drops stay readable.
+@export_range(0.1, 1.0, 0.05) var jump_apex_scale: float = 1.0
+## Terminal velocity, m/s. He stops accelerating downward here. NOT part of the 2026-09-10
+## reset - it is a bound, not an assist, and without one a long drop integrates without limit.
+## Under the restored symmetric gravity (9.9 m/s^2 at the current height and apex time) it is
+## 39 m into a drop, which nothing in the map reaches, so short hops never meet it and the
+## long drops stay readable.
 @export_range(1.0, 100.0, 0.5) var max_fall_speed: float = 28.0
 ## Coyote time: seconds after walking off a ledge that a `jump` press still counts as a floor
-## jump. Not garnish. Halving the airtime halved the margin on every edge launch, and
-## forgiveness is what keeps a fast jump from reading as a punishing one - Celeste ships
-## 0.1 s of this and is not a floaty game. Spends no air jump. 0.0 restores the old
-## frame-exact behaviour.
-@export_range(0.0, 0.5, 0.01) var coyote_time: float = 0.1
+## jump. Not garnish - forgiveness is what keeps a fast jump from reading as a punishing one,
+## and Celeste ships 0.1 s of it without being a floaty game. Spends no air jump. 0.0 is
+## frame-exact edge launches and is where the reset parks it; 0.1 was the pre-reset value.
+## Note this one only earns its keep against a SHORT airtime, so it belongs back in the file
+## on the same pass that shortens the jump again, not before.
+@export_range(0.0, 0.5, 0.01) var coyote_time: float = 0.0
 ## Jump buffer: seconds before landing that a `jump` press is remembered for and spent on the
-## touchdown frame. The other half of the forgiveness, and the same argument. Only ever armed
-## when there is no air jump left to spend - see _handle_gravity_and_jump().
-@export_range(0.0, 0.5, 0.01) var jump_buffer_time: float = 0.1
+## touchdown frame. The other half of the forgiveness, the same argument and the same reset:
+## 0.0 here, 0.1 before. Only ever armed when there is no air jump left to spend - see
+## _handle_gravity_and_jump().
+@export_range(0.0, 0.5, 0.01) var jump_buffer_time: float = 0.0
 ## Extra jumps available while airborne, on top of the one off the floor. 1 is a double
 ## jump; 0 is stock Real Controller. Each costs the full `jump_velocity`, replacing the
 ## fall rather than adding to it, so a second jump taken late reads the same as one taken
@@ -137,7 +164,12 @@ enum CameraMode {
 ## velocity outright every frame, which deletes whatever a slide down a slope earned on the
 ## frame the slide ends. Below a sprint nothing here applies and the stock assignment runs
 ## untouched, dead stop included. See docs/specs/pilot9-slope-momentum.md.
-@export_range(0.0, 60.0, 0.5) var momentum_decay: float = 12.0
+##
+## 0.0 by the 2026-09-10 reset (12.0 before it), and 0.0 IS the honest off switch for this
+## one: the drive rate is only ever paid while pushing into speed he is already carrying
+## above a sprint, and nothing grants him that any more now the slide's boost and slope gain
+## are off too. The two BRAKES below are the ones with no zero - read their note.
+@export_range(0.0, 60.0, 0.5) var momentum_decay: float = 0.0
 ## The same in the air, where 0.0 - nothing takes speed off him at all - is the shipping
 ## value: a jump out of a fast slide is the whole point of gaining the speed. This is the
 ## DRIVE rate only, paid while the stick is still pushing into his own travel; a released
@@ -149,9 +181,12 @@ enum CameraMode {
 ## against it. Without it a walk off a lip flew him sideways forever, so there was no way to
 ## drop down a shaft in a straight line (2026-09-09: *"i need pilot to be able to fall down
 ## long pipes in a straight line"*). At 40 m/s^2 a released sprint is gone in 0.2 s and 0.8 m,
-## which reads as letting go rather than as a wall. Raise it toward `momentum_brake` for a
-## harder stop; 0.0 restores the old flying fall.
-@export_range(0.0, 200.0, 1.0) var air_momentum_brake: float = 40.0
+## which reads as letting go rather than as a wall. 0.0 restores the old flying fall and is
+## NOT an off switch - see the note on `momentum_brake` below, which applies to both.
+##
+## 200.0 by the 2026-09-10 reset (40.0 before it): a released sprint is gone in 0.04 s, which
+## is the stock dead stop to within a frame or two. No drift at all, deliberately.
+@export_range(0.0, 200.0, 1.0) var air_momentum_brake: float = 200.0
 ## The brake, in m/s^2, and the answer to a controller that feels like ice. `momentum_decay`
 ## above is what he pays for CARRYING speed - stick forward, going where he is already going.
 ## This is what he pays the moment he stops asking for it: stick released, stick pushed across
@@ -159,7 +194,16 @@ enum CameraMode {
 ## momentum is meant to reward driving into it and never to read as a loss of control - stock
 ## Real Controller stops dead on a released stick, and the closer this is to that, the more
 ## the momentum reads as a deliberate verb rather than as skating.
-@export_range(0.0, 200.0, 1.0) var momentum_brake: float = 60.0
+##
+## **There is no zero here, and 0.0 is a trap.** A released stick puts `carried` above
+## `target`, which enters the momentum branch of _apply_movement() whatever this is set to;
+## at 0.0 _decayed_speed() then subtracts nothing and he coasts at full speed forever, on the
+## ground as well as in the air. That is not stock behaviour - stock assigns the velocity
+## outright and stops him dead, which is an INSTANT brake, not an absent one. So the
+## reset-to-neutral value is the top of the range, not the bottom: 200.0 clears a sprint in
+## 0.04 s. 60.0 was the pre-reset value, and anything in that region is the feature switched
+## ON. See docs/specs/pilot9-movement-reset.md.
+@export_range(0.0, 200.0, 1.0) var momentum_brake: float = 200.0
 ## Speed while crouched. Slower than walk_speed - the crouch clip's own cadence is what
 ## this is matched against, so changing one without the other makes him skate or moonwalk.
 @export_range(0.1, 10.0, 0.1, "or_greater") var crouch_speed: float = 1.6
@@ -241,15 +285,22 @@ enum CameraMode {
 ## FLOOR under the clip: it opens above the speed he entered at and eases back down to it.
 ## Neither touches the curve, the hold speed or the bonus. See docs/specs/pilot9-slide-boost.md.
 ##
-## Multiplier on the entry speed for the floor at t = 0. At the default sprint that is a
-## slide opening at 10.8 m/s. 1.0 is no burst at all - the floor sits flat at the entry
-## speed, which is still enough to stop a slide being a brake.
-@export_range(1.0, 3.0, 0.05) var slide_entry_boost: float = 1.35
+## Multiplier on the entry speed for the floor at t = 0. At a sprint entry, 1.35 is a slide
+## opening at 10.8 m/s. 1.0 is no burst at all and is where the 2026-09-10 reset parks it.
+##
+## Note 1.0 does NOT remove the floor, only the burst: _slide_speed_floor_at() still holds
+## the slide at the speed he entered at, so a slide out of a sprint carries 8.0 m/s rather
+## than falling to the clip's own ~5.2. That is the one layer in this file with no off
+## switch, and it is left standing on purpose - it is also the only thing stopping the slide
+## from being a brake, and the 2026-09-10 session explicitly ranked control over the clip's
+## own foot placement. See docs/specs/pilot9-movement-reset.md.
+@export_range(1.0, 3.0, 0.05) var slide_entry_boost: float = 1.0
 ## Seconds the floor takes to ease from the boost back down to the entry speed, linearly.
 ## Wall clock from _start_slide(), not clip time: a hold freezes the clip and the whole
 ## meaning of this number is that a player still down there afterwards is off the burst.
-## 0.0 also turns the burst off.
-@export_range(0.0, 10.0, 0.1) var slide_boost_time: float = 2.0
+## 0.0 also turns the burst off - the floor goes flat at the entry speed immediately - and is
+## the reset value; 2.0 was the pre-reset one.
+@export_range(0.0, 10.0, 0.1) var slide_boost_time: float = 0.0
 
 ## Slope Settings
 ## -----------------------------------------------------------------------------
@@ -259,8 +310,10 @@ enum CameraMode {
 
 ## Multiplier on the physical gravity-along-the-grade term. 1.0 is real physics - about
 ## 4.2 m/s^2 of horizontal gain on a 30 degree face - and 0.0 is the old flat slide, which
-## is the honest off switch for this whole feature.
-@export_range(0.0, 3.0, 0.05) var slide_slope_accel: float = 1.0
+## is the honest off switch for this whole feature and is where the 2026-09-10 reset parks
+## it. 1.0 before. With this at 0.0 the two dials under it are inert: `_slide_bonus` never
+## leaves zero, so there is nothing for the friction to bleed or the ceiling to cap.
+@export_range(0.0, 3.0, 0.05) var slide_slope_accel: float = 0.0
 ## How fast slope-gained speed bleeds off, in m/s^2. Applied to `_slide_bonus` ONLY, never
 ## to the clip's speed, which is what leaves the flat-ground hold the constant unending one
 ## docs/specs/pilot9-slide-hold.md called for: on the flat there is nothing else to decay.
@@ -269,7 +322,11 @@ enum CameraMode {
 @export_range(1.0, 60.0, 0.5) var slide_max_speed: float = 20.0
 ## Steep ground slides him whether he asked for it or not - no press, no sprint needed, and
 ## he cannot stand up until it flattens. `jump` still leaves.
-@export var can_auto_slide: bool = true
+##
+## `false` by the 2026-09-10 reset. It is the clearest case in the file of the controller
+## deciding a verb on the player's behalf, which is the whole of what that session was
+## about, so it goes off first and has to argue its way back.
+@export var can_auto_slide: bool = false
 ## The grade he can no longer keep his feet on, in degrees. The band this opens is bounded
 ## above by the body's own `floor_max_angle` (45 by default): steeper than that is not a
 ## floor at all and he simply falls off it.
