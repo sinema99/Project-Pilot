@@ -1,0 +1,42 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/interaction_prompt.gd" id="1_prompt"]
+[ext_resource type="Theme" uid="uid://ceakpamk0cju5" path="res://resources/ui_theme.tres" id="2_theme"]
+
+[node name="InteractionPrompt" type="CanvasLayer" groups=["interaction_prompt"]]
+script = ExtResource("1_prompt")
+
+[node name="Prompt" type="CenterContainer" parent="."]
+visible = false
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -200.0
+offset_top = -110.0
+offset_right = 200.0
+offset_bottom = -60.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+theme = ExtResource("2_theme")
+
+[node name="Row" type="HBoxContainer" parent="Prompt"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Key" type="PanelContainer" parent="Prompt/Row"]
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"Keycap"
+
+[node name="KeyLabel" type="Label" parent="Prompt/Row/Key"]
+layout_mode = 2
+theme_type_variation = &"DialogTitle"
+text = "F"
+
+[node name="Text" type="Label" parent="Prompt/Row"]
+layout_mode = 2
+theme_type_variation = &"DialogTitle"
+vertical_alignment = 1
+text = "OPEN"

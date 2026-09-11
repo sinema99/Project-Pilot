@@ -250,6 +250,14 @@ func _unhandled_input(event: InputEvent) -> void:
 			_enter_mech()
 		elif pilot != null:
 			_exit_mech()
+		else:
+			return
+		# scripts/interact_button.gd reads an `interact` action that also binds F, so one press
+		# could otherwise open a door AND board the mech. Consumed only on the presses this
+		# actually acted on - consuming unconditionally would make a parked mech eat F for the
+		# whole scene. Which of the two wins is scene-tree order; see the Known Gaps in
+		# docs/specs/button-door.md.
+		get_viewport().set_input_as_handled()
 
 func _enter_mech() -> void:
 	pilot = player_in_range
