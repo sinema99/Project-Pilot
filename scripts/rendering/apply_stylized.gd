@@ -106,8 +106,12 @@ func apply_now() -> int:
 	# cannot accumulate stale entries or strand a mesh under an old material.
 	clear_now()
 
-	# Per pass, so every surface sharing a slot name shares one material instance
-	# instead of minting one duplicate per surface.
+	# Per pass, so every surface sharing a slot shares one material instance
+	# instead of minting one duplicate per surface. Keyed by slot name AND
+	# colour, never by name alone: one pass walks several targets, and two
+	# unrelated GLBs can carry the same Blender slot name. TrainingV and
+	# mission1 both ship a slot called `map2` at different greys, and a
+	# name-only key silently painted mission1's with TrainingV's colour.
 	var derived: Dictionary[String, Material] = {}
 
 	var total := 0
@@ -156,14 +160,15 @@ func _material_for_surface(mi: MeshInstance3D, surface: int, derived: Dictionary
 		push_warning("apply_stylized: '%s' surface %d has no usable imported material; using the base swatch." % [mi.name, surface])
 		return material
 
-	if derived.has(slot):
-		return derived[slot]
+	var colour := source.albedo_color
+	var key := "%s|%s" % [slot, colour]
+	if derived.has(key):
+		return derived[key]
 
 	# The importer has already sRGB-encoded glTF's linear baseColorFactor, and
 	# the shader's source_color uniform expects exactly that encoding, so the
 	# value crosses over untouched. Converting here washes everything out. This
 	# is checked against the export's own baseColorFactor, never by eye.
-	var colour := source.albedo_color
 	var mat := material.duplicate() as Material
 	if mat is ShaderMaterial:
 		var sm := mat as ShaderMaterial
@@ -181,7 +186,7 @@ func _material_for_surface(mi: MeshInstance3D, surface: int, derived: Dictionary
 		(mat as StandardMaterial3D).albedo_color = colour
 	mat.resource_name = "stylized:%s" % slot
 
-	derived[slot] = mat
+	derived[key] = mat
 	return mat
 
 # Removes every override this node put on, leaving the imported material to show

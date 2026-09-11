@@ -578,26 +578,25 @@ Transitions, and why the priorities:
 | `jump_land` | `slide` | `is_sliding` | **0** |
 | `slide` | `jump` | `velocity.y > 0` | **0** |
 | `slide` | `fall` | `not is_on_floor() and velocity.y <= 0` | 1 |
-| `slide` | `crouch` | `is_crouching` | 1 |
 | `slide` | `Locomotion` | `not is_sliding` | 2 |
 
 Same argument as the crouch's: cancelling into a jump clears `is_sliding` on the frame it
 launches, so `-> jump` and `-> Locomotion` are both eligible and the leap has to win.
 
-`slide -> crouch` is the **hand-off** (`docs/specs/pilot9-slide-crouch.md`): a slide ends
-crouched, not standing, unless `jump` took him out of it. `crouch` out of the hold ends the
-slide on the press, from the held pose - no run-out - and `pilot9.gd::_handle_crouch_and_slide`
-sets `is_crouching` true on that frame (also on the run-out's last frame in the no-hold legacy
-config). Both are grounded frames, so priority 1 does not race `-> fall` (that needs `not
-is_on_floor()`); it beats `-> Locomotion` so the crouch wins, and loses to `-> jump`, which
-clears `is_crouching` the same frame. `_drive_slide()` keeps `SlideScale` at 0 through the
-blend-out so the frozen hold pose is what cross-fades, not a slice of run-out. The `crouch`
-state is built before the `slide` state, so `_ensure_slide_state()` adds this pointing at a
-node that already exists.
+There is deliberately **no `slide -> crouch`**. One existed between 2026-09-07 and
+2026-09-09 (`docs/specs/pilot9-slide-crouch.md`), handing a finished slide into the crouch;
+it was reversed by `docs/specs/pilot9-slide-stand.md` because `crouch_speed` is 1.6 m/s and
+the hand-off spent every metre per second the slide had earned. **Every exit from a slide now
+ends standing.** `crouch` out of the hold clears `is_slide_holding` and lets the clip resume,
+so the run-out (frames 30-75) plays as the stand-up and carries its own ~5 m/s out with him;
+`slide -> Locomotion` takes it from there. `_drive_slide()` keeps `SlideScale` at 0 through
+the blend-out, which now parks the clip's final standing frame rather than the hold pose.
+`tests/test_pilot9_slide_stand.gd` asserts the transition's absence, so re-adding it in
+`_ensure_slide_state()` fails the suite rather than quietly changing the exit.
 
 A slide can only be *started* from a non-crouched state: `_can_start_slide()` and
 `_should_buffer_slide()` both require `not is_crouching`, so a `crouch` press made while
-crouched (including right after the hand-off, when `sprint_toggled` is still on) is a stand-up,
+crouched is a stand-up,
 not another slide.
 
 `fall -> slide` and `jump_land -> slide` are the **land-and-slide buffer**

@@ -1,0 +1,11 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/tabs/tab_empty.gd" id="1"]
+
+[node name="TabInventory" type="VBoxContainer"]
+script = ExtResource("1")
+
+[node name="Empty" type="Label" parent="."]
+layout_mode = 2
+theme_type_variation = &"BodyDim"
+text = "Nothing carried."

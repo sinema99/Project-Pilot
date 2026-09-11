@@ -666,16 +666,13 @@ func _ensure_slide_state(root: Node) -> bool:
 	# eligible and the leap has to win or it plays as a stand-up.
 	_set_transition(sm, SLIDE_STATE, "jump", 0.1, "velocity.y > 0", 0)
 	_set_transition(sm, SLIDE_STATE, "fall", 0.2, "not is_on_floor() and velocity.y <= 0", 1)
+	# The stand-up, and the only ordinary way out. There is deliberately NO `slide -> crouch`
+	# transition: a slide never hands off into a crouch (that was the 2026-09-07 rule and it
+	# cost the player every metre per second the slide earned - see
+	# docs/specs/pilot9-slide-stand.md, which reverses docs/specs/pilot9-slide-crouch.md).
+	# is_crouching cannot be true while is_sliding is, so such a transition would be dead
+	# wiring; tests/test_pilot9_slide_stand.gd asserts its absence rather than trusting that.
 	_set_transition(sm, SLIDE_STATE, "Locomotion", 0.2, "not is_sliding", 2)
-	# A slide hands off into a crouch: the run-out stands him up and he settles into the
-	# `crouch` state instead of standing Locomotion. is_crouching is set true on exactly the
-	# grounded frame the run-out completes (pilot9.gd::_handle_crouch_and_slide), so this
-	# cannot race `-> fall` despite sharing priority 1 - that one needs `not is_on_floor()`.
-	# Priority 1 is ahead of `-> Locomotion` (2), so the crouch wins the hand-off, and behind
-	# `-> jump` (0), which clears is_crouching the same frame: a jump out ends standing.
-	# `crouch` is built before this state (see the _ensure_* call order), so the node exists.
-	# See docs/specs/pilot9-slide-crouch.md.
-	_set_transition(sm, SLIDE_STATE, CROUCH_STATE, 0.2, "is_crouching", 1)
 
 	print("  state \"%s\" -> %s (TimeScale), %d states, %d transitions"
 		% [SLIDE_STATE, SLIDE_CLIP, sm.get_node_list().size(), sm.get_transition_count()])

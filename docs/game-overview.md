@@ -65,8 +65,23 @@ framing, and only the framing).
 
 ## Dimensions — the modeling reference
 
-Every number below is measured from the project, not chosen. `project.godot` does not override
-gravity, so all derivations use Godot's default **9.8 m/s²**.
+Every number below is measured from the project, not chosen. `project.godot` still does not
+override gravity — **but pilot9 no longer uses it.** As of the jump pass
+(`docs/specs/pilot9-jump-feel.md`) he carries his own `jump_gravity`, **31.9 m/s² rising and
+60.5 falling**, derived from `jump_height` and `jump_time_to_apex`. Godot's default 9.8 is
+still what EXIA, Setsuna and the *slide's* slope acceleration run on, so any derivation below
+has to say which of the two it means.
+
+**The jump pass shortened every gap by 40% and raised the apex by 0.6 m.** Airtime went from
+1.22 s to 0.73 s at unchanged speeds, and horizontal jump distance is nothing but airtime ×
+speed — so anything he *crosses* moved a long way out of reach. Anything he *climbs* moved the
+other way: the apex went 1.84 m → 2.42 m. **Gaps authored against the old numbers need
+re-measuring, and so does anything deliberately placed just out of jumping reach.**
+
+Airtime belongs to `jump_time_to_apex` alone — fall time is `t_apex / √fall_multiplier`, which
+has no height in it — so `jump_height` can be tuned on its own without giving the float back.
+The one leak is the apex hang, which is an absolute m/s band and so adds slightly more time to
+a shorter jump; ~50 ms across the 1.0 – 2.3 m range, and fenced by a test.
 
 | Thing | Value | Source |
 |---|---|---|
@@ -74,10 +89,12 @@ gravity, so all derivations use Godot's default **9.8 m/s²**.
 | Walk / run / sprint | **2.5 / 5.0 / 8.0 m/s** | `pilot9.gd` |
 | Mantle-able ledge | **0.9 – 1.9 m** | `climb_band_min` / `climb_band_max` |
 | Mantle needs | **0.6 m lip depth, 2.0 m headroom** | `climb_probe_reach`, `climb_headroom` |
-| Jump apex | **1.84 m** | `jump_velocity: 6.0` |
-| Airtime | **1.22 s** | derived |
-| Gap at run | ~6.1 m theoretical — **~5 m usable** | derived |
-| Gap at sprint | ~9.8 m theoretical — **~7–8 m usable** | derived |
+| Jump apex | **2.42 m** | `jump_height: 2.3` (+ the apex hang) |
+| Tap hop apex | **0.62 m** | `jump_cut: 0.4` |
+| Airtime | **0.73 s** | `jump_time_to_apex: 0.38`, `jump_fall_multiplier: 1.9` |
+| Gap at run | ~3.7 m theoretical — **~3 m usable** | derived |
+| Gap at sprint | ~5.9 m theoretical — **~4.5 m usable** | derived |
+| Terminal velocity | **28 m/s**, reached 6.8 m into a drop | `max_fall_speed` |
 | EXIA body | **4 × 8.55 × 3 m** | `mech.tscn` `BoxShape3D_body` |
 | EXIA speed | **7.0 m/s** — *slower than a sprinting pilot* | `mech.gd` |
 | EXIA lane clearance | **≥6 m wide, ≥11 m tall** | body + margin |
@@ -110,8 +127,9 @@ For scale, the largest environment ever built for this project is `test_platform
 
 ## Progression
 
-pilot9 **starts with** run · sprint · walk · jump · crouch · slide (+ buffer, hold, land-slide) ·
-mantle · turn-to-face · sprint FOV. All of it is built and played.
+pilot9 **starts with** run · sprint · walk · jump · crouch · slide (+ buffer, hold, land-slide,
+**slope momentum**) · mantle · turn-to-face · sprint FOV. All of it is built; everything but the
+slope momentum is played.
 
 | Map | Tech found in the map | Boss shape | Engineering cost |
 |---|---|---|---|
@@ -164,7 +182,7 @@ of work. It must not jump the queue.
 
 | | State |
 |---|---|
-| **pilot9** | **The main character.** Built on [Real Controller](https://github.com/fdemir/real-controller) (MIT), retargeted onto Godot's humanoid profile so Mixamo clips drop in through the import path. Nine specs between 2026-09-05 and 2026-09-07: retarget, jump-slide, climb/mantle, slide, slide-crouch, slide-hold, sprint-FOV, turn-to-face, mech-mount. **Played 2026-09-08 — feels good.** |
+| **pilot9** | **The main character.** Built on [Real Controller](https://github.com/fdemir/real-controller) (MIT), retargeted onto Godot's humanoid profile so Mixamo clips drop in through the import path. Eleven specs between 2026-09-05 and 2026-09-09: retarget, jump-slide, climb/mantle, slide, slide-crouch, slide-hold, slide-stand, sprint-FOV, turn-to-face, mech-mount, slope-momentum. **Played 2026-09-08 — feels good**, with two exceptions: slope momentum (built 2026-09-08) and slide-stand (built 2026-09-09, reversing slide-crouch so a slide ends standing and keeps its speed) are both unplayed. |
 | **EXIA** | The mech. Pilotable, with an authored embark for Setsuna and a cut-based board for pilot9. Node name `EXIA`. |
 | **Setsuna** | **Superseded.** Hand-animated, kept and maintained but not the direction. Her dash (`DASH_SPEED 18`, 0.3 s, 3 s cooldown) is the reference for pilot9's air dash. |
 
@@ -183,7 +201,7 @@ of work. It must not jump the queue.
 
 | File | Role |
 |---|---|
-| `scripts/pilot9.gd` | The controller. Movement, jump/double jump, crouch, slide (+ buffer, hold, land-slide), mantle, turn-to-face, sprint FOV, `enter_vehicle` / `exit_vehicle`. **Ability gates already exist as exports** — `can_slide`, `can_buffer_slide`, `can_hold_slide`, `can_climb`. Wiring those to save flags is how progression gets built. |
+| `scripts/pilot9.gd` | The controller. Movement (with **momentum** — speed above a sprint decays instead of being assigned over), jump/double jump, crouch, slide (+ buffer, hold, land-slide, **slope acceleration and the automatic slide on steep ground**), mantle, turn-to-face, sprint FOV, `enter_vehicle` / `exit_vehicle`. **Ability gates already exist as exports** — `can_slide`, `can_buffer_slide`, `can_hold_slide`, `can_climb`. Wiring those to save flags is how progression gets built. |
 | `scripts/pilot9_animation.gd` | Writes blend positions into the tree. |
 | `scripts/pilot9_build_scene.gd` | Builds `pilot9.tscn` from the retargeted GLB + Real Controller's tree. |
 | `scripts/mech.gd` | EXIA. `SPEED 7.0`, F to board. Duck-typed pilot contract (`has_method`), the authored embark, `seat_follow()` / `ride()` bone-carry, camera handover over `HANDOVER_TIME`. **`seat_follow()` is the machinery a shoulder-platform would reuse.** |

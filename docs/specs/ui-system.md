@@ -1,5 +1,10 @@
 # Spec: Basic UI System
 
+> **Superseded by `docs/specs/ui-shell.md`.** Kept for its reasoning, not its conclusions — the
+> Space-vs-F analysis, the `Esc` mouse-capture history, and the pause-mode gotcha are all still
+> true and still worth reading. Everything this file says about the *look*, the screen set, the
+> state model and the bindings has been replaced.
+
 ## Problem Statement
 
 Mech Delivery Prototype has no UI layer. The only on-screen element in the game is a single

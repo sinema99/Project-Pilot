@@ -1,7 +1,15 @@
 # Spec: a slide hands off into a crouch
 
-> **Status:** built 2026-09-07, revised the same day after the first play (see "The
-> 2026-09-07 pass" at the bottom). **The revision is unplayed.**
+> **Status: SUPERSEDED 2026-09-09 by `docs/specs/pilot9-slide-stand.md`.** Played
+> 2026-09-08 and rejected: ending in a crouch drops him to `crouch_speed` (1.6 m/s) and
+> spends everything the slide earned - "it does not feel good coming out of a slide and then
+> going super slow cause your crouching". A slide now stands up again, and the
+> `slide -> crouch` transition below no longer exists. Kept for the reasoning, which is still
+> the record of *why* the crouch hand-off was tried and what it cost; the `not is_crouching`
+> slide-start guard it added is the one part of it that survives.
+>
+> **Status when built:** built 2026-09-07, revised the same day after the first play (see
+> "The 2026-09-07 pass" at the bottom).
 > **Scene:** `scenes/pilot9.tscn`. **Character:** `assets/pilot9.glb`.
 > **Follows:** `docs/specs/pilot9-slide-hold.md`, whose "leaving the hold" rule this replaces,
 > and `docs/specs/pilot9-slide.md`, whose "it ends standing, not crouched" decision this

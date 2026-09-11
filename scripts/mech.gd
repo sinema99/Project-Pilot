@@ -65,8 +65,8 @@ const ANIM_STANDING := "MECH_standing"
 const ANIM_WALK_START := "MECH_walk_start"
 const ANIM_WALK := "MECH_walk"
 
-const PROMPT_ENTER := "F pilot"
-const PROMPT_EXIT := "F exit"
+const PROMPT_ENTER := "PILOT"
+const PROMPT_EXIT := "EXIT"
 
 # The camera handover. See docs/specs/mech-camera-handover.md.
 #
@@ -161,7 +161,10 @@ var travel_scale := 1.0
 # one skips the climb and takes her aboard on the spot, which is what F did before the climb
 # existed.
 @onready var embark_point: Marker3D = get_node_or_null("EmbarkPoint")
-@onready var prompt_label: Label = $UI/PromptLabel
+# The prompt is a keycap plus a word now, so visibility belongs to the row and
+# only the word changes. See docs/specs/ui-shell.md.
+@onready var prompt: Control = $UI/Prompt
+@onready var prompt_label: Label = $UI/Prompt/Row/Text
 
 func _ready() -> void:
 	interaction_area.body_entered.connect(_on_body_entered)
@@ -216,15 +219,15 @@ func _update_prompt() -> void:
 	# prompt goes away rather than offering an exit from a mech she is not settled into yet, or
 	# an entry into one she is halfway down the side of.
 	if embark_left > 0.0 or seal_left > 0.0 or unseal_left > 0.0 or disembark_left > 0.0:
-		prompt_label.visible = false
+		prompt.visible = false
 	elif pilot != null:
 		prompt_label.text = PROMPT_EXIT
-		prompt_label.visible = true
+		prompt.visible = true
 	elif player_in_range != null:
 		prompt_label.text = PROMPT_ENTER
-		prompt_label.visible = true
+		prompt.visible = true
 	else:
-		prompt_label.visible = false
+		prompt.visible = false
 
 func _unhandled_input(event: InputEvent) -> void:
 	if pilot != null and event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:

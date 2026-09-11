@@ -1,83 +1,129 @@
-[gd_resource type="Theme" load_steps=9 format=3]
+[gd_resource type="Theme" format=3 uid="uid://ceakpamk0cju5"]
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_body"]
-bg_color = Color(0.227451, 0.207843, 0.196078, 1)
+[ext_resource type="FontFile" uid="uid://c8o15vyf28ygy" path="res://assets/fonts/BarlowCondensed-Regular.ttf" id="1_regular"]
+[ext_resource type="FontFile" uid="uid://b7q84xxvqx6lt" path="res://assets/fonts/BarlowCondensed-Medium.ttf" id="2_medium"]
+[ext_resource type="FontFile" uid="uid://dyo2rnaipi8h2" path="res://assets/fonts/BarlowCondensed-SemiBold.ttf" id="3_semibold"]
+
+[sub_resource type="FontVariation" id="FontVariation_row"]
+base_font = ExtResource("2_medium")
+spacing_glyph = 3
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_row"]
+content_margin_left = 16.0
+content_margin_top = 10.0
+content_margin_right = 16.0
+content_margin_bottom = 10.0
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_row_selected"]
+content_margin_left = 16.0
+content_margin_top = 10.0
+content_margin_right = 16.0
+content_margin_bottom = 10.0
+bg_color = Color(1, 1, 1, 1)
+
+[sub_resource type="FontVariation" id="FontVariation_tab"]
+base_font = ExtResource("3_semibold")
+spacing_glyph = 4
+
+[sub_resource type="StyleBoxLine" id="StyleBoxLine_rule"]
+color = Color(1, 1, 1, 0.85)
+
+[sub_resource type="FontVariation" id="FontVariation_hint"]
+base_font = ExtResource("1_regular")
+spacing_glyph = 2
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_keycap"]
+content_margin_left = 8.0
+content_margin_top = 3.0
+content_margin_right = 8.0
+content_margin_bottom = 3.0
+draw_center = false
 border_width_left = 1
 border_width_top = 1
 border_width_right = 1
 border_width_bottom = 1
-border_color = Color(0.101961, 0.078431, 0.062745, 1)
+border_color = Color(1, 1, 1, 0.85)
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_header"]
-bg_color = Color(0.937255, 0.913725, 0.87451, 1)
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_outline"]
+content_margin_left = 24.0
+content_margin_top = 24.0
+content_margin_right = 24.0
+content_margin_bottom = 24.0
+draw_center = false
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(1, 1, 1, 0.85)
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_btn_normal"]
-content_margin_left = 16.0
-content_margin_top = 8.0
-content_margin_right = 16.0
+[sub_resource type="FontVariation" id="FontVariation_title"]
+base_font = ExtResource("3_semibold")
+spacing_glyph = 6
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_tab"]
+content_margin_left = 4.0
+content_margin_top = 4.0
+content_margin_right = 4.0
 content_margin_bottom = 8.0
-bg_color = Color(0.278431, 0.254902, 0.239216, 1)
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_btn_hover"]
-content_margin_left = 16.0
-content_margin_top = 8.0
-content_margin_right = 16.0
-content_margin_bottom = 8.0
-bg_color = Color(0.352941, 0.32549, 0.305882, 1)
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_btn_focus"]
-content_margin_left = 16.0
-content_margin_top = 8.0
-content_margin_right = 16.0
-content_margin_bottom = 8.0
-bg_color = Color(0.352941, 0.32549, 0.305882, 1)
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_btn_pressed"]
-content_margin_left = 16.0
-content_margin_top = 8.0
-content_margin_right = 16.0
-content_margin_bottom = 8.0
-bg_color = Color(0.180392, 0.164706, 0.152941, 1)
-
-[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_close"]
-content_margin_left = 10.0
-content_margin_top = 2.0
-content_margin_right = 10.0
-content_margin_bottom = 2.0
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_close_hover"]
-content_margin_left = 10.0
-content_margin_top = 2.0
-content_margin_right = 10.0
-content_margin_bottom = 2.0
-bg_color = Color(0.866667, 0.839216, 0.792157, 1)
 
 [resource]
-default_font_size = 16
-Button/colors/font_color = Color(0.929412, 0.901961, 0.854902, 1)
-Button/colors/font_focus_color = Color(0.929412, 0.901961, 0.854902, 1)
-Button/colors/font_hover_color = Color(0.929412, 0.901961, 0.854902, 1)
-Button/colors/font_pressed_color = Color(0.929412, 0.901961, 0.854902, 1)
-Button/font_sizes/font_size = 18
-Button/styles/disabled = SubResource("StyleBoxFlat_btn_normal")
-Button/styles/focus = SubResource("StyleBoxFlat_btn_focus")
-Button/styles/hover = SubResource("StyleBoxFlat_btn_hover")
-Button/styles/normal = SubResource("StyleBoxFlat_btn_normal")
-Button/styles/pressed = SubResource("StyleBoxFlat_btn_pressed")
-CloseButton/base_type = &"Button"
-CloseButton/colors/font_color = Color(0.101961, 0.078431, 0.062745, 1)
-CloseButton/colors/font_focus_color = Color(0.101961, 0.078431, 0.062745, 1)
-CloseButton/colors/font_hover_color = Color(0.101961, 0.078431, 0.062745, 1)
-CloseButton/colors/font_pressed_color = Color(0.101961, 0.078431, 0.062745, 1)
-CloseButton/font_sizes/font_size = 18
-CloseButton/styles/focus = SubResource("StyleBoxFlat_close_hover")
-CloseButton/styles/hover = SubResource("StyleBoxFlat_close_hover")
-CloseButton/styles/normal = SubResource("StyleBoxEmpty_close")
-CloseButton/styles/pressed = SubResource("StyleBoxEmpty_close")
-Label/colors/font_color = Color(0.929412, 0.901961, 0.854902, 1)
-PanelContainer/styles/panel = SubResource("StyleBoxFlat_body")
-WindowHeader/base_type = &"PanelContainer"
-WindowHeader/styles/panel = SubResource("StyleBoxFlat_header")
-WindowTitle/base_type = &"Label"
-WindowTitle/colors/font_color = Color(0.101961, 0.078431, 0.062745, 1)
-WindowTitle/font_sizes/font_size = 20
+default_font = ExtResource("1_regular")
+default_font_size = 18
+Body/base_type = &"Label"
+Body/colors/font_color = Color(1, 1, 1, 1)
+Body/font_sizes/font_size = 18
+Body/fonts/font = ExtResource("1_regular")
+BodyDim/base_type = &"Label"
+BodyDim/colors/font_color = Color(1, 1, 1, 0.45)
+BodyDim/font_sizes/font_size = 18
+BodyDim/fonts/font = ExtResource("1_regular")
+Button/colors/font_color = Color(1, 1, 1, 1)
+Button/colors/font_disabled_color = Color(1, 1, 1, 0.45)
+Button/colors/font_focus_color = Color(0, 0, 0, 1)
+Button/colors/font_hover_color = Color(0, 0, 0, 1)
+Button/colors/font_pressed_color = Color(0, 0, 0, 1)
+Button/font_sizes/font_size = 24
+Button/fonts/font = SubResource("FontVariation_row")
+Button/styles/disabled = SubResource("StyleBoxEmpty_row")
+Button/styles/focus = SubResource("StyleBoxFlat_row_selected")
+Button/styles/hover = SubResource("StyleBoxFlat_row_selected")
+Button/styles/normal = SubResource("StyleBoxEmpty_row")
+Button/styles/pressed = SubResource("StyleBoxFlat_row_selected")
+DialogTitle/base_type = &"Label"
+DialogTitle/colors/font_color = Color(1, 1, 1, 1)
+DialogTitle/font_sizes/font_size = 28
+DialogTitle/fonts/font = SubResource("FontVariation_tab")
+HSeparator/constants/separation = 1
+HSeparator/styles/separator = SubResource("StyleBoxLine_rule")
+HintKey/base_type = &"Label"
+HintKey/colors/font_color = Color(1, 1, 1, 1)
+HintKey/font_sizes/font_size = 16
+HintKey/fonts/font = SubResource("FontVariation_hint")
+HintLabel/base_type = &"Label"
+HintLabel/colors/font_color = Color(1, 1, 1, 0.45)
+HintLabel/font_sizes/font_size = 16
+HintLabel/fonts/font = SubResource("FontVariation_hint")
+Keycap/base_type = &"PanelContainer"
+Keycap/styles/panel = SubResource("StyleBoxFlat_keycap")
+Label/colors/font_color = Color(1, 1, 1, 1)
+PanelContainer/styles/panel = SubResource("StyleBoxFlat_outline")
+ScreenTitle/base_type = &"Label"
+ScreenTitle/colors/font_color = Color(1, 1, 1, 1)
+ScreenTitle/font_sizes/font_size = 44
+ScreenTitle/fonts/font = SubResource("FontVariation_title")
+SectionHeader/base_type = &"Label"
+SectionHeader/colors/font_color = Color(1, 1, 1, 0.45)
+SectionHeader/font_sizes/font_size = 22
+SectionHeader/fonts/font = SubResource("FontVariation_tab")
+TabButton/base_type = &"Button"
+TabButton/colors/font_color = Color(1, 1, 1, 1)
+TabButton/colors/font_focus_color = Color(1, 1, 1, 1)
+TabButton/colors/font_hover_color = Color(1, 1, 1, 1)
+TabButton/colors/font_pressed_color = Color(1, 1, 1, 1)
+TabButton/font_sizes/font_size = 22
+TabButton/fonts/font = SubResource("FontVariation_tab")
+TabButton/styles/disabled = SubResource("StyleBoxEmpty_tab")
+TabButton/styles/focus = SubResource("StyleBoxEmpty_tab")
+TabButton/styles/hover = SubResource("StyleBoxEmpty_tab")
+TabButton/styles/normal = SubResource("StyleBoxEmpty_tab")
+TabButton/styles/pressed = SubResource("StyleBoxEmpty_tab")

@@ -85,14 +85,81 @@ enum CameraMode {
 @export_range(0.1, 10.0, 0.1, "or_greater") var walk_speed: float = 2.5
 ## Speed multiplier when sprinting. Should be higher than normal speed.
 @export_range(0.1, 30.0, 0.1, "or_greater") var sprint_speed: float = 8.0
-## Vertical velocity applied when jumping.
-@export_range(1.0, 20.0, 0.1) var jump_velocity: float = 6.0
+## The jump, specified the way it reads on screen: how high, and how long to the top. The
+## velocity and the gravity are DERIVED from these two - see `jump_velocity` and
+## `jump_gravity` below - which is the whole reason the jump stopped being floaty. Tuning a
+## velocity against a gravity nobody chose (stock Godot 9.8, real Earth) is two dials
+## fighting over one arc; these two are independent, and time is the one that was wrong.
+## Height is deliberately unchanged from the 1.84 m the 6.0 m/s jump gave, so every mantle
+## band and every lip in the map keeps the relationship to his jump that it had.
+## See docs/specs/pilot9-jump-feel.md.
+@export_range(0.2, 5.0, 0.05) var jump_height: float = 2.3
+## Seconds from the floor to the top of the jump. The floatiness dial. 0.61 s is what the
+## old numbers worked out to; 0.38 is this pass.
+@export_range(0.05, 1.5, 0.01) var jump_time_to_apex: float = 0.38
+## How much harder he falls than he rises, as a multiple of `jump_gravity`. 1.0 is symmetric
+## real physics and reads as swimming - a rise is commitment, a slow fall is nothing. Every
+## platformer worth the name runs somewhere in 1.5 - 2.5.
+@export_range(1.0, 4.0, 0.05) var jump_fall_multiplier: float = 1.9
+## Variable jump height. Releasing `jump` while still rising clamps his upward speed to this
+## fraction of `jump_velocity`, so a tap is a hop and a hold is the full arc. 1.0 turns it
+## off and every jump is the same jump again, which is what he had before this pass and half
+## of what made it feel floaty: the player had no authority over the arc.
+@export_range(0.0, 1.0, 0.05) var jump_cut: float = 0.4
+## The apex hang. Within this many m/s of the top of the arc - up or down - gravity is scaled
+## by `jump_apex_scale`. Celeste's half-gravity trick, and it makes the jump feel SNAPPIER
+## rather than floatier: the airtime it adds is spent at the one part of the arc the player
+## is actually aiming from. 0.0 turns it off.
+@export_range(0.0, 6.0, 0.1) var jump_apex_speed: float = 1.5
+## What gravity is multiplied by inside the apex band. 1.0 also turns the hang off.
+@export_range(0.1, 1.0, 0.05) var jump_apex_scale: float = 0.6
+## Terminal velocity, m/s. He stops accelerating downward here - reached 8.1 m into a drop at
+## the shipping numbers, so short hops never meet it and the map's long drops stay readable.
+@export_range(1.0, 100.0, 0.5) var max_fall_speed: float = 28.0
+## Coyote time: seconds after walking off a ledge that a `jump` press still counts as a floor
+## jump. Not garnish. Halving the airtime halved the margin on every edge launch, and
+## forgiveness is what keeps a fast jump from reading as a punishing one - Celeste ships
+## 0.1 s of this and is not a floaty game. Spends no air jump. 0.0 restores the old
+## frame-exact behaviour.
+@export_range(0.0, 0.5, 0.01) var coyote_time: float = 0.1
+## Jump buffer: seconds before landing that a `jump` press is remembered for and spent on the
+## touchdown frame. The other half of the forgiveness, and the same argument. Only ever armed
+## when there is no air jump left to spend - see _handle_gravity_and_jump().
+@export_range(0.0, 0.5, 0.01) var jump_buffer_time: float = 0.1
 ## Extra jumps available while airborne, on top of the one off the floor. 1 is a double
 ## jump; 0 is stock Real Controller. Each costs the full `jump_velocity`, replacing the
 ## fall rather than adding to it, so a second jump taken late reads the same as one taken
 ## early. Refilled on every grounded frame - see _handle_gravity_and_jump().
 @export_range(0, 5, 1) var air_jumps: int = 1
 @export var can_walk: bool = true
+## Momentum. How fast speed above a sprint bleeds back down to one, in m/s^2, while his feet
+## are on the floor. Stock Real Controller has no such thing - it assigns the horizontal
+## velocity outright every frame, which deletes whatever a slide down a slope earned on the
+## frame the slide ends. Below a sprint nothing here applies and the stock assignment runs
+## untouched, dead stop included. See docs/specs/pilot9-slope-momentum.md.
+@export_range(0.0, 60.0, 0.5) var momentum_decay: float = 12.0
+## The same in the air, where 0.0 - nothing takes speed off him at all - is the shipping
+## value: a jump out of a fast slide is the whole point of gaining the speed. This is the
+## DRIVE rate only, paid while the stick is still pushing into his own travel; a released
+## stick pays `air_momentum_brake` below.
+@export_range(0.0, 60.0, 0.5) var air_momentum_decay: float = 0.0
+## The airborne brake, in m/s^2, and the answer to a pilot9 who drifts. `air_momentum_decay`
+## is what CARRYING speed through a jump costs - zero, deliberately. This is what it costs
+## the moment he stops asking for it in the air: stick released, pushed across his travel, or
+## against it. Without it a walk off a lip flew him sideways forever, so there was no way to
+## drop down a shaft in a straight line (2026-09-09: *"i need pilot to be able to fall down
+## long pipes in a straight line"*). At 40 m/s^2 a released sprint is gone in 0.2 s and 0.8 m,
+## which reads as letting go rather than as a wall. Raise it toward `momentum_brake` for a
+## harder stop; 0.0 restores the old flying fall.
+@export_range(0.0, 200.0, 1.0) var air_momentum_brake: float = 40.0
+## The brake, in m/s^2, and the answer to a controller that feels like ice. `momentum_decay`
+## above is what he pays for CARRYING speed - stick forward, going where he is already going.
+## This is what he pays the moment he stops asking for it: stick released, stick pushed across
+## or against his travel, or crouched. Deliberately several times the drive rate, because
+## momentum is meant to reward driving into it and never to read as a loss of control - stock
+## Real Controller stops dead on a released stick, and the closer this is to that, the more
+## the momentum reads as a deliberate verb rather than as skating.
+@export_range(0.0, 200.0, 1.0) var momentum_brake: float = 60.0
 ## Speed while crouched. Slower than walk_speed - the crouch clip's own cadence is what
 ## this is matched against, so changing one without the other makes him skate or moonwalk.
 @export_range(0.1, 10.0, 0.1, "or_greater") var crouch_speed: float = 1.6
@@ -107,10 +174,24 @@ enum CameraMode {
 ##
 ## It is also HELD rather than played straight through. At `slide_hold_time` the clip and
 ## the curve both stop on the settled floor pose and he carries on at the speed he reached,
-## for as long as the player wants: `crouch` again plays out the run-out and hands him off
-## into a crouch, `jump` leaves immediately and standing. That is what makes a long slope one
-## slide instead of a queue of 1.25 s ones. See docs/specs/pilot9-slide-hold.md and
-## docs/specs/pilot9-slide-crouch.md.
+## for as long as the player wants: `crouch` again plays out the run-out, which stands him
+## back up without giving the speed back, and `jump` leaves immediately. That is what makes a
+## long slope one slide instead of a queue of 1.25 s ones. See docs/specs/pilot9-slide-hold.md
+## and docs/specs/pilot9-slide-stand.md - every exit from a slide ends STANDING, never
+## crouched.
+##
+## And it is no longer FLAT. Gravity accelerates a slide down a grade and friction bleeds
+## that gain back off, so a slope is fuel rather than scenery; steep ground starts a slide by
+## itself; and what a slide reached leaves with him instead of being deleted by the next
+## _apply_movement(). All four dials below the baked block, plus `momentum_decay` in the
+## Movement group, belong to that. See docs/specs/pilot9-slope-momentum.md.
+##
+## And it is no longer SLOWER THAN A SPRINT. The clip alone is about 5.2 m/s against a
+## sprint's 8.0, which made the one move meant to gain ground a move that lost it, so
+## `slide_entry_boost` and `slide_boost_time` put a floor under the curve: a slide opens
+## above the speed he entered at and eases back down to it over two seconds. The clip, the
+## hold speed and the bonus are all untouched - the floor only ever raises what they ask
+## for. See docs/specs/pilot9-slide-boost.md.
 
 @export_group("Slide")
 @export var can_slide: bool = true
@@ -153,6 +234,46 @@ enum CameraMode {
 ## (an old pilot9.tscn, or a build that refused the frame), and the slide falls back to
 ## playing straight through - the same thing `can_hold_slide` off does.
 @export var slide_hold_time: float = 0.0
+
+## The burst. A slide out of a sprint used to be SLOWER than the sprint - the clip travels
+## slide_distance in slide_duration and that is about 5.2 m/s against a sprint's 8.0 - so the
+## one move meant to get him somewhere faster cost him a third of his speed. These two put a
+## FLOOR under the clip: it opens above the speed he entered at and eases back down to it.
+## Neither touches the curve, the hold speed or the bonus. See docs/specs/pilot9-slide-boost.md.
+##
+## Multiplier on the entry speed for the floor at t = 0. At the default sprint that is a
+## slide opening at 10.8 m/s. 1.0 is no burst at all - the floor sits flat at the entry
+## speed, which is still enough to stop a slide being a brake.
+@export_range(1.0, 3.0, 0.05) var slide_entry_boost: float = 1.35
+## Seconds the floor takes to ease from the boost back down to the entry speed, linearly.
+## Wall clock from _start_slide(), not clip time: a hold freezes the clip and the whole
+## meaning of this number is that a player still down there afterwards is off the burst.
+## 0.0 also turns the burst off.
+@export_range(0.0, 10.0, 0.1) var slide_boost_time: float = 2.0
+
+## Slope Settings
+## -----------------------------------------------------------------------------
+## The gravity term the slide never had. None of these touch the clip's own speed: they move
+## `_slide_bonus`, a single scalar added on top of it, so a slide on flat ground is still the
+## slide the curve describes. See docs/specs/pilot9-slope-momentum.md.
+
+## Multiplier on the physical gravity-along-the-grade term. 1.0 is real physics - about
+## 4.2 m/s^2 of horizontal gain on a 30 degree face - and 0.0 is the old flat slide, which
+## is the honest off switch for this whole feature.
+@export_range(0.0, 3.0, 0.05) var slide_slope_accel: float = 1.0
+## How fast slope-gained speed bleeds off, in m/s^2. Applied to `_slide_bonus` ONLY, never
+## to the clip's speed, which is what leaves the flat-ground hold the constant unending one
+## docs/specs/pilot9-slide-hold.md called for: on the flat there is nothing else to decay.
+@export_range(0.0, 20.0, 0.1) var slide_friction: float = 2.0
+## Ceiling on a slide's total horizontal speed, clip plus bonus. 2.5x a sprint.
+@export_range(1.0, 60.0, 0.5) var slide_max_speed: float = 20.0
+## Steep ground slides him whether he asked for it or not - no press, no sprint needed, and
+## he cannot stand up until it flattens. `jump` still leaves.
+@export var can_auto_slide: bool = true
+## The grade he can no longer keep his feet on, in degrees. The band this opens is bounded
+## above by the body's own `floor_max_angle` (45 by default): steeper than that is not a
+## floor at all and he simply falls off it.
+@export_range(5.0, 60.0, 1.0) var slide_auto_angle: float = 35.0
 
 ## Climb Settings
 ## -----------------------------------------------------------------------------
@@ -272,11 +393,57 @@ enum CameraMode {
 ## dial and the same shipping value as camera_transition_speed above, so the lens and the
 ## spring arm move at a rate the player reads as one camera rather than two.
 @export_range(1.0, 20.0, 0.1) var fov_transition_speed: float = 8.0
+## The radius of the sphere the SpringArm3D itself sweeps - the hard backstop, and the least
+## air the lens is ever allowed. A bare arm carries no shape at all and casts a hairline ray
+## instead, which is what let the near plane slice through pillar edges and doorframes.
+## See docs/specs/pilot9-camera-collision.md.
+@export_range(0.05, 1.0, 0.01) var camera_clearance: float = 0.3
+## Added to `camera_clearance` to get the radius of OUR probe, the fatter sphere in
+## _camera_obstruction_length(). Fatter means it trips earlier, and that head start is the
+## room the damping needs. This is the pop dial: at 0.0 the probe and the backstop agree,
+## the arm's own instant clamp does all the work again, and the snap comes back.
+@export_range(0.0, 1.0, 0.01) var camera_probe_lead: float = 0.35
+## How fast the arm shortens when something is in the way. Toward a wall the camera has to
+## win the race, so this is deliberately several times `camera_return_speed`.
+@export_range(1.0, 40.0, 0.5) var camera_retract_speed: float = 16.0
+## How fast it lengthens again once the way is clear. Slow on purpose: nothing needs to be
+## right quickly in this direction, and the gap between the two rates is what stops a
+## grazing hit-miss-hit from oscillating the shot at 60 Hz.
+@export_range(0.5, 20.0, 0.1) var camera_return_speed: float = 3.0
+## The floor on the damped length. Note this is a floor on OUR number, not a promise about
+## the camera: the arm's own backstop may still take it under this in a corner, which is the
+## safety net doing its job.
+@export_range(0.0, 5.0, 0.1) var camera_min_distance: float = 0.8
 
 ## Seconds of clip the hold's speed is averaged over - see _slide_speed_at(). Long enough to
 ## span several of `slide_motion`'s 64 segments and short enough to still be local to the
 ## hold frame; the curve is smooth through there, so nothing in between is delicate.
 const SLIDE_SPEED_WINDOW := 0.05
+
+## A held slide this slow has run out of hill. Reached only by sliding UP one - the bonus
+## goes negative there and eats the clip's speed - and the slide ends itself, standing, rather
+## than leaving him creeping up a grade on his back. It is the one exit that does not play the
+## run-out: not a dial, because there is no run-out worth playing at 1.5 m/s whatever the rest
+## of the slide is tuned to, and the curve would only accelerate him forward again.
+const SLIDE_STALL_SPEED := 1.5
+
+## How far below his feet move_and_slide() may reach for the floor. Godot's default is 0.1 m,
+## which one frame of a fast slide out-runs on any real grade - he leaves the surface at the
+## crest and finishes the ramp in hops, each of which ends the slide. 0.5 m covers a frame at
+## 20 m/s on a 45 degree face, and is the same value and the same reason as player.gd's.
+const FLOOR_SNAP_LENGTH := 0.5
+
+## Metres per second below which two speeds are the same speed. Only ever used to keep the
+## momentum branch of _apply_movement() off a velocity that is already at its target.
+const SPEED_EPSILON := 0.001
+
+## Metres per second at or under which he counts as stopped, for the one thing that reads it:
+## the sprint toggle clearing itself on a standstill. See _update_sprint_stop().
+##
+## Not SPEED_EPSILON (0.001), which a standable slope's residual velocity clears without him
+## going anywhere - he would creep downhill at 0.05 m/s with the sprint quietly still on and
+## no way to see why. 0.1 is far under a crouch's 1.6 and above that residue.
+const SPRINT_STOP_SPEED := 0.1
 
 ## The camera pitch exit_vehicle() lands on - level, and the same value and intent as
 ## player.gd's EXIT_PITCH. He is put down at EXIA's ExitPoint looking at the machine he just
@@ -295,17 +462,52 @@ const CLIMB_PROBE_MARGIN := 0.15
 var input_dir: Vector2 = Vector2.ZERO
 var input_strength: float = 0.0
 var direction: Vector3 = Vector3.ZERO
-## Sprint is a toggle, not a hold: `sprint` pressed flips this, `walk` pressed clears it.
-## Flipped in _update_sprint_toggle() before anything reads it. `is_sprinting` below is this
-## AND actually moving AND not crouched; this is the raw intent, and it survives a jump.
+## Sprint is a toggle, not a hold: `sprint` pressed flips this, `walk` pressed clears it, and
+## so does coming to a complete stop. Flipped in _update_sprint_toggle() before anything reads
+## it. `is_sprinting` below is this AND actually moving AND not crouched; this is the raw
+## intent, and it survives a jump.
 var sprint_toggled: bool = false
+## Whether a stop is still owed a clear - set by any moving frame, spent by the frame he
+## arrives at rest. The stop is an EDGE, and this is the whole of what makes it one: without
+## it, standing still would be a state that ate a `sprint` press the frame after it was made.
+## See _update_sprint_stop(), and docs/specs/pilot9-sprint-stop.md.
+var _sprint_stop_armed: bool = false
 var is_sprinting: bool = false
 var is_walking: bool = false
 var is_jumping: bool = false
-## Air jumps not yet spent this flight. Refilled to `air_jumps` on every grounded frame,
-## so coyote-style leniency is not a thing here: leave the floor and the count is what it
-## was on the last frame he touched it.
+
+## The speed he leaves the floor at, DERIVED from `jump_height` and `jump_time_to_apex`
+## rather than dialled in. Read-only, and still called `jump_velocity` because the three
+## sites that assign it to `velocity.y` - the floor jump, the air jump and the mantle exit -
+## do not care where the number came from.
+var jump_velocity: float:
+	get: return 2.0 * jump_height / jump_time_to_apex
+## Gravity while RISING, m/s^2, derived from the same two. Falling is this times
+## `jump_fall_multiplier`, and both are scaled by the apex hang - see _gravity_scale().
+##
+## This is pilot9's own gravity and NOT the project's. get_gravity() is still what the slide
+## reads in _apply_slide_bonus(), and `slide_slope_accel: 1.0` is documented against the 9.8
+## it returns, so raising the project default to get a better jump would have made every
+## slide 2.6x steeper and re-weighted EXIA on the way past. The cost of keeping it local is
+## that pilot9 no longer honours Area3D gravity overrides; none exist in the project.
+var jump_gravity: float:
+	get: return 2.0 * jump_height / (jump_time_to_apex * jump_time_to_apex)
+
+## Air jumps not yet spent this flight. Refilled to `air_jumps` on every grounded frame:
+## leave the floor and the count is what it was on the last frame he touched it. `coyote_time`
+## is leniency on the FLOOR jump only and never refills this - a coyote jump is the floor
+## jump he was a frame late for, not a free extra one.
 var _air_jumps_left: int = 0
+## Seconds of coyote time left. Refilled to `coyote_time` on every grounded frame, ticked
+## down while airborne, and zeroed by every jump taken. That last one is load-bearing:
+## without it the grace outlives the floor jump that used it, and a second press 80 ms later
+## takes a free jump that never touches `_air_jumps_left`.
+var _coyote_left: float = 0.0
+## Seconds a buffered `jump` press has left before it lapses. Armed only when a press is made
+## airborne with no air jump to spend, and consumed on the first grounded frame. Unlike
+## `_slide_buffered` this one DOES lapse - a jump remembered from the top of a long fall is
+## not a jump the player is still asking for. See docs/specs/pilot9-jump-feel.md.
+var _jump_buffered: float = 0.0
 ## Toggled by the `crouch` action, never held. Read every frame by the AnimationTree's
 ## advance expressions and by _apply_movement.
 var is_crouching: bool = false
@@ -329,10 +531,23 @@ var is_slide_holding: bool = false
 ## the frame the motion is applied to. Frozen at `slide_hold_time` for the length of a hold.
 var _slide_time: float = 0.0
 ## The speed the hold runs at, measured off the curve at the moment the hold begins and then
-## held flat - no friction, no gravity term, by the user's call. Constant means a slope
-## carries him further only because move_and_slide() projects a constant horizontal velocity
-## down it, which is the honest version of "slide down slopes" and costs no new tuning.
+## held flat. Flat is still the right word: it is the CLIP's contribution to his speed, and
+## the clip does not know about slopes. Everything the terrain adds rides in `_slide_bonus`
+## beside it and is added at the point the velocity is written.
 var _slide_hold_speed: float = 0.0
+## Metres per second the SLOPE has given him, over and above whatever the clip is doing.
+## Gravity along the grade adds to it, `slide_friction` bleeds it back toward zero, and it is
+## reset with every slide. Sliding uphill drives it negative, which is how a slide up a hill
+## slows down and eventually stalls out. The one number to watch when this is being tuned.
+var _slide_bonus: float = 0.0
+## Seconds since _start_slide(), the clock `slide_boost_time` is measured on. Deliberately
+## NOT _slide_time: that one freezes for the length of a hold, and a burst that pauses with
+## it would hand a player who holds the slide down an unending 10.8 m/s.
+var _slide_elapsed: float = 0.0
+## The speed the burst is measured against - his horizontal speed on the entry frame, held
+## down to `sprint_speed` so a fast entry cannot compound into a faster floor. Zero for the
+## automatic slide off steep ground, which starts from a standstill and is meant to.
+var _slide_reference_speed: float = 0.0
 ## The heading the slide is travelling on, and the ONE thing his body and his mesh share
 ## while one is running: _steer_slide() turns it, _apply_slide_velocity() drives the body
 ## along it, and _handle_character_rotation() writes the mesh straight onto it. Nothing
@@ -381,6 +596,15 @@ var frozen: bool = false
 
 var target_camera_distance: float = 3.5
 var is_transitioning_camera: bool = false
+## The length the camera MODE wants, with the walls not consulted - what spring_length used
+## to be back when nothing but _update_camera_mode() ever wrote it. It is kept separately
+## now because walls write the real spring_length, and the character mesh's visibility reads
+## THIS one: keying visibility off the wall-aware length would blink his body out every time
+## a wall squeezed the camera in, which is a new glitch traded for an old one.
+var _camera_mode_length: float = 3.5
+## The probe cast every frame by _camera_obstruction_length(), built once in
+## _setup_camera_collision() rather than per frame - it is the same query with a new origin.
+var _camera_probe: PhysicsShapeQueryParameters3D = null
 ## The FOV with no sprint boost on it, read off the rig's camera at _ready() rather than
 ## declared here. _handle_camera_fov() writes camera_3d.fov every frame, so a constant in
 ## this file would silently clobber whatever the Camera3D is tuned to in the editor and give
@@ -388,9 +612,14 @@ var is_transitioning_camera: bool = false
 var base_fov: float = 75.0
 
 func _ready() -> void:
+	# Set here rather than on the scene so it cannot be lost to a rebuild of pilot9.tscn, and
+	# so the reason for it sits next to the number. See FLOOR_SNAP_LENGTH.
+	floor_snap_length = FLOOR_SNAP_LENGTH
 	base_fov = camera_3d.fov
 	target_camera_distance = 0.0 if camera_mode == CameraMode.FIRST_PERSON else camera_distance
+	_camera_mode_length = target_camera_distance
 	spring_arm.spring_length = target_camera_distance
+	_setup_camera_collision()
 	if character:
 		character.visible = camera_mode == CameraMode.THIRD_PERSON
 
@@ -434,7 +663,7 @@ func _physics_process(delta: float) -> void:
 	if is_sliding:
 		_apply_slide_velocity(delta)
 	else:
-		_apply_movement()
+		_apply_movement(delta)
 	move_and_slide()
 
 func handle_frozen_movement() -> void:
@@ -445,23 +674,66 @@ func handle_frozen_movement() -> void:
 	is_walking = false
 
 ## Sprint toggles rather than being held: `sprint` (Shift / right trigger) flips it, `walk`
-## (Alt) clears it. A toggle means letting go of the button mid-jump does not silently drop
-## him out of a run - the intent carries through the air, so a jump buffered into a slide
-## still reads the sprint it started with, and the player is not punished for an accidental
-## release. Called before _handle_crouch_and_slide() so the slide checks see this frame's
-## value. Frozen the press is ignored: handle_frozen_movement() forces the effective
-## is_sprinting false anyway, and the toggle should come back untouched after a pause.
+## (Alt) clears it, and a complete stop clears it. A toggle means letting go of the button
+## mid-jump does not silently drop him out of a run - the intent carries through the air, so a
+## jump buffered into a slide still reads the sprint it started with, and the player is not
+## punished for an accidental release. Called before _handle_crouch_and_slide() so the slide
+## checks see this frame's value.
+##
+## Frozen the press is ignored: handle_frozen_movement() forces the effective is_sprinting
+## false anyway, and the toggle should come back untouched after a pause. The freeze also
+## DISARMS the stop, and has to - the freeze zeroes both `velocity` and `input_dir`, so the
+## first unfrozen frame is indistinguishable from a standstill and would otherwise spend the
+## clear on a pause. A pause is not a stop.
+##
+## The stop is checked ABOVE the press so that a press landing on the same frame wins. That is
+## the standing-still-then-pressing case, and it is the only reason the two are this way round.
 func _update_sprint_toggle() -> void:
 	if frozen:
+		_sprint_stop_armed = false
 		return
+	_update_sprint_stop(is_on_floor())
 	if Input.is_action_just_pressed("sprint"):
 		sprint_toggled = not sprint_toggled
 	elif Input.is_action_just_pressed("walk"):
 		sprint_toggled = false
 
+## Clears the sprint intent on the frame he arrives at rest. See
+## docs/specs/pilot9-sprint-stop.md.
+##
+## A complete stop is on the floor, at rest, and not asking to move. All three matter:
+##
+## - **On the floor**, because a pilot9 in the air has not stopped, he is between things. An
+##   airborne clear would fight the very thing the toggle exists for - `air_momentum_brake`
+##   walks a stickless fall down to a straight vertical drop, and that is a fall, not a halt.
+## - **At rest**, at SPRINT_STOP_SPEED rather than exactly zero.
+## - **Stick centred**, because the stick is the player's request. Pinned head-on against a
+##   wall at 0 m/s with the stick buried he is still ASKING to run - the wall stopped him, he
+##   did not stop - so the sprint survives and is there again the moment he turns away.
+##
+## An edge, not a state: `_sprint_stop_armed` is set by every frame that is not a stop and
+## spent by the first that is. Tested as a state this would eat a `sprint` press made while
+## standing still, which is the commonest way a player starts a run.
+##
+## `on_floor` is passed rather than read so a test can drive this without a tree, where
+## is_on_floor() is false and unfakeable. _update_sprint_toggle() is its only caller.
+##
+## `velocity` and `input_dir` are both LAST frame's here - this runs at the top of
+## _physics_process(), before _handle_movement_input(). That is right rather than merely
+## tolerable: the stop worth reacting to is the one move_and_slide() actually produced, not
+## one predicted from a stick that has not been applied yet.
+func _update_sprint_stop(on_floor: bool) -> void:
+	if not (on_floor and input_dir == Vector2.ZERO and _horizontal_speed() <= SPRINT_STOP_SPEED):
+		_sprint_stop_armed = true
+		return
+	if _sprint_stop_armed:
+		_sprint_stop_armed = false
+		sprint_toggled = false
+
 ## The `crouch` press, and the one place it is spent. Pressed at a sprint it starts a slide;
-## pressed at any other time it toggles the crouch. Never both - a single decision point is
-## what keeps a slide from also leaving him crouched when it ends.
+## pressed during a held one it leaves the hold; pressed at any other time it toggles the
+## crouch. Never two of those - a single decision point is what keeps a slide from also
+## leaving him crouched when it ends. See docs/specs/pilot9-slide-stand.md.
 ##
 ## Read here rather than in _input so it lands on the same frame as every other movement
 ## input; the AnimationTree samples is_crouching and is_sliding after this.
@@ -487,26 +759,66 @@ func _handle_crouch_and_slide(delta: float) -> void:
 		if not is_on_floor():
 			_end_slide()          # off a ledge mid-slide; `fall` takes it from here
 		elif is_slide_holding:
-			# The one press the slide does not swallow, and it ends the slide outright -
-			# straight from the held floor pose into the crouch, with no run-out. The
-			# slide -> crouch transition blends the frozen hold pose into crouch_walk; the
-			# clip's run-out (frames 30-75) is never played on this path. is_crouching set
-			# here and not in _end_slide(), which every standing exit also calls.
+			# The one press the slide does not swallow, and it RESUMES the clip rather than
+			# ending it: the run-out (frames 30-75) is his stand-up, so it is played, and the
+			# slide ends standing on the `_slide_time >= slide_duration` branch below once it
+			# finishes. Nothing sets is_crouching - a slide never hands off into a crouch,
+			# because crouch_speed is 1.6 m/s and that deletes everything the slide earned.
+			# See docs/specs/pilot9-slide-stand.md.
 			#
-			# `jump` is not read here. It ends the slide in _handle_gravity_and_jump(),
-			# which runs after this and clears is_crouching first, so a jump out of a hold
-			# cuts to the leap and lands standing. See docs/specs/pilot9-slide-crouch.md.
-			if Input.is_action_just_pressed("crouch"):
-				is_crouching = true
-				_end_slide()
+			# `jump` is not read here. It ends the slide in _handle_gravity_and_jump(), which
+			# runs after this, so a jump out of a hold - or out of the run-out - cuts to the
+			# leap. It is the one exit that skips the stand-up.
+			#
+			# Both stand-up exits are refused on ground too steep to stand on. Allowing
+			# either there would only end a slide the auto-slide restarts on the next frame,
+			# which is a clip playing its entry over and over rather than a stand-up. `jump`
+			# still works - it is the one exit never taken away.
+			if _on_auto_slide_slope():
+				# Steered up a face he cannot stand on and run out of speed doing it. He
+				# does not stop there - he slips back down, which is the same thing the
+				# automatic slide says about this ground. Ending instead would only restart
+				# a slide one frame later, and holding him would trap him: with both
+				# standing exits refused, `jump` would be his only way off the face.
+				#
+				# The bonus goes with the heading. It is deeply negative by the time this
+				# fires (that is what stopped him), and carrying it into a downhill run
+				# would spend the first second of the descent paying it off.
+				if _horizontal_speed() < SLIDE_STALL_SPEED:
+					_slide_direction = _downhill(get_floor_normal())
+					_slide_bonus = 0.0
+			else:
+				if Input.is_action_just_pressed("crouch"):
+					# Resume, not end. The clock picks up from `slide_hold_time` and the
+					# run-out plays him back up to standing at the clip's own ~5 m/s plus
+					# whatever the grade earned, which is the whole point of leaving this
+					# way rather than cutting.
+					is_slide_holding = false
+				elif _horizontal_speed() < SLIDE_STALL_SPEED:
+					# Out of hill. See SLIDE_STALL_SPEED - only reachable going up one, and
+					# the one stand-up that does NOT play the run-out: the run-out is driven
+					# off the curve and would accelerate him back to ~5 m/s, which is the
+					# one thing running out of hill must not do.
+					_end_slide()
 		elif _slide_time >= slide_duration:
-			# Reached only with the hold off (can_hold_slide false, or a rig that baked no
-			# slide_hold_time): the clip has played straight through, run-out and all. End
-			# him crouched anyway, for the same reason the held path does. With the hold on
-			# he leaves via the branch above and never gets here.
-			is_crouching = true
+			# The clip has played through, run-out and all - either because the hold was
+			# left by the `crouch` press above, or because there was no hold to leave
+			# (can_hold_slide false, or a rig that baked no slide_hold_time). He is standing
+			# at the end of the run-out; `slide -> Locomotion` takes it from here.
 			_end_slide()
 		return                    # otherwise the slide holds the crouch key for its length
+
+	# Steep ground takes his feet out from under him, with no press and no sprint. Ahead of
+	# both the buffered press and the fresh one, because it is not a decision the player is
+	# making: whatever `crouch` was going to mean this frame, he is sliding.
+	#
+	# The cooldown is deliberately not consulted. It exists to stop a player re-entering a
+	# slide on the frame one ends; refusing this one would leave him standing for 0.4 s on a
+	# face he is supposed to be unable to stand on.
+	if _should_auto_slide():
+		_slide_buffered = false
+		_start_slide(_downhill(get_floor_normal()), true)
+		return
 
 	# A `crouch` press made in the air (see _should_buffer_slide) waits here for the ground.
 	# Spent BEFORE the just-pressed check below, so one press is never read twice - and a
@@ -538,10 +850,11 @@ func _handle_crouch_and_slide(delta: float) -> void:
 ## Sprinting, moving, on the ground, and NOT already crouched. The clip opens at 8 m/s with
 ## his feet planted, so anything slower than a sprint would start it with a lurch.
 ##
-## `not is_crouching` is what stops a slide handing off into a crouch and then re-entering
-## itself: after the hand-off `sprint_toggled` is still on, so a `crouch` press meant to
-## stand him back up would otherwise pass every test here and start another slide. Crouched,
-## the press is a stand-up - it falls through to the toggle in _handle_crouch_and_slide().
+## `not is_crouching` outlives the crouch hand-off it was written for
+## (docs/specs/pilot9-slide-crouch.md, reversed by pilot9-slide-stand.md) because it is
+## independently right: out of a 1.6 m/s crouch the clip's 8 m/s opening is a lurch, and
+## crouched the press means stand up - it falls through to the toggle at the bottom of
+## _handle_crouch_and_slide().
 func _can_start_slide(heading: Vector3) -> bool:
 	return can_slide \
 		and slide_motion != null \
@@ -573,19 +886,35 @@ func _should_buffer_slide() -> bool:
 		and Input.get_vector("left", "right", "forward", "backward") != Vector2.ZERO
 
 
-func _start_slide(heading: Vector3) -> void:
+## `heading` is normally an intention - the stick's, or his facing - and is taken as a
+## suggestion. `forced` makes it the heading outright, and exists for the automatic slide,
+## whose whole meaning is that he is going down the fall line rather than wherever he was
+## pointed when the ground gave way.
+func _start_slide(heading: Vector3, forced: bool = false) -> void:
 	is_sliding = true
 	is_slide_holding = false
 	_slide_time = 0.0
 	_slide_hold_speed = 0.0
+	# The burst is measured off the speed he arrives with, read here because this runs
+	# before _apply_movement() and `velocity` is still last frame's - which for a sprinting
+	# entry is a sprint, and for the automatic slide off steep ground is nearly nothing.
+	# See docs/specs/pilot9-slide-boost.md.
+	_slide_elapsed = 0.0
+	_slide_reference_speed = minf(_horizontal_speed(), sprint_speed)
+	# Nothing carries between slides. Cleared here as well as in _end_slide() so a slide
+	# started on top of one that ended some other way still opens on the clip's own speed.
+	_slide_bonus = 0.0
 	# Where he is visibly pointing, not where the stick is pushing. Entering mid-turn the two
 	# differ, and since the mesh is about to be welded to this heading, taking the stick's
 	# would snap his body round on the entry frame. The stick is only the fallback for first
 	# person, where nothing has been driving character.rotation.
-	_slide_direction = _facing() if camera_mode == CameraMode.THIRD_PERSON else heading
-	# A slide is not a crouch: clear it on entry. It is set true again only at the natural
-	# end of the run-out (in _handle_crouch_and_slide), where the slide hands off into a
-	# crouch - unless `jump` took him out of it first. See docs/specs/pilot9-slide-crouch.md.
+	if forced:
+		_slide_direction = heading
+	else:
+		_slide_direction = _facing() if camera_mode == CameraMode.THIRD_PERSON else heading
+	# A slide is not a crouch: clear it on entry, and nothing on the slide path ever sets it
+	# again. Every exit - the run-out, the stall, a jump, a ledge, a freeze - leaves him
+	# standing. See docs/specs/pilot9-slide-stand.md.
 	is_crouching = false
 
 ## Turns the slide. The player steers one exactly as he steers a run - same stick, same
@@ -629,6 +958,14 @@ func _end_slide() -> void:
 	is_slide_holding = false
 	_slide_time = 0.0
 	_slide_hold_speed = 0.0
+	# The burst goes with the slide. The speed it reached does not - it is in `velocity`,
+	# and _apply_movement() decays it from there like any other over-sprint.
+	_slide_elapsed = 0.0
+	_slide_reference_speed = 0.0
+	# The bonus goes; the SPEED does not. `velocity` is left exactly as the last slide frame
+	# wrote it, and _apply_movement() now decays it instead of assigning over it - that is
+	# the whole of "the slope's speed leaves with him". See _apply_movement().
+	_slide_bonus = 0.0
 	_slide_cooldown_left = slide_cooldown
 
 ## The hold begins. Called from _apply_slide_velocity() on the frame _slide_time reaches
@@ -660,12 +997,181 @@ func _slide_speed_at(t: float) -> float:
 		- slide_motion.sample((t - window) / slide_duration)
 	return travelled * slide_distance * slide_scale / window
 
+## The burst, in m/s, for this frame of this slide.
+func _slide_speed_floor() -> float:
+	return _slide_speed_floor_at(_slide_reference_speed, slide_entry_boost,
+		slide_boost_time, _slide_elapsed)
+
+## The floor's shape: `reference * boost` at entry, easing linearly to `reference` over
+## `boost_time` and flat there forever after.
+##
+## Linear rather than eased on purpose. The player is meant to be able to feel where in the
+## burst they are and to spend it deliberately; an exponential tail has no moment where it
+## is over, and "still sliding after two seconds" then means nothing.
+##
+## A reference of zero returns zero rather than a boost of nothing, which is the automatic
+## slide off steep ground: it starts from a standstill and gravity is the only thing
+## entitled to speed it up. A slide may PRESERVE momentum and front-load it. It may not
+## invent it.
+static func _slide_speed_floor_at(reference: float, boost: float, boost_time: float,
+		elapsed: float) -> float:
+	if reference <= 0.0:
+		return 0.0
+	if boost_time <= 0.0:
+		return reference
+	var opened := reference * maxf(boost, 1.0)
+	return lerpf(opened, reference, clampf(elapsed / boost_time, 0.0, 1.0))
+
+## -- slopes -------------------------------------------------------------------
+##
+## The gravity term. Every piece of arithmetic here is a static function taking a floor
+## normal, for one reason worth stating up front: is_on_floor() cannot be made true without a
+## physics world, so a headless test can never reach this code through _physics_process. Pure
+## functions are the only way any of it gets tested. See docs/specs/pilot9-slope-momentum.md
+## and tests/test_pilot9_slope_momentum.gd.
+
+## The downhill direction of a floor, flattened, unit length - and ZERO for level ground.
+##
+## It is the horizontal part of the normal, unchanged. A floor's normal leans DOWNHILL as it
+## tilts (a plane descending toward +Z has normal (0, cos, sin)), which is the same fact
+## player.gd::_slope_pitch() is built on and the one thing in this file worth checking by
+## hand if a sign ever looks wrong.
+static func _downhill(floor_normal: Vector3) -> Vector3:
+	var flat := Vector3(floor_normal.x, 0.0, floor_normal.z)
+	return Vector3.ZERO if flat.length() <= 0.0001 else flat.normalized()
+
+## Horizontal acceleration, m/s^2, that gravity applies to something sliding along `heading`
+## on a floor of this normal. Positive downhill, negative up, zero across.
+##
+## `gravity * sin` is the acceleration along the surface; the second `cos` (which is the
+## normal's own y) projects it back onto the horizontal plane, because the slide's speed - and
+## everything else in this controller - is bookkept as a horizontal quantity and left to
+## move_and_slide() to lay along the floor.
+##
+## The dot product is what makes the stick matter: a slide steered across the fall line takes
+## a fraction of the gain, and one steered up it pays.
+static func _slope_accel(heading: Vector3, floor_normal: Vector3, gravity: float,
+		scale: float) -> float:
+	if heading.length() <= 0.0001 or floor_normal.length() <= 0.0001:
+		return 0.0
+	var n := floor_normal.normalized()
+	var downhill := _downhill(n)
+	if downhill == Vector3.ZERO:
+		return 0.0
+	var sin_t := Vector3(n.x, 0.0, n.z).length()
+	return gravity * sin_t * n.y * heading.normalized().dot(downhill) * scale
+
+## One frame of the bonus: gravity in, friction out.
+##
+## Friction is applied toward zero from whichever side the bonus is on and clamped AT zero
+## rather than allowed through it, so a slide standing still on flat ground stays at the
+## clip's speed instead of being dragged backwards by its own friction term.
+static func _stepped_bonus(bonus: float, accel: float, friction: float, delta: float) -> float:
+	var next := bonus + accel * delta
+	var bleed := absf(friction) * delta
+	if next > 0.0:
+		return maxf(next - bleed, 0.0)
+	if next < 0.0:
+		return minf(next + bleed, 0.0)
+	return 0.0
+
+## The clip's speed plus the terrain's, held between a standstill and the ceiling. Negative
+## is clamped rather than allowed to reverse him: a slide that has run out of speed going
+## uphill stalls out (see SLIDE_STALL_SPEED), it does not start sliding back down facing
+## forwards.
+static func _capped_slide_speed(base: float, bonus: float, max_speed: float) -> float:
+	return clampf(base + bonus, 0.0, max_speed)
+
+## Ground he cannot keep his feet on. False for a zero normal, which is what get_floor_normal()
+## returns when he is not on a floor at all.
+static func _is_auto_slide_slope(floor_normal: Vector3, angle_deg: float) -> bool:
+	if floor_normal.length() <= 0.0001:
+		return false
+	return floor_normal.normalized().y < cos(deg_to_rad(angle_deg))
+
+## Momentum's one line: over-speed falls toward the target at `decay` m/s^2 and stops there,
+## never through it. At or under the target the speed is returned untouched - the caller's
+## stock path owns that case.
+static func _decayed_speed(current: float, target: float, decay: float, delta: float) -> float:
+	if current <= target:
+		return current
+	return maxf(current - absf(decay) * delta, target)
+
+## How hard momentum is bled this frame, from how much the stick agrees with where he is
+## already travelling. `agreement` is that dot product: 1 driving straight into his own
+## momentum, 0 across it, -1 against it - and -1 is also what "no stick at all" and "crouched"
+## are passed as, because both mean he has stopped asking for the speed.
+##
+## Only the agreeing half is interpolated. Everything from sideways round to fully against
+## brakes at the same full rate rather than on a curve through it: the player pushing across
+## his own travel is asking to stop going that way, and a graded answer to that is exactly
+## the vagueness that reads as ice.
+static func _momentum_rate(agreement: float, drive: float, brake: float) -> float:
+	return lerpf(brake, drive, clampf(agreement, 0.0, 1.0))
+
+## Whether the floor he is standing on right now is one of those. Not static - the two
+## questions it folds together (is he on a floor, and is that floor steep) are both live
+## state, and every caller wants them together.
+func _on_auto_slide_slope() -> bool:
+	return can_auto_slide and is_on_floor() \
+		and _is_auto_slide_slope(get_floor_normal(), slide_auto_angle)
+
+## The automatic slide's entry test. The slide's own preconditions (it is enabled, the clip
+## was baked) still apply - without a curve there is nothing to drive him with - but the
+## player-facing ones do NOT: no sprint, no stick, no cooldown, and a crouch is overridden
+## rather than respected. He is not choosing this.
+func _should_auto_slide() -> bool:
+	return can_slide \
+		and slide_motion != null \
+		and slide_duration > 0.0 \
+		and not is_sliding \
+		and not is_climbing \
+		and _on_auto_slide_slope()
+
+## His horizontal speed, which is the only part of `velocity` momentum and the stall are
+## about. The vertical is gravity's and move_and_slide()'s business.
+func _horizontal_speed() -> float:
+	return Vector2(velocity.x, velocity.z).length()
+
+## What `jump_gravity` is multiplied by for one frame, given his vertical speed.
+##
+## Two rules in one number. Rising is 1.0 and falling is `fall_mult`, because the descent is
+## where float is actually felt - a rise reads as commitment, a slow fall reads as swimming,
+## and asymmetric gravity is what nearly every platformer does about it. Then either one is
+## relaxed by `apex_scale` within `apex_speed` of the top, which sounds like it would add
+## float and does the opposite: the airtime it buys back is spent at the one part of the arc
+## the player is aiming from.
+##
+## Static and fully parameterised for the reason `_slope_accel()` is - the whole rule is then
+## reachable from a `--script` run with no tree and no Input. `apex_scale: 1.0` or
+## `apex_speed: 0.0` switches the hang off and leaves plain asymmetric gravity.
+static func _gravity_scale(vy: float, fall_mult: float, apex_speed: float,
+		apex_scale: float) -> float:
+	var scale := 1.0 if vy > 0.0 else fall_mult
+	if absf(vy) < apex_speed:
+		scale *= apex_scale
+	return scale
+
+## The jump cut, and the reason a tap is a hop: rising with `jump` let go clamps his upward
+## speed to `cut_speed`. Everything below that, and everything on the way down, is left alone.
+##
+## A **state** test on the button rather than an edge, deliberately. `is_action_just_released()`
+## would be lost whenever a press and its release land inside one physics frame - a real tap at
+## 60 Hz - and would make the answer depend on whether this ran before or after the press
+## handling. Asking "is it held" every airborne frame cannot be defeated by either.
+static func _cut_rise(vy: float, held: bool, cut_speed: float) -> float:
+	if held or vy <= cut_speed:
+		return vy
+	return cut_speed
+
 ## Handles gravity application, the jump, the air jump and the mantle trigger.
 ##
 ## The mantle is automatic: every airborne frame the ledge probe runs, and a qualifying lip
 ## in range starts it with no input. Checked BEFORE the jump-press handling so a `jump`
 ## pressed on the frame a mantle begins is buffered for the exit (by the is_climbing branch
 ## next frame) rather than spent as an air jump.
+##
+## Gravity here is pilot9's own `jump_gravity`, NOT get_gravity(). See that property for why.
 func _handle_gravity_and_jump(delta: float) -> void:
 	if is_climbing:
 		# Not cancellable - collision is off and he is on a scripted path over an edge, so
@@ -674,12 +1180,30 @@ func _handle_gravity_and_jump(delta: float) -> void:
 			_climb_jump_buffered = true
 		return
 
+	# A freeze is not a moment the player is still mid-jump through, so both graces are
+	# dropped on the way past - the same argument `_slide_buffered` gets in
+	# _handle_crouch_and_slide(). A stale press firing on the frame he unfreezes is not
+	# something anyone asked for. Everything below leans on this: it is the only reason the
+	# buffered-jump branch does not need its own `frozen` test.
+	if frozen:
+		_coyote_left = 0.0
+		_jump_buffered = 0.0
+
 	if not is_on_floor():
-		velocity += get_gravity() * delta
+		var scale := _gravity_scale(velocity.y, jump_fall_multiplier, jump_apex_speed,
+			jump_apex_scale)
+		velocity.y = maxf(velocity.y - jump_gravity * scale * delta, -max_fall_speed)
+		# `frozen` counts as held: nothing should be cut during a pause, and the velocity is
+		# about to be zeroed by handle_frozen_movement() anyway.
+		velocity.y = _cut_rise(velocity.y, frozen or Input.is_action_pressed("jump"),
+			jump_velocity * jump_cut)
 		is_jumping = velocity.y > 0
+		_coyote_left = maxf(_coyote_left - delta, 0.0)
+		_jump_buffered = maxf(_jump_buffered - delta, 0.0)
 	else:
 		is_jumping = false
 		_air_jumps_left = air_jumps
+		_coyote_left = coyote_time
 
 	# Spent here, ahead of everything else. The exit snap teleported him onto the ledge
 	# without a move_and_slide(), so is_on_floor() is still false on this frame and the
@@ -696,29 +1220,62 @@ func _handle_gravity_and_jump(delta: float) -> void:
 	# for the exit by the is_climbing branch above next frame, not spent as an air jump. The
 	# entry snap has already placed him, faced him and zeroed his velocity.
 	if not frozen and not is_on_floor() and _try_start_climb():
+		# The mantle has its own buffer (`_climb_jump_buffered`) and it is the only one that
+		# should survive into the exit. Two graces racing to spend the same press is one too
+		# many, and a coyote window left running would outlive the floor he left long ago.
+		_coyote_left = 0.0
+		_jump_buffered = 0.0
+		return
+
+	# A press made just before touchdown, spent on the frame he arrives. Ahead of the fresh
+	# press so a player who both buffered and pressed on the landing frame gets one jump
+	# rather than two reads of the same intent. Needs no `frozen` test - the block at the top
+	# already cleared it.
+	if is_on_floor() and _jump_buffered > 0.0:
+		_jump_buffered = 0.0
+		_take_floor_jump()
 		return
 
 	if frozen or not Input.is_action_just_pressed("jump"):
 		return
 
-	if is_on_floor():
-		# Jumping stands him up rather than being swallowed by the crouch. There is no
-		# crouch-jump clip, and a dead jump key reads as broken input.
-		is_crouching = false
-		# Same argument for the slide, and it is the only way out of one early. Without
-		# it the slide is a 1.25 second cutscene the player cannot leave.
-		_end_slide()
-		velocity.y = jump_velocity
-		is_jumping = true
+	if is_on_floor() or _coyote_left > 0.0:
+		# Coyote time rides in this branch rather than one of its own, which is the whole
+		# claim it makes: a press inside the window is the FLOOR jump he was a frame late
+		# for, not an extra one, so it costs no air jump and reads identically.
+		_take_floor_jump()
 	elif _air_jumps_left > 0:
 		# The double jump. velocity.y is assigned, not added: rising, a second jump that
 		# stacked would send him twice as high off a mistimed double-tap, and falling fast
 		# an added one would barely register. Replacing it makes the second jump the same
 		# jump wherever in the arc it is taken.
+		#
+		# `_coyote_left` is not cleared here because it cannot be anything but zero: the
+		# branch above claims every frame where it is not.
 		_air_jumps_left -= 1
 		velocity.y = jump_velocity
 		is_jumping = true
 		air_jumped.emit()
+	else:
+		# Out of jumps and off the floor, so the press is remembered rather than dropped.
+		# Only ever reached with no air jump left - the air jump is always the more immediate
+		# answer to a press and always wins the read.
+		_jump_buffered = jump_buffer_time
+
+## The floor jump, shared by the press, the coyote press and the buffered press. All three
+## are the same jump and differ only in what convinced us to take it.
+func _take_floor_jump() -> void:
+	# Jumping stands him up rather than being swallowed by the crouch. There is no
+	# crouch-jump clip, and a dead jump key reads as broken input.
+	is_crouching = false
+	# Same argument for the slide, and it is the only way out of one early. Without
+	# it the slide is a 1.25 second cutscene the player cannot leave.
+	_end_slide()
+	velocity.y = jump_velocity
+	is_jumping = true
+	# Load-bearing. Without it the grace outlives the jump that just used it and a second
+	# press inside the window takes a free jump that never touches `_air_jumps_left`.
+	_coyote_left = 0.0
 
 ## Processes movement input and calculates movement direction relative to camera.
 func _handle_movement_input() -> void:
@@ -789,13 +1346,91 @@ func _handle_controller_camera(delta: float) -> void:
 		camera_pivot.rotation.x -= look_dir.y * controller_sensitivity * delta
 		camera_pivot.rotation.x = clampf(camera_pivot.rotation.x, -tilt_limit, tilt_limit)
 
-## Handles smooth camera transition between modes.
+## Gives the SpringArm3D a shape to sweep and takes pilot9 himself out of both casts, then
+## builds the probe query once. See docs/specs/pilot9-camera-collision.md.
+##
+## Done here rather than on the scene for the reason floor_snap_length is: scenes/pilot9.tscn
+## is a built artifact - scripts/pilot9_build_scene.gd writes it - so anything set in the
+## editor is one rebuild away from being gone, silently, with the camera back on a bare ray.
+##
+## The exclusion is load-bearing, not housekeeping. CameraPivot sits at y = 1.5 and his own
+## capsule spans 0 to 1.955, so the arm STARTS inside his collider. A ray survived that only
+## because Godot's ray queries do not hit from inside by default; a sphere cast does, and
+## without this the probe would report a hit at zero travel every frame and weld the camera
+## to the back of his head.
+func _setup_camera_collision() -> void:
+	var backstop := spring_arm.shape as SphereShape3D
+	if backstop == null:
+		backstop = SphereShape3D.new()
+		spring_arm.shape = backstop
+	backstop.radius = camera_clearance
+	spring_arm.add_excluded_object(get_rid())
+
+	var probe := SphereShape3D.new()
+	probe.radius = camera_clearance + camera_probe_lead
+	_camera_probe = PhysicsShapeQueryParameters3D.new()
+	_camera_probe.shape = probe
+	_camera_probe.exclude = [get_rid()]
+	_camera_probe.collision_mask = spring_arm.collision_mask
+
+## The length the world allows, this frame, with no damping on it yet.
+##
+## The probe is FATTER than the arm's own backstop by camera_probe_lead, which is the whole
+## point of casting it ourselves: it trips while the wall is still that much further out, and
+## the head start is what _camera_length_step() spends turning a snap into a zoom. A probe
+## the same size as the backstop would only ever agree with the arm, always too late to damp.
+##
+## cast_motion() hands back the safe fraction of the motion; a probe already overlapping
+## something returns 0, which the floor below catches. First person has a zero-length arm and
+## nothing to collide with, so it never casts at all.
+func _camera_obstruction_length(mode_length: float) -> float:
+	if mode_length <= 0.0 or _camera_probe == null or not is_inside_tree():
+		return mode_length
+	var world := get_world_3d()
+	if world == null:
+		return mode_length
+	var space := world.direct_space_state
+	if space == null:
+		return mode_length
+	_camera_probe.transform = Transform3D(Basis(), spring_arm.global_position)
+	# A SpringArm3D pushes its children along its own +Z, so that is where the wall will be.
+	_camera_probe.motion = spring_arm.global_transform.basis.z.normalized() * mode_length
+	var fractions := space.cast_motion(_camera_probe)
+	if fractions.size() < 1:
+		return mode_length
+	var allowed: float = float(fractions[0]) * mode_length
+	# minf() so a mode length already under the floor - mid-transition to first person - is
+	# not dragged back out by it.
+	return maxf(allowed, minf(camera_min_distance, mode_length))
+
+## One frame of the damped arm length: fast toward a wall, slow away from one.
+##
+## The asymmetry is the anti-flicker property and is worth more than the smoothing itself. A
+## grazing edge that hits and misses on alternating frames settles IN rather than oscillating,
+## because every hit pulls at retract_speed and every gap only drifts back at return_speed.
+##
+## Static and pure so the curve can be asserted without a rig, a tree or a wall - see
+## tests/test_pilot9_camera_collision.gd. The weight is clamped for the reason
+## _handle_camera_fov() clamps its own: a rate times a long frame would otherwise hand lerpf
+## a weight above 1 and shoot past the target instead of arriving at it.
+static func _camera_length_step(current: float, desired: float, delta: float, retract_speed: float, return_speed: float) -> float:
+	var rate := retract_speed if desired < current else return_speed
+	return lerpf(current, desired, clampf(rate * delta, 0.0, 1.0))
+
+## Handles smooth camera transition between modes, and the walls.
+##
+## Two lengths, deliberately: the mode transition owns _camera_mode_length and the walls own
+## spring_length. See docs/specs/pilot9-camera-collision.md for why the mesh reads the first.
 func _handle_camera_transition(delta: float) -> void:
-	spring_arm.spring_length = lerp(spring_arm.spring_length, target_camera_distance, camera_transition_speed * delta)
-	
+	_camera_mode_length = lerpf(_camera_mode_length, target_camera_distance,
+		clampf(camera_transition_speed * delta, 0.0, 1.0))
+	var desired := _camera_obstruction_length(_camera_mode_length)
+	spring_arm.spring_length = _camera_length_step(spring_arm.spring_length, desired, delta,
+		camera_retract_speed, camera_return_speed)
+
 	if character and camera_distance > 0.0:
-		var transition_progress = spring_arm.spring_length / camera_distance
-		var visibility_threshold = 0.3
+		var transition_progress := _camera_mode_length / camera_distance
+		var visibility_threshold := 0.3
 		character.visible = transition_progress > visibility_threshold
 	elif character:
 		character.visible = camera_mode == CameraMode.THIRD_PERSON
@@ -833,7 +1468,30 @@ func _update_camera_mode() -> void:
 		target_camera_distance = camera_distance
 
 ## Applies horizontal movement velocity based on input and sprint/walk state.
-func _apply_movement() -> void:
+##
+## Deviation 6, momentum: stock Real Controller ASSIGNS the horizontal velocity from the stick
+## every frame, and an assignment cannot carry speed - whatever a slide down a slope earned is
+## deleted on the frame the slide ends, in mid-air included. So the assignment is kept for
+## everything at or under ordinary locomotion speed and replaced by a decay above it. See
+## docs/specs/pilot9-slope-momentum.md.
+##
+## The threshold is `sprint_speed` on both sides of it, and for two different reasons:
+##
+## - On the floor it is the line between locomotion and momentum. At or under a sprint every
+##   feel decision stock made still stands, the dead stop on a released stick included.
+## - In the air it is a floor on what he may be reassigned DOWN to, and only while a stick is
+##   asking for it. `is_sprinting` needs is_on_floor(), so an airborne `current_speed` is the
+##   plain walk-around `speed`, and the stock assignment therefore dropped a sprint jump from
+##   8 m/s to 5 the moment he left the ground. It never sped him up in the air; it should not
+##   slow him down either. With no stick there is nothing to hold up, the target is 0, and he
+##   brakes down to a straight vertical fall - see `air_momentum_brake`.
+##
+## The RATE that decay runs at is what keeps this from reading as ice - see _momentum_rate().
+## Speed he is still driving into costs the drive rate; speed he has stopped asking for costs
+## the brake, which is several times as much. Letting go of the stick is a request to stop,
+## and the controller has to answer it whether or not his feet are down: on the floor that is
+## `momentum_decay` / `momentum_brake`, in the air `air_momentum_decay` / `air_momentum_brake`.
+func _apply_movement(delta: float) -> void:
 	var is_moving = input_dir != Vector2.ZERO and is_on_floor()
 	# Crouch outranks both gaits: it owns the whole locomotion state, so leaving either
 	# flag set would keep pilot9_animation.gd feeding the walk/run blends underneath it.
@@ -850,6 +1508,43 @@ func _apply_movement() -> void:
 	else:
 		current_speed = speed
 	
+	var demanded := current_speed * input_strength if direction else 0.0
+	var carried := _horizontal_speed()
+	# The speed the stick asks for, raised to a sprint where momentum is in play - over a
+	# sprint on foot, and by however much of one he is already carrying in the air.
+	var target := demanded
+	if not is_on_floor():
+		# The airborne floor is a floor under a REQUEST, so it needs a stick behind it. With
+		# none the target is the 0 the stock assignment would have written, and the brake
+		# below is what walks him down to it instead of snapping - which is what lets him
+		# fall straight rather than carrying a lip's worth of run out into the drop.
+		if direction:
+			target = maxf(demanded, minf(carried, sprint_speed))
+	elif carried > sprint_speed:
+		target = maxf(demanded, sprint_speed)
+
+	# Two conditions rather than one. `carried > target` is the decay itself; `target >
+	# demanded` is the frame where they are already equal and the only thing the branch has
+	# to do is keep the stock assignment from writing a smaller number - the airborne sprint
+	# above, exactly at the boundary.
+	if carried > target + SPEED_EPSILON or target > demanded + SPEED_EPSILON:
+		var travel := Vector3(velocity.x, 0.0, velocity.z) / carried
+		# How much of the speed he is still asking for. No stick and a crouch are both -1:
+		# neither is a request to keep going. See _momentum_rate().
+		var agreement := -1.0
+		if direction and not is_crouching:
+			agreement = direction.dot(travel)
+		var drive := momentum_decay if is_on_floor() else air_momentum_decay
+		var brake := momentum_brake if is_on_floor() else air_momentum_brake
+		var kept := _decayed_speed(carried, target, _momentum_rate(agreement, drive, brake),
+			delta)
+		# Steered by the stick where there is one, and by his own heading where there is not,
+		# so a released stick coasts to a halt along its own line instead of snapping to one.
+		var heading := direction if direction else travel
+		velocity.x = heading.x * kept
+		velocity.z = heading.z * kept
+		return
+
 	if direction:
 		velocity.x = direction.x * current_speed * input_strength
 		velocity.z = direction.z * current_speed * input_strength
@@ -878,12 +1573,24 @@ func _apply_slide_velocity(delta: float) -> void:
 	if delta <= 0.0 or slide_motion == null or slide_duration <= 0.0:
 		return
 
-	# Held: flat speed on the steered heading, and the clock does not move. velocity.y is
-	# left to gravity, so a hold that runs onto a downslope follows it - move_and_slide()
-	# projects this constant horizontal velocity along the floor and he keeps going.
+	_slide_elapsed += delta
+	_advance_slide_bonus(delta)
+
+	# The floor under the clip. Raises the clip's speed to meet it and nothing more: where
+	# the curve is already faster the curve drives, the bonus still rides on top, and a
+	# negative bonus still eats straight through it - which is what keeps SLIDE_STALL_SPEED
+	# reachable on a slide steered uphill. See docs/specs/pilot9-slide-boost.md.
+	var floor_speed := _slide_speed_floor()
+
+	# Held: the clip's speed is flat and the clock does not move, so everything that changes
+	# during a hold changes in `_slide_bonus` and in the floor's own decay. velocity.y is
+	# left to gravity, and move_and_slide() lays this horizontal velocity along whatever
+	# floor he is on.
 	if is_slide_holding:
-		velocity.x = _slide_direction.x * _slide_hold_speed
-		velocity.z = _slide_direction.z * _slide_hold_speed
+		var held := _capped_slide_speed(
+			maxf(_slide_hold_speed, floor_speed), _slide_bonus, slide_max_speed)
+		velocity.x = _slide_direction.x * held
+		velocity.z = _slide_direction.z * held
 		return
 
 	# The clock runs to the end of the clip, or to the hold if this frame is still short of
@@ -910,9 +1617,26 @@ func _apply_slide_velocity(delta: float) -> void:
 		_enter_slide_hold()
 		travelled += _slide_hold_speed * (delta - consumed)
 
-	var speed_now := travelled / delta
+	var speed_now := _capped_slide_speed(
+		maxf(travelled / delta, floor_speed), _slide_bonus, slide_max_speed)
 	velocity.x = _slide_direction.x * speed_now
 	velocity.z = _slide_direction.z * speed_now
+
+## One frame of `_slide_bonus`, off the floor he is actually standing on.
+##
+## Airborne frames add nothing - a slide that has left the floor is over anyway, ended by
+## _handle_crouch_and_slide() on this same frame - and that is also why every headless test
+## of the slide sees a bonus of exactly zero and measures the clip alone.
+##
+## get_floor_normal() is one frame old, being the result of the last move_and_slide(). At
+## 60 Hz on geometry that does not move, that is a normal read 16 ms before the velocity it
+## shapes is applied; nothing here is delicate enough to care.
+func _advance_slide_bonus(delta: float) -> void:
+	if not is_on_floor():
+		return
+	var accel := _slope_accel(_slide_direction, get_floor_normal(), get_gravity().length(),
+		slide_slope_accel)
+	_slide_bonus = _stepped_bonus(_slide_bonus, accel, slide_friction, delta)
 
 ## -- the ledge mantle ---------------------------------------------------------
 ##

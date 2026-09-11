@@ -150,10 +150,12 @@ func _drive_crouch(delta: float) -> void:
 func _drive_slide() -> void:
 	if animation_tree.get(SLIDE_SCALE) == null:
 		return   # slide state absent - a pilot9.tscn built before _ensure_slide_state
-	# Frozen while holding, AND while the state blends out after a `crouch` ended the slide:
-	# is_sliding is already false by then, and letting the clip run would play a slice of the
-	# run-out into the cross-fade. The slide -> crouch exit is meant to be pose-to-pose off
-	# the held frame - see docs/specs/pilot9-slide-crouch.md. Re-entering `slide` restarts
-	# the clip from 0, so a scale left at 0 here never carries into the next slide.
+	# Frozen while holding, AND while the state blends out after the slide has ended:
+	# is_sliding is already false by then, and letting the clip run would advance it under a
+	# cross-fade nothing is driving. On the ordinary exit that parks it on the last frame of
+	# the run-out - a standing pose - for the 0.2 s blend into Locomotion, which is what
+	# makes `slide -> Locomotion` standing-to-standing. See docs/specs/pilot9-slide-stand.md.
+	# Re-entering `slide` restarts the clip from 0, so a scale left at 0 here never carries
+	# into the next slide.
 	var hold_pose: bool = player.is_slide_holding or not player.is_sliding
 	animation_tree.set(SLIDE_SCALE, 0.0 if hold_pose else 1.0)

@@ -1,0 +1,54 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/confirm_dialog.gd" id="1"]
+[ext_resource type="Theme" path="res://resources/ui_theme.tres" id="2"]
+
+[node name="ConfirmDialog" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("2")
+script = ExtResource("1")
+
+[node name="Center" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Box" type="PanelContainer" parent="Center"]
+custom_minimum_size = Vector2(560, 0)
+layout_mode = 2
+
+[node name="Column" type="VBoxContainer" parent="Center/Box"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="Title" type="Label" parent="Center/Box/Column"]
+layout_mode = 2
+theme_type_variation = &"DialogTitle"
+text = "CONFIRM"
+
+[node name="Message" type="Label" parent="Center/Box/Column"]
+layout_mode = 2
+theme_type_variation = &"Body"
+autowrap_mode = 3
+text = "Are you sure?"
+
+[node name="Confirm" type="Button" parent="Center/Box/Column"]
+layout_mode = 2
+text = "CONFIRM"
+alignment = 0
+
+[node name="Cancel" type="Button" parent="Center/Box/Column"]
+layout_mode = 2
+text = "CANCEL"
+alignment = 0
+
+[connection signal="pressed" from="Center/Box/Column/Confirm" to="." method="_on_confirm_pressed"]
+[connection signal="pressed" from="Center/Box/Column/Cancel" to="." method="_on_cancel_pressed"]

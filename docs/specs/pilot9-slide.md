@@ -117,11 +117,12 @@ writes it, so a value tuned in the inspector survives a swap (but not a `--fresh
   live at once and the leap would otherwise play as a stand-up.
 - **Leaving the floor ends it.** Slide off a ledge and the slide stops; `fall` takes over and
   gravity is the only thing left driving him.
-- **~~It ends standing, not crouched.~~ It hands off into a crouch.** *(Reversed 2026-09-07 -
-  see `docs/specs/pilot9-slide-crouch.md`.)* `crouch` out of the hold ends the slide on the
-  press, from the held floor pose, and `slide -> crouch` blends that straight into the crouch
-  - the run-out is not played on the shipping path. `jump` out is now the only exit that ends
-  standing. Entering a slide still clears `is_crouching`; it is set again only at the exit.
+- **It ends standing, not crouched.** *(Reversed 2026-09-07 to hand off into a crouch -
+  `docs/specs/pilot9-slide-crouch.md` - and restored 2026-09-09 by
+  `docs/specs/pilot9-slide-stand.md`, because a 1.6 m/s crouch spent everything the slide
+  earned.)* `crouch` out of the hold resumes the clip and the run-out stands him up; `jump`
+  cuts straight to the leap. Entering a slide clears `is_crouching` and nothing on the slide
+  path sets it again.
 - **A cooldown, 0.4 s.** Without one, sprint on and `crouch` tapped re-enters on the frame it
   exits and he never stands up.
 - **No slide from a standstill or a walk.** Sprint on, on the floor, with movement input. The
@@ -235,10 +236,10 @@ changes where he goes and never how fast. No air control, no speed gained by tur
 
 ## What this does not do
 
-- ~~No slide-to-crouch.~~ *Added 2026-09-07 - `docs/specs/pilot9-slide-crouch.md`.* A slide
-  now hands off into the `crouch` state - `crouch` out of the hold ends it pose-to-pose off
-  the held frame. There is still no crouch-idle, so he lands on the crouch WALK cycle through
-  its TimeScale exactly as the `crouch` toggle already does.
+- **No slide-to-crouch.** *(Added 2026-09-07 - `docs/specs/pilot9-slide-crouch.md` - and
+  removed again 2026-09-09 by `docs/specs/pilot9-slide-stand.md`, along with the
+  `slide -> crouch` transition.)* A slide stands him up; being low afterwards costs a
+  `crouch` press of its own.
 - No slide under low geometry. There is no crouch-height collider - the capsule is full height
   throughout - so the one thing a slide is traditionally *for* is not available yet.
 - No slide cancel except by jumping. Steering is not a cancel. (2026-09-07: `crouch` now ends

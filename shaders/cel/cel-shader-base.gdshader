@@ -11,8 +11,18 @@ shader_type spatial;
 #define USE_BACKLIGHT 0
 #define USE_REFRACTION 0
 
+// cull_disabled: the map blockouts are open shells, not closed solids. mission1
+// lost its outer box on 2026-09-09, so the terrain is now seen from outside and
+// its back faces have to draw or the map reads as holes from some angles.
+// scripts/map_import.gd already forces the imported materials double-sided, but
+// apply_stylized.gd replaces those with this shader, so the setting has to live
+// here too. Godot takes render_mode per shader rather than per material, so this
+// covers cel_character.tres as well; closed character meshes never show a back
+// face, so it costs them nothing but fill rate.
 #if USE_ALPHA
-render_mode depth_draw_always;
+render_mode cull_disabled, depth_draw_always;
+#else
+render_mode cull_disabled;
 #endif
 
 #include "includes/base-cel-shader.gdshaderinc"

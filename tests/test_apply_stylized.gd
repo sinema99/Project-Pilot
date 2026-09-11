@@ -312,6 +312,57 @@ func test_surfaces_sharing_a_slot_share_one_material() -> void:
 		"two surfaces on the same slot should share one material instance")
 	_free_rig(rig)
 
+# One pass walks every target, and two unrelated GLBs can carry the same Blender
+# slot name at different colours - TrainingV and mission1 both ship a `map2`.
+# Keyed by name alone, whichever target is walked first wins and the second one
+# silently renders in the first one's colour. That reads as a bad export rather
+# than a cache bug, so it is worth a test of its own.
+func test_same_slot_name_in_two_targets_keeps_its_own_colour() -> void:
+	var applier_script := _applier()
+	if applier_script == null:
+		fail("%s does not exist" % APPLIER_PATH)
+		return
+
+	var first_grey := Color(0.658, 0.658, 0.658)
+	var second_grey := Color(0.209, 0.209, 0.209)
+
+	var scene_root := Node3D.new()
+	var first := Node3D.new()
+	first.name = "TrainingV"
+	var first_mesh := MeshInstance3D.new()
+	first_mesh.mesh = _mesh_with_slots([_imported("map2", first_grey)])
+	first.add_child(first_mesh)
+
+	var second := Node3D.new()
+	second.name = "Mission1"
+	var second_mesh := MeshInstance3D.new()
+	second_mesh.mesh = _mesh_with_slots([_imported("map2", second_grey)])
+	second.add_child(second_mesh)
+
+	scene_root.add_child(first)
+	scene_root.add_child(second)
+
+	var applier: Node = applier_script.new()
+	scene_root.add_child(applier)
+	applier.material = _mat()
+	var target_paths: Array[NodePath] = [NodePath("../TrainingV"), NodePath("../Mission1")]
+	applier.targets = target_paths
+	applier.derive_from_surfaces = true
+
+	applier.apply_now()
+
+	var first_mat := first_mesh.get_surface_override_material(0) as ShaderMaterial
+	var second_mat := second_mesh.get_surface_override_material(0) as ShaderMaterial
+	check(first_mat != null and second_mat != null, "both targets should carry an override")
+	if first_mat != null and second_mat != null:
+		eq(first_mat.get_shader_parameter("albedo_color"), first_grey,
+			"the first target should keep its own colour")
+		eq(second_mat.get_shader_parameter("albedo_color"), second_grey,
+			"a second target sharing the slot name must not inherit the first one's colour")
+
+	applier.clear_now()
+	scene_root.free()
+
 # Blender writes slot names verbatim, trailing space and all - Setsuna's own
 # export ships a slot called "Secondary ". A key that has to be typed with an
 # invisible character is a key nobody can match.

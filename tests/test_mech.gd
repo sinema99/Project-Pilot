@@ -178,7 +178,7 @@ func test_exia_scene_has_the_nodes_the_script_expects() -> void:
 	var exia := MechScene.instantiate()
 	eq(exia.name, &"EXIA", "the mech's root node is EXIA")
 	for path in ["Model/AnimationPlayer", "CameraPivot/CameraPitch/SpringArm3D/Camera3D",
-			"HandoverCamera", "InteractionArea", "ExitPoint", "UI/PromptLabel"]:
+			"HandoverCamera", "InteractionArea", "ExitPoint", "UI/Prompt", "UI/Prompt/Row/Text"]:
 		check(exia.get_node_or_null(path) != null, "EXIA should have a node at '%s'" % path)
 
 # The soles sit on the body's origin, so a CharacterBody3D placed at ground level stands on it.

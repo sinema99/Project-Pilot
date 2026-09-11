@@ -134,9 +134,11 @@ func test_the_hold_outlives_the_clip() -> void:
 		"he is doing %.3f m/s ten seconds in - the hold stopped moving him" %
 			speeds[speeds.size() - 1])
 
-# Constant, by the user's call: no friction and no gravity term along the floor. A slope
-# carries him further only because move_and_slide() projects this constant horizontal
-# velocity down it. A decay creeping in here would be a tuning decision nobody made.
+# Constant on the flat, which is still the user's call - see docs/specs/pilot9-slope-momentum.md,
+# where friction was given to `_slide_bonus` alone precisely so this stayed true. The clip's
+# contribution to a hold does not decay, and a decay creeping into it would be a tuning
+# decision nobody made. (Nothing here is on a floor, so there is no slope term either way:
+# the bonus is zero throughout and this measures the clip alone.)
 func test_the_hold_speed_does_not_change() -> void:
 	var root := _scene()
 	if root == null:
@@ -373,8 +375,10 @@ func test_the_slide_scale_is_only_ever_frozen_or_running() -> void:
 	# Hard 0/1 - a third value or a rate between them advances the clip against a distance
 	# curve that knows nothing about it, and the animation never gets that drift back. The
 	# freeze condition also carries is_slide_holding: the hold pose is what has to stay put.
-	# (2026-09-07: it now ALSO freezes on `not is_sliding`, so the held pose - not a slice of
-	# run-out - is what cross-fades into the crouch. See docs/specs/pilot9-slide-crouch.md.)
+	# (2026-09-07: it now ALSO freezes on `not is_sliding`, so whatever pose the slide ended
+	# on is what cross-fades out instead of a slice of clip advancing under it. Since
+	# docs/specs/pilot9-slide-stand.md that pose is the run-out's last standing frame, and
+	# what it cross-fades into is Locomotion, not the crouch.)
 	check(body.contains("0.0 if hold_pose else 1.0"),
 		"_drive_slide() no longer writes a hard 0/1 - a rate between them drifts the clip " +
 		"against the distance curve and the animation never gets it back")

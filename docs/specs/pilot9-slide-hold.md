@@ -31,10 +31,11 @@ sitting between them, and the old build played straight past it.
 - 0.50 s in (frame 30) the clip and the distance curve **both stop**. He carries on at the
   speed he had reached, in the direction he is steering, for as long as the player leaves
   him there.
-- **`crouch` again** ends the hold. *(Built 2026-09-07 to resume the clip and play out the
-  run-out; **revised the same day** - `docs/specs/pilot9-slide-crouch.md` - to end the slide
-  on the press instead. The clip does not resume; `slide -> crouch` blends the held pose
-  straight into the crouch, and he ends **crouched**, not standing.)*
+- **`crouch` again** ends the hold: the clip resumes from the hold frame and the run-out
+  plays him back up to standing. *(Revised 2026-09-07 to end the slide on the press and drop
+  him into a crouch - `docs/specs/pilot9-slide-crouch.md` - and restored 2026-09-09 by
+  `docs/specs/pilot9-slide-stand.md`, because the crouch's 1.6 m/s spent everything the
+  slide had earned. This bullet is the shipping behaviour again.)*
 - **`jump`** ends the slide outright, on the frame it is pressed. The run-out does **not**
   play; the leap cuts straight in from the held pose. This is the only exit that ends
   standing.
@@ -128,7 +129,7 @@ shape of the write, not just its value, for that reason.
 | Hold mechanism | One clip, frozen by a TimeScale | Splitting the clip into `slide_hold` + `slide_out` with two states. Cleaner on paper - each state plays its own clip start to finish, no shared clock at all - but it doubles the bake (two curves) and the trim machinery to avoid a drift that a hard 0/1 scale does not have. |
 | Hold speed | Constant, measured off the curve | Slope gravity + friction, with an auto-stand at a minimum speed. The user chose constant; it adds no tuning surface and does exactly what was asked. |
 | The crossing frame | Split between curve and hold | Rounding either way - both are wrong by about a frame of travel, in opposite directions. |
-| Ending the hold | `crouch` resumes the clip from the hold frame | Restarting the clip, which would replay the drop into a slide he is already in. *(2026-09-07: superseded - `crouch` now ends the slide on the press, no run-out, straight into the crouch - `docs/specs/pilot9-slide-crouch.md`.)* |
+| Ending the hold | `crouch` resumes the clip from the hold frame | Restarting the clip, which would replay the drop into a slide he is already in. *(Superseded 2026-09-07 by `docs/specs/pilot9-slide-crouch.md`, restored 2026-09-09 by `docs/specs/pilot9-slide-stand.md` - the run-out is the stand-up, and it keeps the speed.)* |
 | Jump out | Ends the slide outright, no run-out | Playing the run-out first. The user's call and obviously right: standing up and *then* jumping is not what the button asked for. *(2026-09-07: also the only slide exit that still ends standing.)* |
 | Off switch | `can_hold_slide`, an inspector bool | Ripping it out if the feel is wrong. The old behaviour is one checkbox away and the tests hold it green. |
 
