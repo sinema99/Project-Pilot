@@ -175,9 +175,6 @@ var travel_scale := 1.0
 @onready var prompt_label: Label = $UI/Prompt/Row/Text
 
 func _ready() -> void:
-	# So a boarding handover does not lurch if this ever gets read before the
-	# first _begin_handover() call overwrites it with the pilot's live camera.
-	_handover_from_fov = Settings.fov
 	interaction_area.body_entered.connect(_on_body_entered)
 	interaction_area.body_exited.connect(_on_body_exited)
 	spring_arm.add_excluded_object(get_rid())
@@ -506,6 +503,13 @@ func _process(delta: float) -> void:
 	camera_pivot.global_position = get_global_transform_interpolated() * CAMERA_PIVOT_OFFSET
 	camera_pivot.rotation.y = camera_yaw
 	camera_pitch_node.rotation.x = camera_pitch
+	# Read live rather than captured, the same reason pilot9's base_fov is a property: FOV is a
+	# comfort setting, and one that silently stops applying the moment you board is the bug the
+	# sensitivity rows were built to avoid. Nothing authored is lost - mech.tscn never set `fov`,
+	# so EXIA was sitting on Godot's default 75 rather than a framing decision.
+	#
+	# Before the handover block below, so a pan reading _handover_to.fov gets this frame's value.
+	camera.fov = Settings.fov
 
 	if handover_left <= 0.0:
 		return

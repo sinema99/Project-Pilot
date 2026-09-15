@@ -502,9 +502,9 @@ enum CameraMode {
 @export_range(1.0, 20.0, 0.1) var camera_transition_speed: float = 8.0
 ## Allow switching between camera modes with V key.
 @export var allow_camera_mode_switch: bool = false
-## Degrees added to the camera's FOV while he is sprinting. Rides on top of whatever the
-## Camera3D's own `fov` is set to rather than replacing it - see `base_fov`. 0.0 is the off
-## switch, and the whole feature costs one lerp a frame when it is off.
+## Degrees added to the camera's FOV while he is sprinting. Rides on top of the player's own
+## FOV setting rather than replacing it - see `base_fov`. 0.0 is the off switch, and the whole
+## feature costs one lerp a frame when it is off.
 @export_range(0.0, 40.0, 0.5) var sprint_fov_boost: float = 10.0
 ## Speed at which the FOV eases between the base and the sprint boost. Deliberately the same
 ## dial and the same shipping value as camera_transition_speed above, so the lens and the
@@ -750,11 +750,17 @@ var _camera_mode_length: float = 3.5
 ## The probe cast every frame by _camera_obstruction_length(), built once in
 ## _setup_camera_collision() rather than per frame - it is the same query with a new origin.
 var _camera_probe: PhysicsShapeQueryParameters3D = null
-## The FOV with no sprint boost on it, read off the rig's camera at _ready() rather than
-## declared here. _handle_camera_fov() writes camera_3d.fov every frame, so a constant in
-## this file would silently clobber whatever the Camera3D is tuned to in the editor and give
-## no sign it had. Capturing it means the boost rides on top of the tuned value instead.
-var base_fov: float = 75.0
+## The FOV with no sprint boost on it: the player's own setting, read live every frame the
+## boost is computed. A computed property rather than a field captured in _ready(), because a
+## field is only ever as fresh as the last spawn - the settings row wrote to disk, survived a
+## relaunch, and did nothing to a pilot who already existed. Nothing to push, nothing to
+## order, nothing to go stale. See docs/specs/settings.md, FOV Applies Live.
+##
+## The Camera3D's authored fov is no longer consulted. It never carried a decision: no camera
+## in pilot9.tscn or mech.tscn sets `fov` at all, so the 75 this used to capture was Godot's
+## default rather than anything tuned.
+var base_fov: float:
+	get: return Settings.fov
 
 ## `jump_air_time` and jump_distance() below, taking their inputs as arguments instead of
 ## reading them off `self`. They are the bodies of both, and both delegate here, so there is
@@ -787,11 +793,6 @@ func _ready() -> void:
 	# Set here rather than on the scene so it cannot be lost to a rebuild of pilot9.tscn, and
 	# so the reason for it sits next to the number. See FLOOR_SNAP_LENGTH.
 	floor_snap_length = FLOOR_SNAP_LENGTH
-	base_fov = camera_3d.fov
-	# Must come after the line above, or Settings.fov is overwritten by the
-	# authored 75 on every spawn - the settings row would work in the menu and
-	# do nothing in the world. See docs/specs/settings.md, One Ordering Trap.
-	base_fov = Settings.fov
 	target_camera_distance = 0.0 if camera_mode == CameraMode.FIRST_PERSON else camera_distance
 	_camera_mode_length = target_camera_distance
 	spring_arm.spring_length = target_camera_distance

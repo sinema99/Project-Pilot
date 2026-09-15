@@ -211,14 +211,42 @@ So `Settings.mouse_sensitivity` is a **scalar from 0.25x to 2.00x** applied to b
 they mean — the gap between pilot9's 0.005 and EXIA's 0.0025 is a deliberate feel decision about
 a nine-metre machine, and a settings screen has no business flattening it.
 
-FOV is the same argument in a different shape: it writes pilot9's `base_fov`, with
-`sprint_fov_boost` still stacking on top as `_handle_camera_fov()` already does, and the mech's
-`_handover_from_fov` default moves with it so a boarding handover does not lurch.
+### FOV applies live
 
-**One ordering trap.** `pilot9.gd:790` captures `base_fov = camera_3d.fov` in `_ready()` — it
-reads the field out of the scene rather than declaring it. A settings FOV must be applied
-*after* that line, or it is overwritten by the authored 75 on every spawn, and the row will
-appear to work in the menu and do nothing in the world.
+FOV is the same argument in a different shape, and it is the one row that shipped broken.
+
+The first build wrote `Settings.fov` into pilot9's `base_fov` field in `_ready()`, after the
+`base_fov = camera_3d.fov` line that captures the rig's own value, and this document spent a
+paragraph on getting that ordering right. The ordering was right and the row still did nothing:
+a field written once at spawn is only ever as fresh as the last spawn, so the value saved to
+disk, survived a relaunch, and never reached a pilot who already existed. The menu showed 80
+and the game rendered 75. **A settings value that a consumer copies is a settings value that
+does not apply.**
+
+So `base_fov` is not a field. It is a property that reads the autoload:
+
+```gdscript
+var base_fov: float:
+	get: return Settings.fov
+```
+
+`_handle_camera_fov()` is unchanged and `sprint_fov_boost` still stacks on top of it exactly as
+before. There is nothing to push, nothing to order, and nothing to go stale — which is how the
+two sensitivity rows worked correctly from the start, since `pilot9.gd` and `mech.gd` multiply
+by `Settings.mouse_sensitivity` at the point of use on every frame they turn.
+
+**Both cameras respect it.** EXIA's own camera reads `Settings.fov` in `mech.gd`'s `_process()`,
+next to the rig placement and before the handover block, so a pan reading `_handover_to.fov`
+gets the current frame's value. This is not the sensitivity argument in reverse: the gap between
+pilot9's 0.005 and EXIA's 0.0025 was a deliberate feel decision about a nine-metre machine,
+but **no camera in `pilot9.tscn` or `mech.tscn` sets `fov` at all**. The 75 that `base_fov` used
+to capture was Godot's default, not a framing choice, so there was no authored intent to
+preserve — and a comfort setting that silently stops applying the moment you press F is the
+same failure the sensitivity scalar exists to prevent.
+
+`mech.gd`'s `_handover_from_fov = Settings.fov` line in `_ready()` is gone. `_begin_handover()`
+overwrites that variable from `watching.fov` before anything ever reads it, so the line was
+dead on arrival.
 
 **No INVERT Y.** It is the only controls row that is new gameplay code rather than a scale on an
 existing number — a flag threaded through pilot9's mouse path, pilot9's stick path and EXIA's.
@@ -341,6 +369,17 @@ countdown** — `KEEP THIS DISPLAY MODE?` — reverting to the previous pair if 
 keeps it; CANCEL reverts immediately. Nothing else in the screen gets a countdown, because
 nothing else can hide the screen.
 
+**The confirm is debounced, not per-step.** The first build raised it on every arrow press, and
+the modal takes focus, so walking the resolution list from 1280x720 to 3840x2160 was four
+separate modal round-trips — the row interrogating you once per notch about a change you were
+still in the middle of making. Stepping is now silent and restarts a one-second timer; a second
+after you stop, one confirm covers the whole run.
+
+Which makes *when the revert target is captured* the load-bearing detail. It is taken on the
+**first** step of a run and held, never overwritten. Four steps forward and CANCEL returns you
+to where you began rather than to the third notch — reverting to a value you were only passing
+through would strand you in a different way than the one this exists to prevent.
+
 `confirm_dialog.gd` grows an optional `countdown: float` on `setup()`, appending the remaining
 seconds to the message and emitting `cancelled` when it reaches zero. It keeps the property that
 makes it reusable: **it still only reports which button was pressed** — the timeout emits the
@@ -361,9 +400,23 @@ and every F6 would go fullscreen. That is friction paid on every iteration of a 
 loop is "play it" — the same argument `ui-shell.md` used for refusing to make the main menu the
 boot scene.
 
-`OS.has_feature("editor")` skips **window mode and resolution only**. Everything else — vsync,
-frame cap, brightness, render scale, shadows, MSAA, the pixel filter, sensitivity, FOV — applies
-in-editor exactly as it does in a build, so the settings themselves stay QA-able by playing.
+**The first build drew that line in the wrong place.** It skipped those two rows in the editor
+*entirely*, which meant they were inert in the only way this project is ever played during
+development — while still raising the fifteen-second confirm. Pressing Right on RESOLUTION
+changed nothing, then asked whether you wanted to keep the nothing. The row was not broken in
+some subtle way; it was switched off, and the confirm made it look like it was working.
+
+Applying a setting is two moments, and only one of them was ever the problem:
+
+- **On change** — a row the player just stepped. This applies everywhere, editor included. It is
+  the only way these two rows can be QA'd at all, since this project is tested by playing it.
+- **On boot** — the sweep `_load()` does over every row at startup. This is what fights
+  `window_width_override`, and this is what stays exempt in the editor. An exported build has no
+  such override and applies both.
+
+`_apply()` takes a `booting` flag and `_skip_display()` is the whole of the rule. Everything
+else — vsync, frame cap, brightness, render scale, shadows, MSAA, the pixel filter, sensitivity,
+FOV — applies in-editor on boot and on change exactly as it does in a build.
 
 Default window mode is **BORDERLESS at the display's native size**, which is what a player
 expects on first launch and avoids a 1080p window floating on a larger monitor.
@@ -445,6 +498,25 @@ Ranked by how silently each fails:
 6. **Left and Right are not bound to `tab_prev` or `tab_next` in `project.godot`.** The whole
    row-adjustment mechanism rests on this, and it is one careless InputMap edit from coming back.
 
+Two more were added after the first build shipped, both fencing failures it actually had:
+
+7. **The suite does not read `user://settings.cfg`.** Autoloads load during headless runs, so
+   `Settings` was reading the developer's own config and every test touching a settings-driven
+   number silently inherited it. A fresh clone passed and the same commit failed on a machine
+   where somebody had nudged a slider — which is what turned two tests in
+   `test_pilot9_sprint_fov.gd` red, on tests that have nothing to do with settings.
+   `Settings.is_test_run()` makes a headless run take the first-launch path and never write.
+
+   It tests `DisplayServer.get_name() == "headless"` rather than `OS.has_feature("headless")`,
+   which is **false** under `--headless`: that feature set describes an *export*, and a headless
+   run of the editor binary is not one. The display driver is the thing that actually differs.
+
+8. **FOV reaches a pilot who already exists.** Asserted in `test_pilot9_sprint_fov.gd` by moving
+   `Settings.fov` *after* `_ready()` has run and checking `base_fov` followed. A field captured
+   at spawn passes any assertion made on the spawn frame, which is why the original version of
+   that test — asserting `base_fov == camera_3d.fov` — was green for the whole period the row
+   did nothing.
+
 **Not tested:** `DisplayServer`, `RenderingServer`, `Viewport` and the gamma uniform. A headless
 run has no window, no display server worth the name, and no rendering to inspect; asserting them
 would be testing Godot. This is the deliberate trade behind making the model static — the
@@ -491,6 +563,15 @@ rather than by omission.
   there. Moving it beside the gamma overlay is the end state.
 - **Nothing validates the screen at a non-1080p window**, which was already `ui-shell.md`'s last
   known gap, and is now a screen whose whole purpose is changing that window.
-- **`mech.gd` gains its first settings dependency.** It reads sensitivity and an FOV default from
-  an autoload, which is a new coupling in a file `button-door.md` already flagged as entangled and
-  overdue its own pass.
+- **`mech.gd` gains its first settings dependency.** It reads sensitivity in `_unhandled_input()`
+  and FOV in `_process()`, which is a new coupling in a file `button-door.md` already flagged as
+  entangled and overdue its own pass.
+- **Nine of the thirteen rows have never been watched running.** MOUSE SENSITIVITY and
+  ANTI-ALIASING are confirmed by use; FOV and the display rows are covered above. VSYNC, MAX FPS,
+  BRIGHTNESS, RENDER SCALE, SHADOW QUALITY, PIXEL FILTER and CONTROLLER SENSITIVITY are believed
+  correct from reading, and a headless suite cannot see a window, so none of them is fenced by
+  anything but eyes on the game.
+- **`is_test_run()` also covers the `--quit-after` smoke boot**, which therefore boots on shipped
+  defaults rather than the local config. That is the intent — a smoke boot should be
+  deterministic — but it means the boot path for a *saved* config is only ever exercised by
+  playing.

@@ -36,14 +36,28 @@ const SLIDER_KEYS: Array[StringName] = [
 
 const ROW_WIDTH := 58
 
+## How long the display rows wait for you to stop stepping before they ask. See The Display
+## Revert at the foot of this file.
+const DISPLAY_SETTLE := 1.0
+
 var _row_keys: Dictionary = {}
 var _buttons: Array[Control] = []
 var _expanded_key: StringName = &""
 var _revert_window_mode: String
 var _revert_resolution: Vector2i
+## Whether _revert_* already hold the values this run of display steps started from. Set on the
+## first step of a run and cleared when the confirm resolves, so stepping four notches reverts
+## to where you began rather than to the third notch.
+var _display_run := false
+var _display_timer: Timer
 
 func _ready() -> void:
 	add_theme_constant_override("separation", 4)
+	_display_timer = Timer.new()
+	_display_timer.one_shot = true
+	_display_timer.wait_time = DISPLAY_SETTLE
+	_display_timer.timeout.connect(_show_display_confirm)
+	add_child(_display_timer)
 
 func hints() -> Array:
 	return [
@@ -89,6 +103,10 @@ func _rebuild(focus_key: StringName = &"") -> void:
 	if focused_key == &"":
 		focused_key = _row_keys.get(get_viewport().gui_get_focus_owner(), &"")
 	for child in get_children():
+		# Every row is rebuilt from scratch, but _display_timer is state, not a row: freeing it
+		# mid-run would swallow the confirm for a display mode that has already been applied.
+		if child == _display_timer:
+			continue
 		remove_child(child)
 		child.queue_free()
 	_row_keys.clear()
@@ -246,11 +264,8 @@ func _select_value(key: StringName, value: Variant) -> void:
 	Settings.set_value(key, value)
 	_expanded_key = &""
 	_rebuild(key)
-	# _rebuild() must land focus back on the row first - UI.confirm() below
-	# pushes a new screen and moves focus to it, and doing this in the other
-	# order would immediately steal focus back from that modal.
 	if key == &"window_mode" or key == &"resolution":
-		_show_display_confirm(old_window_mode, old_resolution)
+		_queue_display_confirm(old_window_mode, old_resolution)
 
 # --- stepping ------------------------------------------------------------------
 #
@@ -263,9 +278,6 @@ func _select_value(key: StringName, value: Variant) -> void:
 func _step(key: StringName, direction: int) -> void:
 	var was_expanded := _expanded_key == key
 	_expanded_key = &""
-	# The two display rows push a confirm modal further down, which moves
-	# focus to it - so any collapse-and-refocus of this row has to happen
-	# first, or the confirm steals focus right back the instant it opens.
 	if was_expanded:
 		_rebuild(key)
 	match key:
@@ -276,7 +288,7 @@ func _step(key: StringName, direction: int) -> void:
 			var old_resolution := Settings.resolution
 			Settings.step_value(key, direction)
 			_refresh_row(key)
-			_show_display_confirm(old_window_mode, old_resolution)
+			_queue_display_confirm(old_window_mode, old_resolution)
 		_:
 			Settings.step_value(key, direction)
 			_refresh_row(key)
@@ -305,7 +317,7 @@ func _step_resolution(direction: int) -> void:
 	var new_value: Vector2i = options[clampi(index + direction, 0, options.size() - 1)]
 	Settings.set_value(&"resolution", new_value)
 	_refresh_row(&"resolution")
-	_show_display_confirm(old_window_mode, old_resolution)
+	_queue_display_confirm(old_window_mode, old_resolution)
 
 # --- reset to defaults ---------------------------------------------------------
 
@@ -318,15 +330,26 @@ func _on_reset_confirmed() -> void:
 	_expanded_key = &""
 	_rebuild()
 
-# --- the display-mode revert ---------------------------------------------------
+# --- the display revert ---------------------------------------------------------------
 #
-# WINDOW MODE and RESOLUTION apply instantly like every other row, but either
-# can strand a player behind a display the monitor rejects or a window bigger
-# than the screen. So on top of applying, they push the confirm modal with a
-# countdown and connect their own one-shot listener straight to it: the dialog
-# still only reports which button was pressed (ui_manager.gd's own `back` stays
-# wired to `cancelled` untouched), this is an *additional* listener for the one
-# thing that needs to know a display mode reverted.
+# WINDOW MODE and RESOLUTION apply instantly like every other row, but either can strand a
+# player behind a display the monitor rejects or a window bigger than the screen. So on top of
+# applying, they raise the confirm modal with a countdown, reverting if it expires.
+#
+# The confirm is debounced rather than per-step. It used to fire on every arrow press and take
+# focus with it, so walking the resolution list from 1280x720 to 3840x2160 was four separate
+# modal round-trips - the row interrogated you once per notch about a change you were still in
+# the middle of making. Now stepping is silent and a step restarts DISPLAY_SETTLE; one second
+# after you stop, a single confirm covers the whole run.
+#
+# Which is why _revert_* is captured on the *first* step of a run and held, rather than
+# overwritten each time. Four steps forward and CANCEL returns you to where you started, not to
+# the third notch - reverting to a value you were only passing through would leave you stranded
+# in a different way than the one this exists to prevent.
+#
+# The dialog itself stays ignorant: it still only reports which button was pressed, and
+# ui_manager.gd's own `back` wiring to `cancelled` is untouched. This adds one listener for the
+# single thing that needs to know a display mode reverted.
 
 func _confirm_dialog() -> Control:
 	# Looked up on demand rather than cached in _ready(): SCREENS spawns shell
@@ -334,24 +357,40 @@ func _confirm_dialog() -> Control:
 	# a shell-hosted tab_settings would otherwise have cached it.
 	return UI._instances[&"confirm"]
 
-func _show_display_confirm(old_window_mode: String, old_resolution: Vector2i) -> void:
-	_revert_window_mode = old_window_mode
-	_revert_resolution = old_resolution
+## Called by every display change. Starts a run if one is not already open, then pushes the
+## confirm back by another DISPLAY_SETTLE.
+func _queue_display_confirm(old_window_mode: String, old_resolution: Vector2i) -> void:
+	if not _display_run:
+		_display_run = true
+		_revert_window_mode = old_window_mode
+		_revert_resolution = old_resolution
+	_display_timer.start(DISPLAY_SETTLE)
+
+func _show_display_confirm() -> void:
+	if not _display_run:
+		return
 	var dialog := _confirm_dialog()
 	if dialog.cancelled.is_connected(_on_display_reverted):
 		dialog.cancelled.disconnect(_on_display_reverted)
 	dialog.cancelled.connect(_on_display_reverted, CONNECT_ONE_SHOT)
 	UI.confirm("KEEP THIS DISPLAY MODE?", "Reverting to the previous display mode.",
 		_on_display_kept)
+	# UI.confirm() calls setup() without a countdown, so the countdown is armed here rather than
+	# taught to ui_manager.gd - the dialog stays reusable by the three callers that do not want
+	# one. Same title and message, so the player sees no flicker between the two calls.
 	dialog.setup("KEEP THIS DISPLAY MODE?", "Reverting to the previous display mode.", 15.0)
 
 func _on_display_kept() -> void:
+	_display_run = false
 	var dialog := _confirm_dialog()
 	if dialog.cancelled.is_connected(_on_display_reverted):
 		dialog.cancelled.disconnect(_on_display_reverted)
 
 func _on_display_reverted() -> void:
+	_display_run = false
 	Settings.set_value(&"window_mode", _revert_window_mode)
 	Settings.set_value(&"resolution", _revert_resolution)
+	# Those two set_value calls do not re-queue a confirm - _queue_display_confirm() is only
+	# reached from a row the player stepped, never from here.
 	_expanded_key = &""
 	_rebuild()

@@ -4,9 +4,11 @@ extends "res://tests/test_case.gd"
 # everything else.
 #
 # Two of these are the whole feature and the rest are guards. The first is that the base FOV
-# is read off the camera rather than declared, because the failure there is silent - a
-# constant in pilot9.gd would overwrite the Camera3D's own value on the first frame and give
-# no sign it had. The second is the airborne case: `is_sprinting` needs is_on_floor(), so a
+# tracks the player's FOV setting live, because the failure there is silent: this test used to
+# assert the opposite - that the base was captured off the Camera3D - and the settings screen
+# broke it by capturing Settings.fov into a field in _ready() instead. The value saved, it
+# survived a relaunch, and it did nothing to a pilot who already existed.
+# The second is the airborne case: `is_sprinting` needs is_on_floor(), so a
 # gate written the obvious way dips the view on every sprint jump and reads as a camera bug
 # rather than a wrong condition.
 #
@@ -19,8 +21,7 @@ const STEP := 1.0 / 60.0
 
 var _instances: Array[Node] = []
 
-# Unlike the slide tests, these need _ready() to have run: base_fov is captured there and
-# camera_3d is an @onready. So the rig goes into the real tree and comes back out in end().
+# Unlike the slide tests, these need _ready() to have run: camera_3d is an @onready. So the rig goes into the real tree and comes back out in end().
 # Nothing steps physics here - every test drives _handle_camera_fov() by hand.
 func _scene() -> Node:
 	var ps := load(PILOT_TSCN) as PackedScene
@@ -66,20 +67,37 @@ func _settled(root: Node) -> float:
 
 # --- the base FOV ----------------------------------------------------------
 
-# The base is a measurement of the rig, not a number in pilot9.gd. A constant here would be
-# invisible until someone tuned the camera in the editor and found the tuning gone.
-func test_the_base_fov_is_read_off_the_camera() -> void:
+# The base is the player's FOV setting, read live. A field captured in _ready() passes on the
+# frame it spawns and is wrong for every frame after the player moves the slider - which is
+# exactly the bug this replaced. Asserting it against a value changed *after* _ready() is the
+# whole point of the test.
+func test_the_base_fov_tracks_the_fov_setting() -> void:
 	var root := _scene()
 	if root == null:
 		fail("scenes/pilot9.tscn did not load")
 		return
-	var cam := _camera(root)
-	if cam == null:
-		fail("no Camera3D at CameraPivot/SpringArm3D/Camera3D")
-		return
-	approx(float(root.get("base_fov")), cam.fov, 0.001,
-		"base_fov is not the camera's own fov - it was declared rather than captured, and " +
-		"tuning the Camera3D in the editor will be silently overwritten on the first frame")
+	var before := float(root.get("base_fov"))
+	approx(before, Settings.fov, 0.001,
+		"base_fov is %.1f but the FOV setting is %.1f at spawn" % [before, Settings.fov])
+	var other: float = 60.0 if Settings.fov > 60.0 else 110.0
+	Settings.set_value(&"fov", other)
+	var after := float(root.get("base_fov"))
+	Settings.set_value(&"fov", before)
+	approx(after, other, 0.001,
+		"the FOV setting moved to %.1f and base_fov stayed at %.1f - it is a field captured " %
+			[other, after] +
+		"at spawn rather than a live read, so the settings row does nothing to a pilot who " +
+		"already exists")
+
+# The suite must not depend on user://settings.cfg. Autoloads load headlessly, so without the
+# is_test_run() guard in settings.gd the base above is whatever this machine last saved - and
+# two tests in this file were red for exactly that reason, on a file outside the repo.
+func test_the_suite_sees_shipped_defaults_not_a_local_config() -> void:
+	approx(Settings.fov, float(Settings.defaults()[&"fov"]), 0.001,
+		"Settings.fov is %.1f, not the shipped default - this headless run read a real " %
+			Settings.fov +
+		"user://settings.cfg, so every test touching a settings-driven number now depends " +
+		"on which machine it ran on")
 
 # Standing still, nothing happens: no boost, and no drift away from the base either.
 func test_standing_still_holds_the_base_fov() -> void:

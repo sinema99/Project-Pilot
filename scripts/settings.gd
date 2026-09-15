@@ -15,6 +15,20 @@ const SAVE_PATH := "user://settings.cfg"
 const SAVE_DEBOUNCE := 0.5
 const CONFIG_VERSION := 1
 
+## True under `--headless`, which means the test suite and the `--quit-after` smoke boot.
+##
+## Such a run neither reads nor writes user://settings.cfg. Autoloads load during headless
+## runs, so without this the suite's verdict depends on a file outside the repo: a fresh clone
+## passes, and the same commit fails on a machine where somebody once nudged a slider. That is
+## not hypothetical - it is what turned test_pilot9_sprint_fov.gd red, on two tests that have
+## nothing to do with settings. It also keeps a test run from overwriting real settings.
+##
+## The display server, not `OS.has_feature("headless")`, which is **false** under --headless -
+## it reports export features, and a headless run of the editor binary is not an export. The
+## driver is the thing that actually differs, and it reports "headless" rather than "windows".
+static func is_test_run() -> bool:
+	return DisplayServer.get_name() == "headless"
+
 # key, label, section, values, default index
 #
 # The two continuous rows (BRIGHTNESS, both sensitivities) and FOV are written
@@ -196,10 +210,11 @@ func reset_to_defaults() -> void:
 
 func _load() -> void:
 	var cfg := ConfigFile.new()
-	var err := cfg.load(SAVE_PATH)
+	var err := ERR_FILE_NOT_FOUND if is_test_run() else cfg.load(SAVE_PATH)
 	if err != OK:
 		# A missing file is not an error, it is a first launch: defaults are
-		# used and nothing is written until something changes.
+		# used and nothing is written until something changes. A headless run
+		# takes this path too - see is_test_run().
 		_values = defaults()
 		_values[&"resolution"] = _native_resolution()
 	else:
@@ -209,9 +224,11 @@ func _load() -> void:
 			raw[key] = cfg.get_value(String(row[2]), String(key))
 		_values = sanitise(raw)
 	for row: Array in DEFS:
-		_apply(row[0], _values[row[0]])
+		_apply(row[0], _values[row[0]], true)
 
 func _save() -> void:
+	if is_test_run():
+		return
 	var cfg := ConfigFile.new()
 	cfg.set_value("meta", "version", CONFIG_VERSION)
 	for row: Array in DEFS:
@@ -225,16 +242,15 @@ func _native_resolution() -> Vector2i:
 # --- the applying half: DisplayServer, RenderingServer, the viewport, the ------
 # --- gamma uniform. Deliberately not tested - see What The Test Fences. -------
 
-func _apply(key: StringName, value: Variant) -> void:
+## `booting` marks the sweep _load() does over every row at startup, as opposed to a row the
+## player just changed. The two display rows are the only ones that care.
+func _apply(key: StringName, value: Variant, booting: bool = false) -> void:
 	match key:
 		&"window_mode":
-			# The F6 playtest window is 1440p, set by window_width_override,
-			# which only applies from the editor. Applying a saved window mode
-			# on top of it would fight that override on every iteration.
-			if not OS.has_feature("editor"):
+			if not _skip_display(booting):
 				_apply_window_mode(value)
 		&"resolution":
-			if not OS.has_feature("editor"):
+			if not _skip_display(booting):
 				DisplayServer.window_set_size(value)
 		&"vsync":
 			var modes := {
@@ -275,9 +291,33 @@ func _apply(key: StringName, value: Variant) -> void:
 			if filter:
 				filter.apply_setting(value)
 		&"mouse_sensitivity", &"controller_sensitivity", &"fov":
-			# No global to push to - pilot9.gd and mech.gd read these straight
-			# off this autoload at the point of use.
+			# No global to push to, because every consumer reads these off this
+			# autoload at the point of use rather than caching them: both
+			# _unhandled_input() handlers and pilot9's
+			# _handle_controller_camera() multiply by the sensitivity every
+			# frame they turn, and both cameras take their FOV from `fov` the
+			# same way - pilot9 through base_fov, which is a property, and mech
+			# in _process().
+			#
+			# That was the claim here before and it was only true of the two
+			# sensitivity rows. FOV was captured into a field in pilot9's
+			# _ready(), so it saved to disk, survived a relaunch, and did
+			# nothing to a pilot who already existed. The fix was to delete the
+			# field, not to add a push - see docs/specs/settings.md, FOV
+			# Applies Live. Anything added here later must read live or say so.
 			pass
+
+## WINDOW MODE and RESOLUTION apply on change everywhere, including from the editor - that is
+## the only way they can be QA'd, since this project is tested by playing it, and previously
+## they were switched off in exactly that case and still raised the fifteen-second confirm.
+##
+## What stays exempt is applying them *on boot* from the editor. project.godot sets
+## window/size/window_width_override=2560x1440, which only applies to an F6 playtest; letting a
+## saved mode override it would mean every iteration inherits whatever display mode was last
+## picked - set EXCLUSIVE once and every playtest afterwards takes the monitor before you have
+## touched anything. An exported build has no such override and applies both on boot.
+func _skip_display(booting: bool) -> bool:
+	return booting and OS.has_feature("editor")
 
 func _apply_window_mode(value: String) -> void:
 	match value:
