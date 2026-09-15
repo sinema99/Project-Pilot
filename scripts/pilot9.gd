@@ -788,6 +788,10 @@ func _ready() -> void:
 	# so the reason for it sits next to the number. See FLOOR_SNAP_LENGTH.
 	floor_snap_length = FLOOR_SNAP_LENGTH
 	base_fov = camera_3d.fov
+	# Must come after the line above, or Settings.fov is overwritten by the
+	# authored 75 on every spawn - the settings row would work in the menu and
+	# do nothing in the world. See docs/specs/settings.md, One Ordering Trap.
+	base_fov = Settings.fov
 	target_camera_distance = 0.0 if camera_mode == CameraMode.FIRST_PERSON else camera_distance
 	_camera_mode_length = target_camera_distance
 	spring_arm.spring_length = target_camera_distance
@@ -1605,8 +1609,9 @@ func _handle_controller_camera(delta: float) -> void:
 		return
 	var look_dir = Input.get_vector("look_left", "look_right", "look_up", "look_down")
 	if look_dir != Vector2.ZERO:
-		camera_pivot.rotation.y -= look_dir.x * controller_sensitivity * delta
-		camera_pivot.rotation.x -= look_dir.y * controller_sensitivity * delta
+		var sensitivity := controller_sensitivity * Settings.controller_sensitivity
+		camera_pivot.rotation.y -= look_dir.x * sensitivity * delta
+		camera_pivot.rotation.x -= look_dir.y * sensitivity * delta
 		camera_pivot.rotation.x = clampf(camera_pivot.rotation.x, -tilt_limit, tilt_limit)
 
 ## Gives the SpringArm3D a shape to sweep and takes pilot9 himself out of both casts, then
@@ -2132,9 +2137,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 
 	if event is InputEventMouseMotion:
-		camera_pivot.rotation.x -= event.relative.y * mouse_sensitivity
+		# Settings.mouse_sensitivity is a 0.25x-2.00x scalar on top of this
+		# authored value, not a replacement for it - the number itself is a
+		# deliberate feel decision. See docs/specs/settings.md, Controls.
+		var sensitivity := mouse_sensitivity * Settings.mouse_sensitivity
+		camera_pivot.rotation.x -= event.relative.y * sensitivity
 		camera_pivot.rotation.x = clampf(camera_pivot.rotation.x, -tilt_limit, tilt_limit)
-		camera_pivot.rotation.y += -event.relative.x * mouse_sensitivity
+		camera_pivot.rotation.y += -event.relative.x * sensitivity
 
 func _input(event: InputEvent) -> void:
 	if InputMap.has_action("camera_mode_switch") and event.is_action_pressed("camera_mode_switch") and allow_camera_mode_switch:

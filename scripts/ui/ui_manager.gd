@@ -16,6 +16,7 @@ enum Action { BACK, CLOSE, PUSH }
 const SCREENS := {
 	&"shell": {"path": "res://scenes/ui/shell.tscn", "pauses": true},
 	&"confirm": {"path": "res://scenes/ui/confirm_dialog.tscn", "pauses": true},
+	&"settings": {"path": "res://scenes/ui/settings_screen.tscn", "pauses": true},
 }
 
 const DIM_COLOR := Color(0, 0, 0, 0.65)

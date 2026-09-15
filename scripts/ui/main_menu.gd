@@ -32,9 +32,7 @@ func _on_start_pressed() -> void:
 	UI.start_game(start_scene)
 
 func _on_settings_pressed() -> void:
-	# Matches the shell's empty settings tab. Options need persistence, which is
-	# out of scope in the spec.
-	print("[UI] Settings - not implemented yet.")
+	UI.open(&"settings")
 
 func _on_quit_pressed() -> void:
 	UI.confirm("QUIT TO DESKTOP", "Close the game.", get_tree().quit)

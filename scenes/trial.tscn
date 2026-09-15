@@ -8,6 +8,8 @@
 [ext_resource type="Shader" uid="uid://dcg01gsjj5mpj" path="res://shaders/pixelate.gdshader" id="6_pixelate"]
 [ext_resource type="Script" uid="uid://yxw7w7viuhmd" path="res://scripts/blockout_box.gd" id="7_o74lt"]
 [ext_resource type="Script" uid="uid://csg3i1yfc2wog" path="res://scripts/rendering/pixelate.gd" id="7_pixctl"]
+[ext_resource type="Script" uid="uid://dqu60v1m6onbs" path="res://scripts/sliding_door.gd" id="8_4iqja"]
+[ext_resource type="Script" uid="uid://dxyqtg1yajynr" path="res://scripts/interact_button.gd" id="9_6vp88"]
 [ext_resource type="PackedScene" uid="uid://b745modfj23k4" path="res://assets/TrainingV.glb" id="9_training"]
 [ext_resource type="PackedScene" path="res://scenes/mech.tscn" id="10_mech"]
 [ext_resource type="PackedScene" uid="uid://ddbskbkf8wj8v" path="res://assets/mission1.glb" id="11_mission1"]
@@ -57,7 +59,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.08662796, 0, 0.036067963)
 transform = Transform3D(-4.371139e-08, 0, 1, 0, 1, 0, -1, 0, -4.371139e-08, 143.99373, -76.40996, 0)
 
 [node name="Pilot9" parent="." unique_id=530713254 instance=ExtResource("1_pilot")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -95, 1.678, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.678, 0)
 
 [node name="JumpGrid" parent="." unique_id=284119061 instance=ExtResource("12_jumpgrid")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -95, 1.5, 0)
@@ -155,6 +157,33 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -180.72691, 3.996377, 6.51429
 script = ExtResource("7_o74lt")
 size = Vector3(0.5, 12, 7)
 
+[node name="DoorButton1" type="Node3D" parent="Blockout" unique_id=1744968154]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -99, 0, -11)
+
+[node name="Door" type="StaticBody3D" parent="Blockout/DoorButton1" unique_id=1036841979]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.27308655, -0.0036230087, -3.2357063)
+script = ExtResource("8_4iqja")
+size = Vector3(0.5, 6, 6)
+
+[node name="Button" type="StaticBody3D" parent="Blockout/DoorButton1" unique_id=2031894747]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.023086548, -0.0036230087, 3.2642946)
+script = ExtResource("9_6vp88")
+size = Vector3(1, 1, 1)
+
+[node name="DoorButton2" type="Node3D" parent="Blockout" unique_id=166086443]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -181, 4, 3)
+
+[node name="Door" type="StaticBody3D" parent="Blockout/DoorButton2" unique_id=1735391002]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.27308655, -0.0036230087, -3.0357063)
+script = ExtResource("8_4iqja")
+open_speed = 2.0
+size = Vector3(0.5, 6, 6)
+
+[node name="Button" type="StaticBody3D" parent="Blockout/DoorButton2" unique_id=1113495079]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.0230865, 8.996377, -10.735705)
+script = ExtResource("9_6vp88")
+size = Vector3(1, 1, 1)
+
 [node name="EXIA" parent="." unique_id=612094488 instance=ExtResource("10_mech")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.04, -12)
 
@@ -176,7 +205,7 @@ material = ExtResource("5_char")
 targets = Array[NodePath]([NodePath("../EXIA/Model")])
 derive_from_surfaces = true
 
-[node name="PixelFilter" type="CanvasLayer" parent="." unique_id=164024207]
+[node name="PixelFilter" type="CanvasLayer" parent="." unique_id=164024207 groups=["pixel_filter"]]
 visible = false
 script = ExtResource("7_pixctl")
 

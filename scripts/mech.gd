@@ -55,7 +55,11 @@ extends CharacterBody3D
 # re-tuned number for this one.
 const SPEED = 7.0
 const ROTATE_SPEED = 10.0
-const MOUSE_SENSITIVITY = 0.0025
+# A var, not a const: Settings.mouse_sensitivity scales it at the point of use
+# (see _unhandled_input below). The authored 0.0025 stays what it means -
+# EXIA's own feel, deliberately a different number from pilot9's 0.005 - and
+# is not overwritten by the settings row, only multiplied against.
+var MOUSE_SENSITIVITY := 0.0025
 const PITCH_MIN = -1.3
 const PITCH_MAX = 1.3
 
@@ -171,6 +175,9 @@ var travel_scale := 1.0
 @onready var prompt_label: Label = $UI/Prompt/Row/Text
 
 func _ready() -> void:
+	# So a boarding handover does not lurch if this ever gets read before the
+	# first _begin_handover() call overwrites it with the pilot's live camera.
+	_handover_from_fov = Settings.fov
 	interaction_area.body_entered.connect(_on_body_entered)
 	interaction_area.body_exited.connect(_on_body_exited)
 	spring_arm.add_excluded_object(get_rid())
@@ -235,8 +242,9 @@ func _update_prompt() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if pilot != null and event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		camera_yaw -= event.relative.x * MOUSE_SENSITIVITY
-		camera_pitch = clamp(camera_pitch - event.relative.y * MOUSE_SENSITIVITY, PITCH_MIN, PITCH_MAX)
+		var sensitivity := MOUSE_SENSITIVITY * Settings.mouse_sensitivity
+		camera_yaw -= event.relative.x * sensitivity
+		camera_pitch = clamp(camera_pitch - event.relative.y * sensitivity, PITCH_MIN, PITCH_MAX)
 
 	# Setsuna's own _unhandled_input is switched off while she is piloting, so F cannot be
 	# claimed by both scripts on the same press.

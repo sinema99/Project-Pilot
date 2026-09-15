@@ -79,7 +79,7 @@ script = ExtResource("3_applier")
 material = ExtResource("6_char")
 targets = Array[NodePath]([NodePath("../EXIA/Model")])
 
-[node name="PixelFilter" type="CanvasLayer" parent="." unique_id=1247416858]
+[node name="PixelFilter" type="CanvasLayer" parent="." unique_id=1247416858 groups=["pixel_filter"]]
 visible = false
 script = ExtResource("8_pixctl")
 

@@ -118,6 +118,10 @@ func _build_hint(key: String, label: String) -> Control:
 # Read in _input rather than _unhandled_input: a focused Button consumes
 # ui_left / ui_right for its own focus navigation, so left and right would never
 # reach the tab strip.
+#
+# tab_prev / tab_next no longer bind Left / Right themselves (see
+# docs/specs/settings.md, Left And Right) - only Q/E and the shoulder buttons
+# reach here now, freeing the arrow keys for a row to adjust its own value.
 func _input(event: InputEvent) -> void:
 	# Visible is not enough: with a modal pushed on top, the shell is still
 	# visible underneath it, and Q/E would silently switch tabs behind the dialog.
