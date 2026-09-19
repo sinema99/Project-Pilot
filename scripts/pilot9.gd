@@ -462,6 +462,27 @@ enum CameraMode {
 ## point so his soles finish on the platform rather than through it.
 @export var climb_foot_offset: Vector3 = Vector3.ZERO
 
+## Dash Settings
+## -----------------------------------------------------------------------------
+## He vanishes, travels flat for `dash_time` at `dash_speed`, and reappears - no clip, no
+## state machine entry, no TimeScale. See docs/specs/pilot9-dash.md.
+##
+## All three exported rather than const, unlike Setsuna's in player.gd: his whole kit is
+## tuned in the inspector while playing, and a feature whose numbers are explicitly guesses
+## is not going to be the exception.
+
+@export_group("Dash")
+@export var can_dash: bool = true
+## Started from Setsuna's DASH_SPEED (18.0), bumped snappier after the play session, then
+## doubled again on 2026-09-18 alongside the dash_time halving below - distance (dash_speed *
+## dash_time) is unchanged, only how fast it happens. See docs/specs/pilot9-dash.md.
+@export_range(1.0, 80.0, 0.5, "or_greater") var dash_speed: float = 40.0
+## The user's call, 2026-09-17, halved 2026-09-18 for a snappier feel. Setsuna's is 0.3 s.
+@export_range(0.05, 3.0, 0.05) var dash_time: float = 0.25
+## Measured from the PRESS, not from the end of the dash, so the constant means what it
+## says. Chosen against his 1.2 s airtime - see docs/specs/pilot9-dash.md, Availability.
+@export_range(0.0, 10.0, 0.1) var dash_cooldown: float = 1.5
+
 ## Camera Settings
 ## -----------------------------------------------------------------------------
 ## Adjust camera sensitivity and rotation limits.
@@ -531,6 +552,16 @@ enum CameraMode {
 ## the camera: the arm's own backstop may still take it under this in a corner, which is the
 ## safety net doing its job.
 @export_range(0.0, 5.0, 0.1) var camera_min_distance: float = 0.8
+## How long the dash's camera lag holds at its launch position before it starts gliding
+## toward him, in real seconds. See _camera_dash_lag_position() and docs/specs/pilot9-dash.md,
+## Camera. 0.0 is the original behaviour - the glide starts the instant he vanishes.
+@export_range(0.0, 0.5, 0.01) var camera_dash_lag_delay: float = 0.05
+## How long the glide itself takes once the delay above has elapsed, in real seconds -
+## independent of `dash_time` now, on purpose, so the catch-up can be tuned slower than the
+## dash without also retuning the dash. Together with `camera_dash_lag_delay` this can run
+## past `dash_time`, in which case the shot is still visibly gliding onto him for a beat after
+## he has already reappeared - see _camera_dash_lag_position().
+@export_range(0.05, 1.5, 0.01) var camera_dash_lag_time: float = 0.3
 
 ## Seconds of clip the hold's speed is averaged over - see _slide_speed_at(). Long enough to
 ## span several of `slide_motion`'s 64 segments and short enough to still be local to the
@@ -581,6 +612,16 @@ const CLIMB_LIP_PROBE_INSET := 0.4
 ## exactly on a band boundary is still found and the headroom ray does not start inside the
 ## platform it is standing on.
 const CLIMB_PROBE_MARGIN := 0.15
+
+## get_real_velocity() below this fraction of dash_speed, measured AFTER move_and_slide(),
+## means something stopped him rather than him having simply not reached full speed yet -
+## see _check_dash_blocked(). One velocity comparison catches walls, corners, slope
+## shoulders and ceilings without any normal math.
+const DASH_BLOCKED_SPEED_FRACTION := 0.5
+## Seconds the ink streak keeps fading after he reappears.
+const DASH_STREAK_LINGER := 0.15
+## Full width of the ink streak, metres, at the head end (it tapers to zero at the tail).
+const DASH_STREAK_WIDTH := 0.35
 
 var input_dir: Vector2 = Vector2.ZERO
 var input_strength: float = 0.0
@@ -731,6 +772,38 @@ var _climb_detected_reach: float = 0.0
 ## buffer gives. Dropped, not spent, if `frozen` ends the mantle.
 var _climb_jump_buffered: bool = false
 
+## True for the length of a dash. Read only by pilot9.gd itself - the AnimationTree is not
+## consulted at all while this is true, which is the whole feature. See
+## docs/specs/pilot9-dash.md.
+var is_dashing: bool = false
+## Seconds left in the current dash, counting down from `dash_time`.
+var _dash_time_left: float = 0.0
+## Seconds left before another dash may be LAUNCHED, counting down from `dash_cooldown` from
+## the frame of the press - not from the end of the dash.
+var _dash_cooldown_left: float = 0.0
+## Steerable for the whole window - see _steer_dash(). Set at launch, then overwritten every
+## physics frame from live input while a stick is held, holding whatever it last was when the
+## stick is centred. World-space, already normalised, y always 0.
+var _dash_direction: Vector3 = Vector3.ZERO
+## One dash's worth of air availability. Spent only by a dash LAUNCHED while airborne (see
+## _dash_air_charge_after_launch()) and refreshed the instant he touches a floor (see
+## _dash_air_charge_refreshed()), whatever the cooldown is doing - the charge is robust
+## against a cooldown that gets tuned down during QA, not redundant with it.
+var _dash_air_charge: bool = true
+## World-space positions sampled once a physics frame while dashing, oldest first. What the
+## ink streak is rebuilt from every physics frame - see _update_dash_streak().
+var _dash_points: PackedVector3Array = []
+## Seconds left in the streak's post-dash fade. Zero means nothing is lingering.
+var _dash_linger_left: float = 0.0
+## What _hide_for_dash() found on each mesh under `character` before touching it, so
+## _restore_from_dash() can put every one back to what it actually was rather than a
+## blanket ON. One entry per mesh: {"mesh": MeshInstance3D, "visible": bool}.
+var _dash_shadow_cache: Array[Dictionary] = []
+## Built once in _ready() - see _setup_dash_streak(). Held separately from the
+## MeshInstance3D so _update_dash_streak() never has to re-fetch .mesh.
+var _dash_streak_mesh: ImmediateMesh = null
+var _dash_streak: MeshInstance3D = null
+
 # Freeze the character. It may be useful when you want to pause the character.
 var frozen: bool = false
 
@@ -750,6 +823,24 @@ var _camera_mode_length: float = 3.5
 ## The probe cast every frame by _camera_obstruction_length(), built once in
 ## _setup_camera_collision() rather than per frame - it is the same query with a new origin.
 var _camera_probe: PhysicsShapeQueryParameters3D = null
+## True from the moment a dash launches until `camera_dash_lag_delay + camera_dash_lag_time` has
+## elapsed in real time - see _camera_dash_lag_position(). While true, _process() blends
+## CameraPivot's position from where the rig was at launch toward the live weld target instead
+## of setting it outright, which is what lets him visibly outrun the camera and the shot glide
+## back onto him rather than snap. False the rest of the time, which is the existing hard weld
+## with nothing about it changed.
+var _camera_dash_lag_active: bool = false
+## Where CameraPivot was the instant the dash launched - since it was hard-welded up to that
+## frame, this IS his launch position (plus CAMERA_PIVOT_OFFSET). The lerp's fixed end;
+## _camera_dash_lag_position() never needs to know where the dash will actually take him.
+var _camera_dash_lag_start: Vector3 = Vector3.ZERO
+## Real seconds since the dash launched, ticked in _process() rather than the physics step -
+## deliberately independent of `_dash_time_left`, which _check_dash_blocked() can zero out
+## early. A dash cut short by a wall still owes the camera the rest of its original
+## `camera_dash_lag_delay + camera_dash_lag_time` budget to glide the last of the way in;
+## borrowing the dash's own countdown would truncate that into a snap the instant the wall
+## stops him.
+var _camera_dash_lag_elapsed: float = 0.0
 ## The FOV with no sprint boost on it: the player's own setting, read live every frame the
 ## boost is computed. A computed property rather than a field captured in _ready(), because a
 ## field is only ever as fresh as the last spawn - the settings row wrote to disk, survived a
@@ -788,6 +879,13 @@ static func jump_distance_for(
 func jump_distance(horizontal_speed: float = speed) -> float:
 	return jump_distance_for(horizontal_speed, jump_time_to_apex, jump_fall_multiplier)
 
+## How far a dash covers, metres. Flat and locked for the whole window, so unlike
+## jump_distance() there is no arc to integrate - it is exactly speed times time. Started at
+## 9.0 m, the same number as the sprint jump, then moved off that lip on the play-session
+## retune; see docs/specs/pilot9-dash.md, "The 9.0 m collision".
+func dash_distance() -> float:
+	return dash_speed * dash_time
+
 
 func _ready() -> void:
 	# Set here rather than on the scene so it cannot be lost to a rebuild of pilot9.tscn, and
@@ -797,6 +895,7 @@ func _ready() -> void:
 	_camera_mode_length = target_camera_distance
 	spring_arm.spring_length = target_camera_distance
 	_setup_camera_collision()
+	_setup_dash_streak()
 	if character:
 		character.visible = camera_mode == CameraMode.THIRD_PERSON
 
@@ -812,6 +911,10 @@ func _physics_process(delta: float) -> void:
 	if frozen and is_climbing:
 		_end_climb(false)
 	_handle_crouch_and_slide(delta)
+	# Ahead of _handle_gravity_and_jump(): a dash launched this frame has to be is_dashing
+	# true before that function runs, since it is the thing that refuses to run at all while
+	# he is dashing (gravity suspended, jump not readable - see docs/specs/pilot9-dash.md).
+	_handle_dash(delta)
 	_handle_gravity_and_jump(delta)
 	_handle_camera_transition(delta)
 	_handle_controller_camera(delta)
@@ -833,19 +936,30 @@ func _physics_process(delta: float) -> void:
 		# the body, so it has to turn even in a camera mode where nothing is drawing the mesh.
 		if is_sliding:
 			_steer_slide(delta)
+		elif is_dashing:
+			_steer_dash()
 		if camera_mode == CameraMode.THIRD_PERSON:
 			_handle_character_rotation(delta)
-		# A slide owns his velocity outright: the curve says how fast, the steered heading
-		# says where, and the stick reaches it only through that heading.
-		if is_sliding:
+		# A dash owns his velocity outright, same as a slide - see _apply_dash_velocity().
+		# Unlike the mantle it still calls move_and_slide() below: the blocked-dash cut
+		# reads its result.
+		if is_dashing:
+			_apply_dash_velocity()
+		elif is_sliding:
 			_apply_slide_velocity(delta)
 		else:
 			_apply_movement(delta)
 		move_and_slide()
+		if is_dashing:
+			# After move_and_slide(), not before: this is the one place the dash asks what
+			# actually happened this frame rather than what it demanded.
+			_check_dash_blocked()
+			_dash_points.append(global_position)
 
 	# Last, and after move_and_slide() on the branches that call it: get_floor_normal() is
 	# that call's output, so a tilt taken any earlier is lying about last frame's grade.
 	_align_model_to_slope(delta)
+	_update_dash_streak(delta)
 
 func handle_frozen_movement() -> void:
 	velocity.x = 0.0
@@ -920,6 +1034,12 @@ func _update_sprint_stop(on_floor: bool) -> void:
 ## input; the AnimationTree samples is_crouching and is_sliding after this.
 func _handle_crouch_and_slide(delta: float) -> void:
 	_slide_cooldown_left = maxf(_slide_cooldown_left - delta, 0.0)
+
+	# The dash already ended any slide and cleared the crouch on its own way in - see
+	# _start_dash(). `crouch` means nothing for the rest of the window, the same "0.5 s of
+	# zero control" the jump is refused under.
+	if is_dashing:
+		return
 
 	if frozen:
 		# Freezing mid-slide has to end it, not pause it: nothing advances _slide_time
@@ -1441,6 +1561,13 @@ static func _cut_rise(vy: float, held: bool, cut_speed: float) -> float:
 ##
 ## Gravity here is pilot9's own `jump_gravity`, NOT get_gravity(). See that property for why.
 func _handle_gravity_and_jump(delta: float) -> void:
+	# Gravity is suspended for the dash's whole window and `jump` is not readable during it
+	# at all - the user's call, and the sharpest cost in the design. See
+	# docs/specs/pilot9-dash.md, Jump. Both graces are frozen rather than ticked, exactly the
+	# way a climb freezes them below: they resume wherever the dash found them.
+	if is_dashing:
+		return
+
 	if is_climbing:
 		# Not cancellable - collision is off and he is on a scripted path over an edge, so
 		# there is no safe point to release him. The press is held for the exit instead.
@@ -1586,6 +1713,14 @@ func _handle_character_rotation(delta: float) -> void:
 	if camera_mode == CameraMode.FIRST_PERSON:
 		return
 	var target: float
+	if is_dashing:
+		# Welded to _dash_direction every frame, not just at launch - _steer_dash() has
+		# already moved it this frame if the stick asked for a new heading. An instant yaw
+		# snap is normally exactly what `rotation_speed` exists to prevent, and it is free
+		# here, every frame, because he is invisible for the whole window. See
+		# docs/specs/pilot9-dash.md, Direction.
+		character.rotation.y = atan2(_dash_direction.x, _dash_direction.z)
+		return
 	if is_climbing:
 		# Welded, like the slide's - and for a stronger reason: the entry snap placed his
 		# hands on the lip along this heading, so anything that turned him would slide the
@@ -1686,6 +1821,33 @@ static func _camera_length_step(current: float, desired: float, delta: float, re
 	var rate := retract_speed if desired < current else return_speed
 	return lerpf(current, desired, clampf(rate * delta, 0.0, 1.0))
 
+## The camera's position partway through the dash's catch-up: eased from wherever the rig was
+## AT LAUNCH toward wherever he is RIGHT NOW, weighted by how far past `delay` real time has
+## gotten, out of `duration`. Before `delay` has elapsed the weight is pinned at 0.0 - the rig
+## holds exactly at `start` while the target keeps moving, which is the "waits, then catches
+## up" read. Both ends of the glide itself are still exact - elapsed <= delay reproduces the
+## launch position bit for bit, elapsed >= delay + duration lands exactly on `target` - which is
+## what lets _process() hand back to the plain hard weld once the window closes, with nothing
+## left to snap into place.
+##
+## The "falls behind, glides back on" shape is not hand-tuned into the easing - it falls out of
+## blending toward a target that is ITSELF moving. `target` advances roughly linearly through
+## the dash (he is travelling at a constant `dash_speed`), so blending a *fixed* start toward a
+## *moving* target with weight smoothstep(t) opens a gap that grows while the weight is still
+## small, peaks near the middle of the window, and closes again as the weight approaches 1.
+## `delay` widens that gap further before the glide even starts; `duration` is no longer pinned
+## to `dash_time`, so the window this now closes on is `delay + duration`, not the dash's own
+## length - see camera_dash_lag_delay and camera_dash_lag_time.
+##
+## Static and pure so the curve is assertable with no tree, no camera and no dash actually run
+## - see tests/test_pilot9_dash.gd.
+static func _camera_dash_lag_position(start: Vector3, target: Vector3, elapsed: float,
+		delay: float, duration: float) -> Vector3:
+	if duration <= 0.0:
+		return target
+	var t := clampf((elapsed - delay) / duration, 0.0, 1.0)
+	return start.lerp(target, smoothstep(0.0, 1.0, t))
+
 ## Handles smooth camera transition between modes, and the walls.
 ##
 ## Two lengths, deliberately: the mode transition owns _camera_mode_length and the walls own
@@ -1760,23 +1922,25 @@ func _update_camera_mode() -> void:
 ## the brake, which is several times as much. Letting go of the stick is a request to stop,
 ## and the controller has to answer it whether or not his feet are down: on the floor that is
 ## `momentum_decay` / `momentum_brake`, in the air `air_momentum_decay` / `air_momentum_brake`.
-func _apply_movement(delta: float) -> void:
+## Which gait this frame's input asks for, and the flat speed that goes with it. Sets
+## is_sprinting/is_walking as a side effect.
+func _requested_speed() -> float:
 	var is_moving = input_dir != Vector2.ZERO and is_on_floor()
 	# Crouch outranks both gaits: it owns the whole locomotion state, so leaving either
 	# flag set would keep pilot9_animation.gd feeding the walk/run blends underneath it.
 	is_sprinting = sprint_toggled and is_moving and not Input.is_action_pressed("walk") and not is_crouching
 	is_walking = Input.is_action_pressed("walk") and is_moving and not sprint_toggled and can_walk and not is_crouching
-	
-	var current_speed: float
+
 	if is_crouching:
-		current_speed = crouch_speed
+		return crouch_speed
 	elif is_sprinting:
-		current_speed = sprint_speed
+		return sprint_speed
 	elif is_walking and can_walk:
-		current_speed = walk_speed
-	else:
-		current_speed = speed
-	
+		return walk_speed
+	return speed
+
+func _apply_movement(delta: float) -> void:
+	var current_speed := _requested_speed()
 	var demanded := current_speed * input_strength if direction else 0.0
 	var carried := _horizontal_speed()
 	# The speed the stick asks for, raised to a sprint where momentum is in play - over a
@@ -2109,6 +2273,283 @@ func _end_climb(completed: bool) -> void:
 	if not completed:
 		_climb_jump_buffered = false
 
+## -- the dash -----------------------------------------------------------------
+##
+## No clip, no state machine entry, no TimeScale - the whole point (see
+## docs/specs/pilot9-dash.md). He vanishes, flies flat at `dash_speed` for `dash_time`, and
+## reappears; the ink streak is the only thing standing in for an animation - the raking
+## shadow cue was cut after the play session. Two limiters gate it (a cooldown measured from
+## the press, and one air charge that only ever subtracts), and it wins outright over the
+## crouch and the slide but is refused outright by the mantle and by `frozen`.
+
+const _ApplyStylized := preload("res://scripts/rendering/apply_stylized.gd")
+
+## The press, the cooldown clock, the air-charge refresh, and the running dash's own timer.
+## Split from _apply_dash_velocity()/_check_dash_blocked() because those need to run either
+## side of move_and_slide() in _physics_process(), and this does not.
+func _handle_dash(delta: float) -> void:
+	_dash_air_charge = _dash_air_charge_refreshed(_dash_air_charge, is_on_floor())
+	_dash_cooldown_left = maxf(_dash_cooldown_left - delta, 0.0)
+	if not is_dashing and _dash_linger_left > 0.0:
+		_dash_linger_left = maxf(_dash_linger_left - delta, 0.0)
+		if _dash_linger_left <= 0.0:
+			_dash_points.clear()
+
+	if frozen:
+		# The same class as a freeze mid-slide or mid-mantle: not a moment the player is
+		# still asking to be dashing through.
+		if is_dashing:
+			_end_dash()
+		return
+
+	if is_dashing:
+		_dash_time_left -= delta
+		if _dash_time_left <= 0.0:
+			_end_dash()
+		return
+
+	# Mantle and frozen both refuse a fresh dash outright rather than queuing one - see
+	# _dash_availability(). Climbing is not cancellable and a dash out of the middle of it
+	# would fling a collider-less pilot9 through geometry.
+	if not Input.is_action_just_pressed("dash") or not _can_dash():
+		return
+
+	# Fresh input, not `direction`: this runs ahead of _handle_movement_input() in
+	# _physics_process(), the same reason the slide's press reads a fresh vector too.
+	var heading := _travel_direction(Input.get_vector("left", "right", "forward", "backward"))
+	if heading == Vector3.ZERO:
+		heading = _facing()          # the same fallback player.gd's DASH uses
+	_start_dash(heading)
+
+func _can_dash() -> bool:
+	return _dash_availability(can_dash, _dash_cooldown_left, _dash_air_charge, is_on_floor(),
+		is_climbing, frozen)
+
+## Both limiters and all four blocked states, as one pure function: `can_dash` off, mid-climb,
+## frozen, or still on cooldown with no air charge left to spend instead. Static so it can be
+## asserted with no tree - see tests/test_pilot9_dash.gd.
+static func _dash_availability(can_dash_: bool, cooldown_left: float, air_charge: bool,
+		on_floor: bool, climbing: bool, frozen_: bool) -> bool:
+	if not can_dash_ or climbing or frozen_ or cooldown_left > 0.0:
+		return false
+	return on_floor or air_charge
+
+## Refreshed the instant he touches a floor - landing, or finishing a mantle onto a ledge -
+## whatever the charge already was. Pure, and the reason it is pure is the same reason
+## _slope_accel() is: is_on_floor() cannot be made true without a physics world.
+static func _dash_air_charge_refreshed(air_charge: bool, on_floor: bool) -> bool:
+	return true if on_floor else air_charge
+
+## Spent by a dash LAUNCHED while airborne, and only then - a ground dash that carries him off
+## a ledge (which it will; gravity is suspended and the line is flat) leaves the charge
+## intact, because he started it on the floor.
+static func _dash_air_charge_after_launch(air_charge: bool, launched_on_floor: bool) -> bool:
+	return air_charge if launched_on_floor else false
+
+## The entry snap - instant, like the mantle's, because he is invisible for the whole window
+## and there is nobody watching a pop.
+func _start_dash(heading: Vector3) -> void:
+	_dash_air_charge = _dash_air_charge_after_launch(_dash_air_charge, is_on_floor())
+	is_dashing = true
+	_dash_time_left = dash_time
+	_dash_cooldown_left = dash_cooldown
+	_dash_direction = heading
+	# Dash wins over the crouch and the slide - free here because his collider never resizes
+	# (see docs/specs/pilot9-dash.md, Interactions) and because the flat dash_speed replaces
+	# whatever speed the slide was carrying rather than stacking onto it.
+	is_crouching = false
+	_end_slide()
+	_slide_buffered = false
+	# Neither grace should survive a dash - see _handle_gravity_and_jump()'s own note on why
+	# both are frozen rather than ticked while this is true.
+	_coyote_left = 0.0
+	_jump_buffered = 0.0
+	# The opening snap - same weld _handle_character_rotation() re-applies every later frame
+	# once _steer_dash() has had a chance to move _dash_direction, instant both times because
+	# nobody sees it happen.
+	character.rotation.y = atan2(_dash_direction.x, _dash_direction.z)
+	velocity = _dash_direction * dash_speed
+	velocity.y = 0.0
+	_dash_points.clear()
+	_dash_points.append(global_position)
+	_dash_linger_left = 0.0
+	_hide_for_dash()
+	# Let the shot fall behind for the window and glide back on afterward instead of staying
+	# welded to him - see _process() and docs/specs/pilot9-dash.md, Camera. The pivot's current
+	# position IS this frame's weld target already (nothing else has touched it), so capturing
+	# it here as the lerp's start is a no-op position-wise - the lag begins from exactly where
+	# the hard weld left off, with no jump.
+	_camera_dash_lag_active = true
+	_camera_dash_lag_start = camera_pivot.global_position
+	_camera_dash_lag_elapsed = 0.0
+
+## The exit - on the timer, or cut short by _check_dash_blocked(). The moment he reappears via
+## _restore_from_dash(), whatever he is ACTUALLY carrying is clamped DOWN to `sprint_speed` if
+## it is over that - same heading, same pattern as the slide entry's `_slide_reference_speed`
+## clamp. Downward only and off the real velocity rather than `dash_speed` outright, so a dash
+## cut short by _check_dash_blocked() (already near zero) is not shoved back up to sprint speed
+## into whatever just stopped him. He reappears already at sprint speed, not visibly carrying
+## dash speed for even a frame; a separate 2026-09-18 attempt at a slower
+## _apply_dash_exit_ease() blend was tried and reverted the same day for exactly that reason.
+## Sprint is the one exception to any of this - he always
+## comes out of a dash toggled into a sprint, on the ground or airborne. Airborne, is_sprinting
+## itself stays false until is_on_floor() (see _requested_speed()); sprint_toggled surviving the
+## fall is what makes him sprint the instant he lands rather than needing the player to re-press
+## sprint into a stopped dash's momentum. _end_verbs_for_boarding() calls this and then
+## overwrites sprint_toggled to false right after, so boarding EXIA mid-dash is unaffected.
+## No cooldown refund either way - see docs/specs/pilot9-dash.md, "Blocked mid-dash".
+func _end_dash() -> void:
+	if not is_dashing:
+		return
+	is_dashing = false
+	_dash_time_left = 0.0
+	_restore_from_dash()
+	_dash_linger_left = DASH_STREAK_LINGER
+	sprint_toggled = true
+	# Downward clamp only, off whatever he is ACTUALLY carrying (get_real_velocity()'s
+	# heading, not _dash_direction) - a dash cut short by _check_dash_blocked() is already
+	# near zero and this must not shove him back up to sprint_speed into the wall that just
+	# stopped him.
+	var carried := _horizontal_speed()
+	if carried > sprint_speed:
+		var heading := Vector3(velocity.x, 0.0, velocity.z) / carried
+		velocity.x = heading.x * sprint_speed
+		velocity.z = heading.z * sprint_speed
+
+## Steers the dash - retuned 2026-09-18, reversing the original locked-heading design after the
+## user tried it and changed their mind. Unlike _steer_slide(), this is not a lerp: he is
+## invisible for the whole window (see _hide_for_dash()), so there is nothing on screen for a
+## turn rate to smooth, and the heading can snap as many times as the stick asks for. Stick
+## centred, `direction` is Vector3.ZERO and the heading holds - the same "no input, no change"
+## rule _steer_slide() follows, and the same fallback _start_dash() uses at launch. Read only
+## while is_dashing (see the caller in _physics_process()), so this never touches
+## _dash_direction outside the window it is allowed to move.
+func _steer_dash() -> void:
+	if direction != Vector3.ZERO:
+		_dash_direction = direction
+
+## Bypasses _apply_movement() while the dash runs, exactly as _apply_slide_velocity() does for
+## the slide - flat, steered by _steer_dash() every frame, gravity suspended.
+func _apply_dash_velocity() -> void:
+	velocity.x = _dash_direction.x * dash_speed
+	velocity.y = 0.0
+	velocity.z = _dash_direction.z * dash_speed
+
+## The one collision check, run AFTER move_and_slide() so get_real_velocity() reflects what
+## actually happened this frame rather than what was demanded. A small fraction of dash_speed
+## means a wall, a corner, a slope shoulder or a ceiling stopped him; without this the naive
+## implementation pins an invisible pilot9 motionless for up to half a second, reappearing
+## exactly where he already was. See docs/specs/pilot9-dash.md, "Blocked mid-dash".
+func _check_dash_blocked() -> void:
+	var real := get_real_velocity()
+	if Vector2(real.x, real.z).length() < dash_speed * DASH_BLOCKED_SPEED_FRACTION:
+		_end_dash()
+
+## Every MeshInstance3D under `character` goes fully invisible for the window: body gone, cel
+## outline gone with it (it is a next_pass on the colour pass), and no shadow either - the
+## raking-shadow cue was cut after the play session, leaving the ink streak as the sole cue.
+## Reached through apply_stylized's own walk rather than a second copy of it.
+func _hide_for_dash() -> void:
+	_dash_shadow_cache.clear()
+	var meshes: Array[MeshInstance3D] = []
+	_ApplyStylized.collect_meshes(character, meshes)
+	for mi in meshes:
+		_dash_shadow_cache.append({"mesh": mi, "visible": mi.visible})
+		mi.visible = false
+
+## Returns every mesh to the visibility _hide_for_dash() found it at - never a blanket ON,
+## which would permanently change a mesh authored hidden the first time it ever dashed.
+func _restore_from_dash() -> void:
+	for entry in _dash_shadow_cache:
+		var node: Variant = entry["mesh"]
+		if not is_instance_valid(node):
+			continue
+		var mi := node as MeshInstance3D
+		if mi == null:
+			continue
+		mi.visible = entry["visible"]
+	_dash_shadow_cache.clear()
+
+## -- the ink streak -------------------------------------------------------------
+##
+## The first VFX in the project: one unlit shader (shaders/cel/vfx/dash_streak.gdshader) and
+## an ImmediateMesh rebuilt in script, camera-facing, pure black. Whatever shape this takes
+## sets the pattern for wall-run, rail grind and every boss after it - see the spec.
+
+## Built once, the same way _setup_camera_collision() builds the SpringArm3D's shape: in code,
+## so a rebuild of pilot9.tscn cannot lose it. top_level, so the vertices _rebuild_dash_streak_
+## mesh() writes can be world-space positions straight off `_dash_points` with nothing to
+## subtract.
+func _setup_dash_streak() -> void:
+	_dash_streak_mesh = ImmediateMesh.new()
+	_dash_streak = MeshInstance3D.new()
+	_dash_streak.name = "DashStreak"
+	_dash_streak.mesh = _dash_streak_mesh
+	_dash_streak.top_level = true
+	_dash_streak.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_dash_streak.extra_cull_margin = dash_distance()
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://shaders/cel/vfx/dash_streak.gdshader")
+	_dash_streak.material_override = mat
+	add_child(_dash_streak)
+
+## Ticks the post-dash fade forward in wall-clock terms (already advanced in _handle_dash())
+## and rebuilds the mesh every physics frame from whatever `_dash_points` currently holds.
+## Called unconditionally, on every branch, because a lingering streak has to keep fading
+## and disappearing even on a frame the mantle or a freeze owns.
+func _update_dash_streak(_delta: float) -> void:
+	if _dash_streak_mesh == null:
+		return
+	_dash_streak_mesh.clear_surfaces()
+	if _dash_points.size() < 2 or camera_3d == null:
+		return
+	var fade := 1.0 if is_dashing else clampf(_dash_linger_left / DASH_STREAK_LINGER, 0.0, 1.0)
+	if fade <= 0.0:
+		return
+	var verts := _streak_vertices(_dash_points, camera_3d.global_position, DASH_STREAK_WIDTH)
+	if verts.size() < 4:
+		return
+	_dash_streak_mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLE_STRIP)
+	_dash_streak_mesh.surface_set_color(Color(1.0, 1.0, 1.0, fade))
+	for v in verts:
+		_dash_streak_mesh.surface_add_vertex(v)
+	_dash_streak_mesh.surface_end()
+
+## The geometry: a camera-facing ribbon through `points`, width tapering to zero at the tail
+## (index 0) and full `width` at the head (the most recent sample). Returns pairs of vertices
+## - left, right - ready for PRIMITIVE_TRIANGLE_STRIP, oldest pair first.
+##
+## Static and pure, deliberately, for the reason every other geometry function in this file
+## is: it can be asserted with no tree, no camera and no renderer - see
+## tests/test_pilot9_dash.gd, which is also where "does not crash on zero or one point" (a
+## dash blocked on its first frame) is pinned. Empty in, empty out.
+static func _streak_vertices(points: PackedVector3Array, camera_position: Vector3,
+		width: float) -> PackedVector3Array:
+	var verts: PackedVector3Array = PackedVector3Array()
+	var n := points.size()
+	if n < 2:
+		return verts
+	for i in range(n):
+		var p: Vector3 = points[i]
+		var tangent: Vector3
+		if i == 0:
+			tangent = points[1] - points[0]
+		elif i == n - 1:
+			tangent = points[i] - points[i - 1]
+		else:
+			tangent = points[i + 1] - points[i - 1]
+		if tangent.length() <= 0.0001:
+			tangent = Vector3.FORWARD
+		tangent = tangent.normalized()
+		var side := tangent.cross(camera_position - p)
+		if side.length() <= 0.0001:
+			side = tangent.cross(Vector3.UP)
+		side = side.normalized() if side.length() > 0.0001 else Vector3.RIGHT
+		var half := width * 0.5 * (float(i) / float(n - 1))
+		verts.append(p + side * half)
+		verts.append(p - side * half)
+	return verts
+
 ## Handles mouse input for camera rotation with tilt limits.
 ## Places the camera rig every drawn frame. Physics interpolation is on project-wide (see
 ## project.godot), which means his body steps at the physics tick and is drawn at an
@@ -2129,8 +2570,28 @@ func _end_climb(completed: bool) -> void:
 ## Note this runs while `frozen`, unlike almost everything else in this file. A frozen pilot9
 ## still has to be drawn at the right place, and the mantle and the mech handover both move him
 ## while the input handler is shut off.
-func _process(_delta: float) -> void:
-	camera_pivot.global_position = get_global_transform_interpolated() * CAMERA_PIVOT_OFFSET
+##
+## The hard weld above is the shipping behaviour everywhere except the dash. _start_dash() sets
+## _camera_dash_lag_active and captures _camera_dash_lag_start; this function does the rest.
+## While the flag is up, position comes from _camera_dash_lag_position() instead of the weld
+## target directly, tied to `camera_dash_lag_delay` and `camera_dash_lag_time` rather than to
+## `dash_time` or to any distance or speed - which is what guarantees the rig is back on him
+## within that window instead of trailing indefinitely behind a pilot9 who kept moving after it
+## ended. The flag drops the instant that window closes, handing position back to the exact weld
+## above with nothing left over to drift: at elapsed >= delay + duration the two are
+## mathematically identical anyway, so the switch itself is invisible. See
+## docs/specs/pilot9-dash.md, Camera.
+func _process(delta: float) -> void:
+	var target := get_global_transform_interpolated() * CAMERA_PIVOT_OFFSET
+	if _camera_dash_lag_active:
+		_camera_dash_lag_elapsed += delta
+		camera_pivot.global_position = _camera_dash_lag_position(
+			_camera_dash_lag_start, target, _camera_dash_lag_elapsed,
+			camera_dash_lag_delay, camera_dash_lag_time)
+		if _camera_dash_lag_elapsed >= camera_dash_lag_delay + camera_dash_lag_time:
+			_camera_dash_lag_active = false
+	else:
+		camera_pivot.global_position = target
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -2188,6 +2649,17 @@ func enter_vehicle(_vehicle: Node3D) -> void:
 ## not frozen to resume later: `is_slide_holding` is unbounded by design, so resuming a hold
 ## after a drive across the map is worse than losing it.
 func _end_verbs_for_boarding() -> void:
+	if is_dashing:
+		# _end_dash() restores every mesh's own visibility before enter_vehicle() sets
+		# `visible = false` on the whole node. Without this a dash cut short by boarding
+		# would leave the meshes stuck invisible, staying that way the moment he next
+		# exits EXIA and the parent's visible = true is written back.
+		_end_dash()
+		# _physics_process() is switched off for the whole ride, so the ~0.15 s linger
+		# _end_dash() just armed would never tick down - it would sit frozen on the streak
+		# from the moment he boarded and flash back in at wherever he exits. Cut it outright.
+		_dash_points.clear()
+		_dash_linger_left = 0.0
 	if is_climbing:
 		# The same "land him on top" stop a freeze mid-mantle takes - he is on a scripted path
 		# over an edge with his shape off, and that has to be closed out cleanly.

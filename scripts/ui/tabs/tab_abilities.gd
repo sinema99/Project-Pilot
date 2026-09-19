@@ -20,6 +20,7 @@ const BASE_KIT := [
 	["SLIDE HOLD", "can_hold_slide", "Hold crouch to stay in the slide."],
 	["AUTO-SLIDE", "can_auto_slide", "Steep ground starts the slide for you."],
 	["MANTLE", "can_climb", "Pull up onto a ledge between 0.9 and 1.9 m."],
+	["DASH", "can_dash", "Vanish and travel flat for half a second."],
 ]
 
 const TECH := [
