@@ -220,27 +220,223 @@ func test_dash_velocity_never_gains_a_vertical_component() -> void:
 		"the dash must never change vertical velocity, however _dash_direction got steered")
 
 # --- the ink streak's geometry -----------------------------------------------------
+#
+# The bundle of manga speed lines that replaced the single tapering ribbon on 2026-09-19 -
+# see docs/specs/pilot9-dash.md, "The ink streak". _streak_bundle() is static and pure for
+# exactly this: no tree, no camera, no renderer, same arguments in means same bundle out.
 
-func test_streak_vertices_do_not_crash_on_zero_or_one_point() -> void:
-	check(CONTROLLER._streak_vertices(PackedVector3Array(), Vector3.ZERO, 0.3).is_empty(),
+const STREAK_CFG := {
+	"count": 7,
+	"spread_side": 0.30,
+	"spread_vert": 0.70,
+	"anchor_height": 1.1,
+	"converge": 0.25,
+	"weight_min_px": 1.0,
+	"weight_max_px": 3.0,
+	"max_width": 0.12,
+	"swell_bias": 0.65,
+	"length_min": 0.4,
+	"fade_stagger": 0.5,
+	"boil_amount": 0.0,
+}
+
+# A straight run down +Z, long enough that even the shortest line (length_min 0.4) keeps
+# several samples of its own.
+func _streak_path(count: int = 20) -> PackedVector3Array:
+	var points := PackedVector3Array()
+	for i in range(count):
+		points.append(Vector3(0, 0, float(i) * 0.5))
+	return points
+
+func _bundle(points: PackedVector3Array, cfg: Dictionary = STREAK_CFG,
+		seed_value: int = 12345, boil_frame: int = 0) -> Array:
+	return CONTROLLER._streak_bundle(points, Vector3(6, 2, -4), 75.0, 1080.0, cfg,
+		seed_value, boil_frame)
+
+func test_streak_bundle_does_not_crash_on_zero_or_one_point() -> void:
+	check(_bundle(PackedVector3Array()).is_empty(),
 		"zero sampled points must build nothing rather than error")
 	var one := PackedVector3Array([Vector3.ZERO])
-	check(CONTROLLER._streak_vertices(one, Vector3.ZERO, 0.3).is_empty(),
+	check(_bundle(one).is_empty(),
 		"one sampled point - a dash blocked on its first frame - must build nothing " +
 		"rather than error")
 
-func test_streak_vertices_build_a_pair_per_sampled_point() -> void:
-	var points := PackedVector3Array([Vector3.ZERO, Vector3(0, 0, 1), Vector3(0, 0, 2)])
-	var verts := CONTROLLER._streak_vertices(points, Vector3(1, 1, 1), 0.4)
-	eq(verts.size(), points.size() * 2, "expected one left/right vertex pair per sampled point")
+func test_streak_bundle_draws_one_line_per_configured_count() -> void:
+	var bundle := _bundle(_streak_path())
+	eq(bundle.size(), 7, "expected one entry per configured line")
+	for line in bundle:
+		var verts: PackedVector3Array = line["verts"]
+		check(verts.size() % 2 == 0, "a strip must be whole left/right pairs")
+		check(verts.size() >= 4, "a line too short to draw must be dropped, not emitted short")
 
-func test_streak_width_tapers_to_a_point_at_the_tail() -> void:
-	var points := PackedVector3Array([Vector3.ZERO, Vector3(0, 0, 1), Vector3(0, 0, 2)])
-	var verts := CONTROLLER._streak_vertices(points, Vector3(1, 1, 1), 0.4)
-	approx(verts[0].distance_to(verts[1]), 0.0, 0.0001,
-		"the tail (the oldest sampled point) must taper to zero width")
-	approx(verts[4].distance_to(verts[5]), 0.4, 0.0001,
-		"the head (the most recent sampled point) must carry the full width")
+func test_streak_lines_are_spindles_thin_at_both_ends() -> void:
+	# The pen profile is what makes a strip read as drawn rather than extruded: a line lands
+	# thin, swells, and lifts thin. Both ENDS near zero and something substantial in between.
+	for line in _bundle(_streak_path()):
+		var verts: PackedVector3Array = line["verts"]
+		var n := verts.size()
+		approx(verts[0].distance_to(verts[1]), 0.0, 0.0001,
+			"a line must taper to nothing at its own tail")
+		approx(verts[n - 2].distance_to(verts[n - 1]), 0.0, 0.0001,
+			"a line must taper to nothing at the head, where it meets him")
+		var widest := 0.0
+		for i in range(0, n, 2):
+			widest = maxf(widest, verts[i].distance_to(verts[i + 1]))
+		check(widest > 0.0, "a line that is zero width along its whole length is not a line")
+
+func test_streak_pen_weight_is_constant_in_pixels_not_metres() -> void:
+	# The reason the bundle is sized in pixels at all: every other ink in this game is
+	# (outline_width is 4 px, crease.gdshader's line_width_px is 2 px), and a hairline sized
+	# in metres goes sub-pixel and shimmers the moment the camera pulls back. Doubling the
+	# camera distance must therefore roughly double the drawn width in metres.
+	var points := _streak_path()
+	var near := CONTROLLER._streak_bundle(points, Vector3(0, 0, -10), 75.0, 1080.0,
+		STREAK_CFG, 12345, 0)
+	var far := CONTROLLER._streak_bundle(points, Vector3(0, 0, -20), 75.0, 1080.0,
+		STREAK_CFG, 12345, 0)
+	eq(near.size(), far.size(), "the same seed must build the same number of lines")
+	check(_widest(near) > 0.0, "the near bundle must draw something to compare")
+	var ratio := _widest(far) / _widest(near)
+	check(ratio > 1.5 and ratio < 2.5,
+		"twice the distance must be about twice the width in metres - a constant pen " +
+		"weight on screen. Got a ratio of %f" % ratio)
+
+func test_streak_pen_weight_is_clamped_in_close() -> void:
+	# ...but a pen weight is a fixed ANGULAR size, so without the ceiling a camera sitting on
+	# top of the bundle resolves 3 px into a slab and undoes the whole effect.
+	var points := _streak_path()
+	var close := CONTROLLER._streak_bundle(points, Vector3(0, 0.5, 0.2), 75.0, 1080.0,
+		STREAK_CFG, 12345, 0)
+	check(_widest(close) <= STREAK_CFG["max_width"] + 0.0001,
+		"no line may draw wider than streak_max_width however close the camera gets")
+
+func _widest(bundle: Array) -> float:
+	var widest := 0.0
+	for line in bundle:
+		var verts: PackedVector3Array = line["verts"]
+		for i in range(0, verts.size(), 2):
+			widest = maxf(widest, verts[i].distance_to(verts[i + 1]))
+	return widest
+
+func test_streak_lines_converge_toward_the_head_and_splay_at_the_tail() -> void:
+	# "Coming out of him", stated as geometry: the bundle is wide where it is oldest and
+	# pinched where it meets his chest. Measured as the spread of the lines' centrelines.
+	var bundle := _bundle(_streak_path())
+	check(_spread_at(bundle, true) > _spread_at(bundle, false) * 1.5,
+		"the bundle must be markedly wider at the tail than where it meets him")
+	check(_spread_at(bundle, false) > 0.0,
+		"converge is 0.25, not 0 - the lines must stay a short segment apart at the head " +
+		"rather than merging to a point")
+
+# Greatest distance between any two lines' centres, at the tail end or the head end.
+func _spread_at(bundle: Array, at_tail: bool) -> float:
+	var centres: Array[Vector3] = []
+	for line in bundle:
+		var verts: PackedVector3Array = line["verts"]
+		var i := 0 if at_tail else verts.size() - 2
+		centres.append((verts[i] + verts[i + 1]) * 0.5)
+	var widest := 0.0
+	for a in centres:
+		for b in centres:
+			widest = maxf(widest, a.distance_to(b))
+	return widest
+
+func test_streak_bundle_is_centred_on_his_chest_not_his_feet() -> void:
+	# _dash_points samples global_position, which is his FEET - the collision capsule sits
+	# 0.978 m above it. Without streak_anchor_height the lines converge at his ankles.
+	var bundle := _bundle(_streak_path())
+	var lowest := INF
+	for line in bundle:
+		var verts: PackedVector3Array = line["verts"]
+		for v in verts:
+			lowest = minf(lowest, v.y)
+	check(lowest > 0.1,
+		"the path runs along y=0, his feet - no part of the bundle should be down there")
+
+func test_streak_lines_end_ragged_rather_than_all_on_one_line() -> void:
+	var lengths := {}
+	for line in _bundle(_streak_path()):
+		lengths[line["verts"].size()] = true
+	check(lengths.size() > 1,
+		"lines are handed lengths spread across [length_min, 1.0] - if they all came out " +
+		"the same the bundle's tail is square and it reads as a comb")
+
+func test_streak_lines_carry_a_spread_of_pen_weights() -> void:
+	var widths: Array[float] = []
+	for line in _bundle(_streak_path()):
+		var verts: PackedVector3Array = line["verts"]
+		var widest := 0.0
+		for i in range(0, verts.size(), 2):
+			widest = maxf(widest, verts[i].distance_to(verts[i + 1]))
+		widths.append(widest)
+	widths.sort()
+	check(widths[widths.size() - 1] > widths[0] * 1.5,
+		"weights are spread across [weight_min_px, weight_max_px] - seven identical " +
+		"strokes is the comb this replaced")
+
+func test_streak_fade_floors_run_thinnest_first() -> void:
+	# The staggered fade: light strokes give up the most of the fade and wink out first, so
+	# the last things on screen are the heaviest lines and the silhouette holds to the end.
+	var floors_by_width := {}
+	for line in _bundle(_streak_path()):
+		var verts: PackedVector3Array = line["verts"]
+		var widest := 0.0
+		for i in range(0, verts.size(), 2):
+			widest = maxf(widest, verts[i].distance_to(verts[i + 1]))
+		floors_by_width[widest] = line["fade_floor"]
+		check(line["fade_floor"] >= 0.0 and line["fade_floor"] < 1.0,
+			"a fade floor at or past 1.0 would make a line invisible from the first frame")
+	var widths := floors_by_width.keys()
+	widths.sort()
+	check(floors_by_width[widths[0]] > floors_by_width[widths[widths.size() - 1]],
+		"the thinnest line must give up more of the fade than the heaviest")
+
+func test_streak_bundle_is_stable_for_a_seed_and_differs_between_seeds() -> void:
+	# Both halves matter. Stable, or the bundle boils on every physics frame whether the boil
+	# is on or not; different, or every dash in a session draws the identical seven strokes.
+	var points := _streak_path()
+	var a := _bundle(points, STREAK_CFG, 111)
+	var b := _bundle(points, STREAK_CFG, 111)
+	for i in range(a.size()):
+		check(a[i]["verts"] == b[i]["verts"], "the same seed must rebuild the same bundle")
+	var c := _bundle(points, STREAK_CFG, 222)
+	var differs := false
+	for i in range(a.size()):
+		if a[i]["verts"] != c[i]["verts"]:
+			differs = true
+	check(differs, "a different dash must draw a different bundle")
+
+func test_streak_boil_moves_the_lines_only_when_it_is_on() -> void:
+	var points := _streak_path()
+	var off_0 := _bundle(points, STREAK_CFG, 111, 0)
+	var off_3 := _bundle(points, STREAK_CFG, 111, 3)
+	for i in range(off_0.size()):
+		check(off_0[i]["verts"] == off_3[i]["verts"],
+			"with boil_amount 0 the boil frame must have no effect at all")
+	var boiling: Dictionary = STREAK_CFG.duplicate()
+	boiling["boil_amount"] = 0.08
+	var on_0 := _bundle(points, boiling, 111, 0)
+	var on_3 := _bundle(points, boiling, 111, 3)
+	var differs := false
+	for i in range(on_0.size()):
+		if on_0[i]["verts"] != on_3[i]["verts"]:
+			differs = true
+	check(differs, "with the boil on, a new boil frame must move the offsets")
+
+func test_streak_survives_a_dash_that_never_moved() -> void:
+	# A dash blocked on frame two: two samples, both at the same place, so every tangent is
+	# degenerate. Must build something or nothing, but must not error.
+	var stuck := PackedVector3Array([Vector3.ZERO, Vector3.ZERO, Vector3.ZERO])
+	var bundle := _bundle(stuck)
+	check(bundle is Array, "a dash that never moved must not error the geometry")
+
+func test_streak_single_line_bundle_is_legal() -> void:
+	# streak_line_count is exported down to 1, which is the old single ribbon back, near
+	# enough - it has to build rather than divide by a zero span.
+	var one: Dictionary = STREAK_CFG.duplicate()
+	one["count"] = 1
+	var bundle := _bundle(_streak_path(), one)
+	eq(bundle.size(), 1, "a one-line bundle must build exactly one line")
 
 # --- the camera catch-up -----------------------------------------------------------
 #

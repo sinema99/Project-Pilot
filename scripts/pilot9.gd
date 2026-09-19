@@ -483,6 +483,77 @@ enum CameraMode {
 ## says. Chosen against his 1.2 s airtime - see docs/specs/pilot9-dash.md, Availability.
 @export_range(0.0, 10.0, 0.1) var dash_cooldown: float = 1.5
 
+## The ink streak
+## -----------------------------------------------------------------------------
+## Manga speed lines, replacing the single tapering ribbon the dash shipped with on
+## 2026-09-17. Exported rather than const for exactly the reason the three numbers above are:
+## the bundle's look is found by tuning it while playing, not by picking values in a file.
+## See docs/specs/pilot9-dash.md, "The ink streak".
+
+@export_group("Dash Streak")
+## How many lines the bundle draws. 5-7 is the manga read. One is the old ribbon back, near
+## enough; past nine or so they stop resolving as separate strokes at dash speed and the
+## bundle goes back to being a slab, which is the thing this replaced.
+@export_range(1, 12) var streak_line_count: int = 7
+## Half-spread of the bundle at the TAIL, metres, across the camera-facing axis. Sized off his
+## collision capsule (radius 0.34) so the lines stay inside his silhouette and read as coming
+## out of him rather than passing him.
+@export_range(0.0, 1.5, 0.01) var streak_spread_side: float = 0.30
+## Half-spread at the tail along the camera-relative vertical. Against streak_anchor_height
+## below, this puts the band at roughly 0.4 m - 1.8 m over the path, which is his torso.
+@export_range(0.0, 1.5, 0.01) var streak_spread_vert: float = 0.70
+## Metres above the sampled path the bundle is centred on. `_dash_points` samples
+## global_position, which is his FEET - the collision capsule sits 0.978 m above it - so
+## without this the lines converge at his ankles and the effect scrapes the floor. Chest.
+@export_range(0.0, 2.5, 0.05) var streak_anchor_height: float = 1.1
+## What the tail spread shrinks to at the head, as a fraction of itself: the lines splay open
+## behind him and pinch in where they meet him, which is the geometry of "coming out of him".
+## Zero pinches them to a single point and they merge into a blob there; this leaves them a
+## short segment wide so each stroke stays its own stroke. The user's call, 2026-09-19.
+@export_range(0.0, 1.0, 0.01) var streak_converge: float = 0.25
+## Pen weight, in PIXELS, of the lightest and the heaviest line in the bundle.
+##
+## Pixels rather than metres because every other ink in this game is pixels:
+## outline.gdshader offsets by a global outline_width of 4 px and crease.gdshader is explicit
+## that its width is "constant in pixels, not in metres, at any resolution and any distance".
+## The streak measured in metres was the one ink here that was not, and it is also the one
+## that cannot afford it - a 2.5 cm hairline goes sub-pixel the moment the camera pulls back,
+## and seven of them shimmering in and out for 0.4 s is a rendering fault, not an effect.
+##
+## Lines are handed weights spread evenly across this range and then shuffled, so the bundle
+## always contains both light and heavy strokes and never puts them in the same order twice.
+@export_range(0.25, 8.0, 0.25) var streak_weight_min_px: float = 1.0
+@export_range(0.25, 8.0, 0.25) var streak_weight_max_px: float = 3.0
+## The clamp on that pen weight: no line draws wider than this in metres, however close the
+## camera gets. A pen weight is a fixed ANGULAR size, so without a ceiling a camera sitting on
+## top of the bundle resolves 3 px into a slab and undoes the whole thing.
+@export_range(0.01, 1.0, 0.01) var streak_max_width: float = 0.12
+## Where along a line its spindle is fattest - 0 at that line's own tail, 1 at the head. Each
+## line is thin, swells, thin, which is the shape a G-pen leaves when it lands, presses and
+## lifts; past 0.5 puts the mass near him, which is where the flick leaves it.
+@export_range(0.0, 1.0, 0.01) var streak_swell_bias: float = 0.65
+## Shortest a line may be, as a fraction of the path travelled. Lines are handed lengths spread
+## between this and 1.0, so the bundle ends ragged instead of all seven stopping on one line.
+@export_range(0.05, 1.0, 0.01) var streak_length_min: float = 0.4
+## How much of the fade the thinnest line gives up, so the bundle fades STAGGERED rather than
+## in unison - thinnest strokes wink out first and the two heaviest are the last things on
+## screen. Seven lines dimming together look like a texture fading out; dropping away one at a
+## time looks like ink. 0 fades them all together.
+@export_range(0.0, 0.9, 0.05) var streak_fade_stagger: float = 0.5
+## Hand-drawn boil: re-randomise the offsets on a low-framerate clock while the streak is
+## alive, the way cel animation on 2s wobbles.
+##
+## OFF by default, and deliberately. The streak lives dash_time + DASH_STREAK_LINGER = 0.4 s,
+## which is five frames at 12 Hz, and five frames is too few for the eye to read a wobble as
+## drawing rather than as flicker - the worst failure available to a cue whose whole job is to
+## be read instantly. Built anyway because boil is the project's entire art direction and that
+## is worth seeing rather than arguing about. The user's call, 2026-09-19: build it, ship it
+## off, judge it in play.
+@export var streak_boil: bool = false
+@export_range(4.0, 30.0, 1.0) var streak_boil_hz: float = 12.0
+## Metres the boil moves an offset on each of its frames.
+@export_range(0.0, 0.5, 0.01) var streak_boil_amount: float = 0.08
+
 ## Camera Settings
 ## -----------------------------------------------------------------------------
 ## Adjust camera sensitivity and rotation limits.
@@ -620,8 +691,10 @@ const CLIMB_PROBE_MARGIN := 0.15
 const DASH_BLOCKED_SPEED_FRACTION := 0.5
 ## Seconds the ink streak keeps fading after he reappears.
 const DASH_STREAK_LINGER := 0.15
-## Full width of the ink streak, metres, at the head end (it tapers to zero at the tail).
-const DASH_STREAK_WIDTH := 0.35
+## Arbitrary odd multipliers, used only to turn (dash seed, line index, purpose) into
+## uncorrelated RNG seeds - see _streak_line_seed(). Nothing depends on the values.
+const STREAK_SEED_STRIDE := 7919
+const STREAK_LINE_STRIDE := 104729
 
 var input_dir: Vector2 = Vector2.ZERO
 var input_strength: float = 0.0
@@ -803,6 +876,12 @@ var _dash_shadow_cache: Array[Dictionary] = []
 ## MeshInstance3D so _update_dash_streak() never has to re-fetch .mesh.
 var _dash_streak_mesh: ImmediateMesh = null
 var _dash_streak: MeshInstance3D = null
+## Reseeded on every launch, so no two dashes draw the same bundle - the line offsets,
+## weights and lengths all derive from it. See _streak_bundle().
+var _dash_streak_seed: int = 0
+## Seconds the current streak has been alive, dash and linger together. Only the boil clock
+## reads it, and only when `streak_boil` is on.
+var _dash_streak_age: float = 0.0
 
 # Freeze the character. It may be useful when you want to pause the character.
 var frozen: bool = false
@@ -2373,6 +2452,8 @@ func _start_dash(heading: Vector3) -> void:
 	_dash_points.clear()
 	_dash_points.append(global_position)
 	_dash_linger_left = 0.0
+	_dash_streak_seed = randi()
+	_dash_streak_age = 0.0
 	_hide_for_dash()
 	# Let the shot fall behind for the window and glide back on afterward instead of staying
 	# welded to him - see _process() and docs/specs/pilot9-dash.md, Camera. The pivot's current
@@ -2494,61 +2575,239 @@ func _setup_dash_streak() -> void:
 	add_child(_dash_streak)
 
 ## Ticks the post-dash fade forward in wall-clock terms (already advanced in _handle_dash())
-## and rebuilds the mesh every physics frame from whatever `_dash_points` currently holds.
-## Called unconditionally, on every branch, because a lingering streak has to keep fading
-## and disappearing even on a frame the mantle or a freeze owns.
-func _update_dash_streak(_delta: float) -> void:
+## and rebuilds the bundle every physics frame from whatever `_dash_points` currently holds.
+## Called unconditionally, on every branch, because a lingering streak has to keep fading and
+## disappearing even on a frame the mantle or a freeze owns.
+##
+## One surface per line rather than one surface for the whole bundle: the lines are separate
+## strokes with separate alphas (the staggered fade), and a triangle strip cannot break
+## between them without degenerate stitching, which at these widths would be visible.
+func _update_dash_streak(delta: float) -> void:
 	if _dash_streak_mesh == null:
 		return
 	_dash_streak_mesh.clear_surfaces()
 	if _dash_points.size() < 2 or camera_3d == null:
 		return
+	_dash_streak_age += delta
 	var fade := 1.0 if is_dashing else clampf(_dash_linger_left / DASH_STREAK_LINGER, 0.0, 1.0)
 	if fade <= 0.0:
 		return
-	var verts := _streak_vertices(_dash_points, camera_3d.global_position, DASH_STREAK_WIDTH)
-	if verts.size() < 4:
-		return
-	_dash_streak_mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLE_STRIP)
-	_dash_streak_mesh.surface_set_color(Color(1.0, 1.0, 1.0, fade))
-	for v in verts:
-		_dash_streak_mesh.surface_add_vertex(v)
-	_dash_streak_mesh.surface_end()
+	# Quantising the age onto the boil clock IS the boil: every line's jitter is seeded with
+	# this number, so the offsets hold still for a boil frame and jump to a new set on the
+	# next one. Off, it is a constant and the offsets never move.
+	var boil_frame := int(_dash_streak_age * streak_boil_hz) if streak_boil else 0
+	var viewport_height := 1080.0
+	var vp := get_viewport()
+	if vp != null:
+		viewport_height = maxf(vp.get_visible_rect().size.y, 1.0)
+	var bundle := _streak_bundle(_dash_points, camera_3d.global_position, camera_3d.fov,
+			viewport_height, _streak_config(), _dash_streak_seed, boil_frame)
+	for line in bundle:
+		var verts: PackedVector3Array = line["verts"]
+		if verts.size() < 4:
+			continue
+		# The staggered fade. `fade_floor` is how much of the fade this line gives up: it
+		# reaches zero alpha while the global fade is still above zero, so the light strokes
+		# are gone while the heavy ones are still inked. The heaviest line's floor is 0 and it
+		# fades on the global curve exactly as the old single ribbon did.
+		var fade_floor: float = line["fade_floor"]
+		var alpha := clampf((fade - fade_floor) / maxf(1.0 - fade_floor, 0.0001), 0.0, 1.0)
+		if alpha <= 0.0:
+			continue
+		_dash_streak_mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLE_STRIP)
+		_dash_streak_mesh.surface_set_color(Color(1.0, 1.0, 1.0, alpha))
+		for v in verts:
+			_dash_streak_mesh.surface_add_vertex(v)
+		_dash_streak_mesh.surface_end()
 
-## The geometry: a camera-facing ribbon through `points`, width tapering to zero at the tail
-## (index 0) and full `width` at the head (the most recent sample). Returns pairs of vertices
-## - left, right - ready for PRIMITIVE_TRIANGLE_STRIP, oldest pair first.
+## Gathers the exported knobs into the one Dictionary _streak_bundle() reads. The indirection
+## exists so the geometry below can stay a static function with no `self` in it - see there.
+func _streak_config() -> Dictionary:
+	return {
+		"count": streak_line_count,
+		"spread_side": streak_spread_side,
+		"spread_vert": streak_spread_vert,
+		"anchor_height": streak_anchor_height,
+		"converge": streak_converge,
+		"weight_min_px": streak_weight_min_px,
+		"weight_max_px": streak_weight_max_px,
+		"max_width": streak_max_width,
+		"swell_bias": streak_swell_bias,
+		"length_min": streak_length_min,
+		"fade_stagger": streak_fade_stagger,
+		"boil_amount": streak_boil_amount if streak_boil else 0.0,
+	}
+
+## The geometry: a bundle of thin camera-facing lines through `points`, splayed open at the
+## tail and pinched to a short segment at the head, each one a spindle sized in pen-weight
+## pixels. Returns one entry per line, `{"verts": PackedVector3Array, "fade_floor": float}`,
+## verts in left/right pairs ready for PRIMITIVE_TRIANGLE_STRIP, oldest pair first.
 ##
 ## Static and pure, deliberately, for the reason every other geometry function in this file
 ## is: it can be asserted with no tree, no camera and no renderer - see
 ## tests/test_pilot9_dash.gd, which is also where "does not crash on zero or one point" (a
-## dash blocked on its first frame) is pinned. Empty in, empty out.
-static func _streak_vertices(points: PackedVector3Array, camera_position: Vector3,
-		width: float) -> PackedVector3Array:
-	var verts: PackedVector3Array = PackedVector3Array()
+## dash blocked on its first frame) is pinned. Empty in, empty out. `seed_value` and
+## `boil_frame` are arguments rather than reads off `self` for the same reason: the same
+## arguments must always produce the same bundle, or none of it is testable.
+static func _streak_bundle(points: PackedVector3Array, camera_position: Vector3,
+		fov_degrees: float, viewport_height: float, cfg: Dictionary,
+		seed_value: int, boil_frame: int) -> Array:
+	var lines: Array = []
+	var n := points.size()
+	var count := int(cfg.get("count", 7))
+	if n < 2 or count < 1:
+		return lines
+
+	# Pen weight in pixels -> half-width in metres. tan(fov/2) is the half-height of the view
+	# frustum one metre out, so twice that is the world height the viewport covers there;
+	# divided by the viewport's pixel height it is metres per pixel per metre of distance.
+	# Multiplying by a point's actual distance is what holds a line at a constant ON-SCREEN
+	# weight however far away it is drawn, which is what every other ink in this game does.
+	var metres_per_px_per_metre := 2.0 * tan(deg_to_rad(fov_degrees) * 0.5) \
+			/ maxf(viewport_height, 1.0)
+	var half_width_ceiling: float = maxf(float(cfg.get("max_width", 0.12)), 0.0) * 0.5
+
+	var span := maxf(float(count - 1), 1.0)
+	# Weights and lengths are SPREAD across their ranges and then shuffled onto the lines by
+	# two different permutations. Sampling both at random instead would let a dash come up
+	# with seven near-identical strokes - a comb - which is the one outcome the bundle cannot
+	# have; using one permutation for both would tie thickness to length forever.
+	var weight_order := _shuffled_indices(count, seed_value + 1)
+	var length_order := _shuffled_indices(count, seed_value + 2)
+	var weight_min: float = float(cfg.get("weight_min_px", 1.0))
+	var weight_max: float = float(cfg.get("weight_max_px", 3.0))
+	var length_min: float = float(cfg.get("length_min", 0.4))
+	var spread_side: float = float(cfg.get("spread_side", 0.30))
+	var spread_vert: float = float(cfg.get("spread_vert", 0.70))
+	var stagger: float = clampf(float(cfg.get("fade_stagger", 0.5)), 0.0, 0.9)
+	var boil_amount: float = float(cfg.get("boil_amount", 0.0))
+	var anchor: Vector3 = Vector3.UP * float(cfg.get("anchor_height", 1.1))
+	var converge: float = clampf(float(cfg.get("converge", 0.25)), 0.0, 1.0)
+	var bias: float = clampf(float(cfg.get("swell_bias", 0.65)), 0.0, 1.0)
+
+	for i in range(count):
+		var rng := RandomNumberGenerator.new()
+		rng.seed = _streak_line_seed(seed_value, i, 0)
+
+		var weight_frac := float(weight_order[i]) / span
+		var weight_px: float = lerpf(weight_min, weight_max, weight_frac)
+		# Thinnest line gives up the most fade, heaviest gives up none.
+		var fade_floor := stagger * (1.0 - weight_frac)
+
+		var length_frac := float(length_order[i]) / span
+		var length := clampf(lerpf(length_min, 1.0, length_frac), 0.02, 1.0)
+
+		# Offsets sit on an ellipse around the path rather than in a flat row: the lines have
+		# to go up and down as well as left and right, or the bundle is a comb the moment the
+		# camera is above it. Stepping the angle by index keeps them apart; the jitter and the
+		# radius stop the ring being a perfect wheel, which reads as machined.
+		var angle := TAU * float(i) / float(count) + rng.randf_range(-0.35, 0.35)
+		var radius := rng.randf_range(0.65, 1.0)
+		var offset_u := cos(angle) * radius * spread_side
+		var offset_v := sin(angle) * radius * spread_vert
+		if boil_amount > 0.0:
+			# Reseeded per boil FRAME, so the jitter holds still between frames and jumps.
+			var boil_rng := RandomNumberGenerator.new()
+			boil_rng.seed = _streak_line_seed(seed_value, i, boil_frame + 1)
+			offset_u += boil_rng.randf_range(-boil_amount, boil_amount)
+			offset_v += boil_rng.randf_range(-boil_amount, boil_amount)
+
+		# Where this line starts along the sampled path. A short line covers only the most
+		# recent samples, which is what leaves the bundle's tail ragged instead of square.
+		var start_idx := clampi(int(floor((1.0 - length) * float(n - 1))), 0, n - 2)
+		var segments := n - 1 - start_idx
+		if segments < 1:
+			continue
+
+		var verts := PackedVector3Array()
+		for j in range(start_idx, n):
+			var p: Vector3 = points[j]
+			var tangent := _path_tangent(points, j)
+			# Perpendicular to both the path and the view ray, so a strip spanning it is
+			# camera-facing - the same trick the single ribbon used, and non-negotiable for
+			# the same reason: a flat strip seen edge-on is one pixel wide, and dashing
+			# toward or away from the camera is precisely when it would be edge-on.
+			var side := tangent.cross(camera_position - p)
+			if side.length() <= 0.0001:
+				side = tangent.cross(Vector3.UP)
+			side = side.normalized() if side.length() > 0.0001 else Vector3.RIGHT
+			# The camera-relative vertical: perpendicular to the path and to `side` both, so
+			# the offset ellipse faces the camera the same way the strips do.
+			var up_dir := side.cross(tangent)
+			up_dir = up_dir.normalized() if up_dir.length() > 0.0001 else Vector3.UP
+
+			# 0 at this line's OWN tail, 1 at the head - its own, not the path's, which is
+			# what makes every line a complete spindle however short it is.
+			var t := float(j - start_idx) / float(segments)
+			var shrink := lerpf(1.0, converge, t)
+			var centre: Vector3 = p + anchor + (side * offset_u + up_dir * offset_v) * shrink
+
+			var distance := camera_position.distance_to(centre)
+			var half := weight_px * 0.5 * metres_per_px_per_metre * distance
+			if half_width_ceiling > 0.0:
+				half = minf(half, half_width_ceiling)
+			half *= _spindle(t, bias)
+
+			verts.append(centre + side * half)
+			verts.append(centre - side * half)
+
+		if verts.size() >= 4:
+			lines.append({"verts": verts, "fade_floor": fade_floor})
+	return lines
+
+## The pen profile: 0 at both ends of a line, 1 at `bias` along it. A stroke that is thin,
+## swells, and goes thin again is what a pen physically leaves when it lands, presses and
+## lifts, and it is the single cheapest thing that makes a row of strips read as drawn rather
+## than extruded. Smoothstepped so the swell is round rather than a diamond.
+static func _spindle(t: float, bias: float) -> float:
+	var s: float
+	if t <= bias:
+		s = t / maxf(bias, 0.0001)
+	else:
+		s = (1.0 - t) / maxf(1.0 - bias, 0.0001)
+	s = clampf(s, 0.0, 1.0)
+	return s * s * (3.0 - 2.0 * s)
+
+## Direction of travel at `index`, central-differenced where there are neighbours on both
+## sides. Lifted out of the old _streak_vertices() unchanged. Every line in the bundle needs
+## it and they all need the SAME one, computed off the full path rather than off each line's
+## own slice, or lines of different lengths would disagree about which way he was going.
+static func _path_tangent(points: PackedVector3Array, index: int) -> Vector3:
 	var n := points.size()
 	if n < 2:
-		return verts
-	for i in range(n):
-		var p: Vector3 = points[i]
-		var tangent: Vector3
-		if i == 0:
-			tangent = points[1] - points[0]
-		elif i == n - 1:
-			tangent = points[i] - points[i - 1]
-		else:
-			tangent = points[i + 1] - points[i - 1]
-		if tangent.length() <= 0.0001:
-			tangent = Vector3.FORWARD
-		tangent = tangent.normalized()
-		var side := tangent.cross(camera_position - p)
-		if side.length() <= 0.0001:
-			side = tangent.cross(Vector3.UP)
-		side = side.normalized() if side.length() > 0.0001 else Vector3.RIGHT
-		var half := width * 0.5 * (float(i) / float(n - 1))
-		verts.append(p + side * half)
-		verts.append(p - side * half)
-	return verts
+		return Vector3.FORWARD
+	var tangent: Vector3
+	if index <= 0:
+		tangent = points[1] - points[0]
+	elif index >= n - 1:
+		tangent = points[n - 1] - points[n - 2]
+	else:
+		tangent = points[index + 1] - points[index - 1]
+	if tangent.length() <= 0.0001:
+		return Vector3.FORWARD
+	return tangent.normalized()
+
+## A deterministic permutation of 0..count-1 from `seed_value`. Fisher-Yates, so every
+## ordering is equally likely and the same seed always gives the same one - which is what
+## lets the bundle be both different on every dash and pinned in a test.
+static func _shuffled_indices(count: int, seed_value: int) -> PackedInt32Array:
+	var order := PackedInt32Array()
+	for i in range(maxi(count, 0)):
+		order.append(i)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_value
+	for i in range(order.size() - 1, 0, -1):
+		var j := rng.randi_range(0, i)
+		var swap := order[i]
+		order[i] = order[j]
+		order[j] = swap
+	return order
+
+## Folds (dash seed, line index, purpose) into one RNG seed. The strides are arbitrary odd
+## numbers; all that matters is that two lines in the same bundle, and one line across two
+## boil frames, never collide onto the same stream.
+static func _streak_line_seed(seed_value: int, index: int, purpose: int) -> int:
+	return seed_value * STREAK_SEED_STRIDE + index * STREAK_LINE_STRIDE + purpose
 
 ## Handles mouse input for camera rotation with tilt limits.
 ## Places the camera rig every drawn frame. Physics interpolation is on project-wide (see

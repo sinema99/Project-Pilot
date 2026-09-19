@@ -1,6 +1,9 @@
 # Spec: pilot9's dash
 
-> **Status:** specified 2026-09-17, built and played the same day. Retuned after the play
+> **Status:** specified 2026-09-17, built and played the same day. **The ink streak was
+> replaced on 2026-09-19** - the single 0.35 m ribbon became a bundle of 5-7 thin manga speed
+> lines sized in pen-weight pixels. See *The ink streak*, below; that section is current and
+> the rest of this header is about the movement. Retuned after the play
 > session - see [worklog/2026-09-17.md](../worklog/2026-09-17.md). The numbers and the
 > shadow cue described below are the *original* proposal; where the build now differs, a
 > note says so inline. **Direction retuned again 2026-09-18**, before a second play session:
@@ -418,25 +421,97 @@ which is the one visual artifact this design cannot absorb.
 
 ### The ink streak
 
-**A black ribbon, camera-facing, growing behind him.**
+**A bundle of 5-7 thin manga speed lines, camera-facing, growing behind him.**
 
-- An `ImmediateMesh` rebuilt each frame from his sampled positions over the window.
+> **Replaced the single ribbon on 2026-09-19.** The dash shipped with one black stroke 0.35 m
+> wide, tapering to a point at the tail. The user liked it and wanted it pushed: thinner lines,
+> more of them, reading as manga speed lines rather than as one slab. The old ribbon's
+> behaviour - world-space, path-following, camera-facing, growing, lingering - is kept whole;
+> what changed is that there are now several strokes instead of one and they are sized like pen
+> marks instead of like objects. The single-ribbon build is at commit `a3a4723`.
+
+- An `ImmediateMesh` rebuilt each physics frame from his sampled positions over the window,
+  **one surface per line** - the strokes carry different alphas on the same frame (see the
+  staggered fade below) and a triangle strip cannot break between them without degenerate
+  stitching, which at these widths would be visible.
 - Unlit, **pure black** - `outline_color` is `Color(0,0,0,1)` and every object in this game is
-  inked in it. A thick black stroke tapering behind him is a Moebius speed line drawn in the
-  same pigment as the rest of the frame. White would read against more backgrounds but would
-  introduce a value that exists nowhere else in the palette and would look borrowed.
-- Width **tapers to a point at the tail**.
+  inked in it. Black strokes drawn in the same pigment as the rest of the frame read as part of
+  the drawing. White would read against more backgrounds but would introduce a value that
+  exists nowhere else in the palette and would look borrowed.
+- **World-space, not screen-space.** A screen-space overlay is the literal manga device and it
+  was considered and rejected: it ignores occlusion, and it would fire identically whether he
+  dashes the full 10 m or slams a wall at 2 m. This is still the first VFX in the project and
+  still the pattern-setter for wall-run, rail grind and every boss after it, and that pattern
+  should be one that knows about the world.
+- **The lines converge on him.** Offsets are full at the tail and shrink to `streak_converge`
+  (0.25) of themselves at the head, so the bundle splays open behind him and pinches where it
+  meets his body - which is "coming out of him" stated as geometry. Not all the way to a point:
+  at zero the strokes merge into a blob exactly where the eye is looking.
+- **Centred on his chest**, `streak_anchor_height` (1.1 m) above the sampled path. `_dash_points`
+  samples `global_position`, which is his **feet** - the collision capsule sits 0.978 m above
+  it - so the original ribbon was in fact a stripe at ankle height. Without the anchor the
+  bundle converges on his ankles.
+- **Offsets sit on an ellipse** around the path, `streak_spread_side` (0.30 m) across and
+  `streak_spread_vert` (0.70 m) tall, so the lines go up and down as well as left and right.
+  A flat row is a comb the moment the camera is above it. Sized against his collision capsule
+  (radius 0.34) so the whole bundle stays inside his silhouette: the user's call, 2026-09-19 -
+  the lines are supposed to come out of him, not pass him.
+- **Each line is a spindle**: thin, swells, thin, fattest at `streak_swell_bias` (0.65) along
+  its own length. That is the shape a pen leaves when it lands, presses and lifts, and it is
+  the single cheapest thing that makes a row of quad strips read as drawn rather than extruded.
+  Past 0.5 puts the mass near him, where the flick leaves it.
+- **Pen weight is in pixels, not metres** - roughly 1 px to 3 px, against the 4 px
+  `outline_width` and the 2 px `crease.gdshader` line. This is the one thing about the original
+  ribbon that was simply wrong: every other ink in this game is pixel-constant and says so
+  (`crease.gdshader`: *"constant in pixels, not in metres, at any resolution and any
+  distance"*), and the streak alone was measured in metres. It is also the one that could not
+  survive thinning - a 2.5 cm hairline goes sub-pixel as soon as the camera pulls back, and
+  seven of them shimmering in and out for 0.4 s is a rendering fault, not an effect. **Clamped**
+  by `streak_max_width` (0.12 m), because a pen weight is a fixed *angular* size and a camera
+  on top of the bundle would otherwise resolve 3 px into a slab.
+- **Weights and lengths are spread and then shuffled**, by two independent permutations. Lines
+  get weights spaced evenly across `[streak_weight_min_px, streak_weight_max_px]` and lengths
+  spaced across `[streak_length_min, 1.0]`, so the bundle always contains both light and heavy
+  strokes and always ends ragged. Sampling either at random would let a dash come up with seven
+  near-identical lines - a comb - which is the one outcome the bundle cannot have. Two
+  permutations rather than one, or thickness would be tied to length forever.
+- **Reseeded on every launch**, so no two dashes draw the same bundle and the effect does not
+  go stale over a play session.
 - **Grows as he travels**, rather than being drawn full-length at launch. A dash cut short by a
-  wall must produce a short streak, not a 9 m one hanging through the geometry he hit.
-- Lingers **~0.15 s** after he reappears, then fades.
-- **Camera-facing is not optional.** A flat ribbon seen edge-on is one pixel wide, and dashing
+  wall must produce short lines, not 10 m ones hanging through the geometry he hit.
+- Lingers **~0.15 s** after he reappears, then fades **staggered** - thinnest strokes wink out
+  first, heaviest last, by `streak_fade_stagger` (0.5) of the curve. Seven lines dimming in
+  unison look like a texture fading; dropping away one at a time looks like ink, and it keeps
+  the silhouette strong right to the end instead of dissolving into mush. This matters more
+  than it sounds: he is *invisible* for the whole 0.25 s travel, so the linger is the only part
+  of the effect where there is a character on screen at all. The money frame is pilot9
+  reappearing with seven strokes converging into his chest.
+- **Camera-facing is not optional.** A flat strip seen edge-on is one pixel wide, and dashing
   toward or away from the camera is precisely when it would be edge-on.
 
-This is **the first VFX in the project.** There is currently no `GPUParticles`, no
-`ImmediateMesh`, no trail node anywhere in the tree - `shaders/cel/vfx/` contains one file and
-it is the sky. Whatever shape this takes sets the pattern for wall-run, rail grind and every
-boss after it, which is an argument for the cheapest thing that works: one unlit shader and a
-mesh built in script.
+#### The boil, built and shipped off
+
+`streak_boil` re-randomises the offsets on a `streak_boil_hz` (12 Hz) clock while the streak is
+alive, the way cel animation on 2s wobbles. It is **off by default and that is the
+recommendation**, not an oversight.
+
+The streak lives `dash_time + DASH_STREAK_LINGER` = 0.4 s, which is five frames at 12 Hz. Boil
+reads as *hand-drawn* when there are a couple of seconds of it; at five frames the eye has no
+time to build the pattern and it reads as flicker or as a rendering fault - the worst failure
+available to a cue whose entire job is to be read instantly. It is the one place in this effect
+where "fancy" and "reads as speed" pull against each other.
+
+Built anyway, behind the toggle, because boil is the project's whole art direction and that is
+worth seeing in play rather than arguing about in a document. The user's call, 2026-09-19:
+build it, ship it off, judge it in play.
+
+#### Every number is exported
+
+`streak_line_count`, the two spreads, the anchor, the converge fraction, the two pen weights and
+their clamp, the swell bias, the minimum length, the fade stagger and the three boil knobs are
+all `@export`, in a `Dash Streak` group. Same reasoning as `dash_speed` and `dash_time` before
+them: a bundle's look is found by tuning it while playing, not by picking values in a file. This
+is the knob set, and finding the good values on it is the play session's job.
 
 ### Why the two cues paired (historical - the shadow cue is cut)
 
@@ -512,8 +587,14 @@ recomputes arithmetic it just performed.
 - The air charge: spent at launch only when airborne, refreshed on floor.
 - **The hide/restore round-trip**: every mesh reaches `SHADOWS_ONLY`, and restore returns each
   one to the value it had *before*, not a blanket ON.
-- The streak mesh builds from N sampled points without error, and does not crash on zero or one
-  point (a dash blocked on its first frame).
+- **The streak bundle's geometry**, which is the bulk of it: one line per configured count,
+  every line a spindle thin at both ends, pen weight constant in pixels (twice the camera
+  distance is twice the width in metres) and clamped in close, the bundle wider at the tail
+  than at the head, nothing drawn down at his feet, a spread of weights and a spread of
+  lengths, fade floors running thinnest-first, the same seed rebuilding the same bundle and a
+  different seed a different one, the boil moving nothing while it is off and something while
+  it is on. Plus the degenerate cases: zero points, one point (a dash blocked on its first
+  frame), a dash that never moved, and a one-line bundle.
 - **Steering**: a held stick moves `_dash_direction` (and the welded mesh) onto it with no lag
   and no lerp, a centred stick holds whatever heading was already running, and the vertical
   component stays exactly zero regardless of what the stick asks for.
@@ -539,8 +620,13 @@ broken; they say nothing about whether the dash is any good.
    for crossing floors, and the optimal way over any surface may become dash on cooldown.
 3. **9.0 m landing exactly on the 9.0 m sprint gap lip.** Harmless on the flat test platform,
    dicey the moment gaps are built to measurement. See *The 9.0 m collision*.
-4. **Ink streak legibility against dark ground.** No longer backstopped by the shadow cue,
-   which was cut on the 2026-09-17 retune - the streak is now the only visual cue the dash has.
+4. **Ink streak legibility against dark ground, now sharper.** No longer backstopped by the
+   shadow cue, which was cut on the 2026-09-17 retune - the streak is the only visual cue the
+   dash has. The 2026-09-19 bundle makes this *worse before it is judged*: seven hairlines are
+   a weaker silhouette than one 0.35 m slab was, and keeping a reduced centre stroke as
+   insurance was offered and declined - the user's call, and the right one for the look, since
+   a bundle with a dominant member is not a bundle. If the dash goes illegible over dark
+   ground, the first knobs to reach for are `streak_weight_max_px` and `streak_line_count`.
 5. **Carrying `dash_speed` forever with the stick held the way he was already dashing.** The
    exit-ease that fixed this was built and reverted the same day, 2026-09-18 - see *The exit*.
    Un-fixed on purpose; watch for it on the play session.
@@ -548,7 +634,7 @@ broken; they say nothing about whether the dash is any good.
 ## Deliberately not built
 
 - **No dash clip, no state machine entry, no TimeScale.** The whole point.
-- **No dash VFX beyond the ribbon** - no particles, no camera shake, no FOV punch. A sprint FOV
+- **No dash VFX beyond the line bundle** - no particles, no camera shake, no FOV punch. A sprint FOV
   boost already exists (`sprint_fov_boost`); whether the dash wants its own is a question for
   after the first play, not before.
 - **No sound.** The project has none yet.
