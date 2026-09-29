@@ -1,6 +1,6 @@
 # Spec: pilot9's held slide
 
-> **Status:** built 2026-09-07. **Unplayed** - the feel is unjudged.
+> **Status:** built 2026-09-07. **Played 2026-09-28 - feels good.**
 > **Scene:** `scenes/pilot9.tscn`. **Character:** `assets/pilot9.glb`.
 > **Follows:** `docs/specs/pilot9-slide.md`, which built the slide this changes the *middle*
 > of, and `docs/specs/pilot9-jump-slide.md`, which changed its entry. Neither entry route
@@ -149,7 +149,7 @@ shape of the write, not just its value, for that reason.
    `docs/reimport.md` step 4 is where that gets looked at.
 4. **A hold entered off a cliff edge.** Unchanged from the old slide - `is_on_floor()` false
    ends it and `fall` takes over - but the window is now unbounded rather than 1.25 s, so it
-   will happen far more often. Believed correct; unplayed.
+   will happen far more often. Believed correct; played 2026-09-28.
 
 ## What this does not do
 

@@ -1,6 +1,6 @@
 # Spec: a slide stands up
 
-> **Status:** built 2026-09-09, **unplayed**.
+> **Status:** built 2026-09-09, **played 2026-09-28 - feels good**.
 > **Scene:** `scenes/pilot9.tscn`. **Character:** `assets/pilot9.glb`.
 > **Supersedes:** `docs/specs/pilot9-slide-crouch.md` in full. That spec's rule - "a slide
 > hands off into a crouch" - is reversed here, and the `slide -> crouch` transition it added

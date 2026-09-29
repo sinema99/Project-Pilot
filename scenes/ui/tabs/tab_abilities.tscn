@@ -2,5 +2,6 @@
 
 [ext_resource type="Script" path="res://scripts/ui/tabs/tab_abilities.gd" id="1"]
 
-[node name="TabAbilities" type="VBoxContainer"]
+[node name="TabAbilities" type="HBoxContainer"]
+theme_override_constants/separation = 40
 script = ExtResource("1")

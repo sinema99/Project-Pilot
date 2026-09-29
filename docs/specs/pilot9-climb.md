@@ -402,3 +402,48 @@ Those are the user's on play — jump at shell 2 in `trial.tscn` and mantle up.
    `tests/test_pilot9_slide.gd`; run the suite.
 7. **`docs/reimport.md`** — a section 11 for the climb, next to the slide's section 10.
 8. Hand to the user to play. Worklog after. Nothing committed until it is driven.
+
+## Hand alignment fix (2026-09-26)
+
+Reported on play: "sometimes the hands are above or below the edge". Measured with
+`tests/_probe_mantle_hands.gd` (real mantles, headless, hand bones against the lip every frame):
+
+1. **The clip came in late.** The body snapped on frame 0, but the tree sat in `jump` / `fall` /
+   `Locomotion` for 2+ frames (a fade in progress blocks every transition, and there is no
+   `Locomotion -> climb` edge), then faded 0.08 s. Hands were 0.5-1.1 m under the lip for ~7 frames,
+   and the late start left the clip trailing the path, floating them ~0.37 m over it mid-pull.
+   **Fix:** `_start_climb()` hard-cuts to `climb` with `advance(0)` on every entry, not just off a
+   wall-run. The 0.08 s entry transitions stay as fallbacks but no longer carry the entry.
+2. **The path itself let the hands sag.** Even in sync, driving the body by Mixamo's Hips travel let
+   pilot9's retargeted hands drift ~0.23 m below and ~0.23 m out from the lip through the pull.
+   **Fix:** the builder's `_climb_path()` holds the hands on the lip until the end of the pull (58%
+   of the clip, found as the hands' lowest point against his origin), then blends into the authored
+   stand-up over `CLIMB_GRIP_RELEASE_BLEND`, still ending on the soles-on-the-top snap.
+
+After both: wrist within 3 mm of the lip through the whole pull, on every entry probed (rising,
+falling, first airborne frame, walk-off, double jump, ledges 2.0-5.0 m).
+
+## Exit pop fix (2026-09-26)
+
+Flagged at the end of the hand fix and measured with `tests/_probe_mantle_exit.gd` (real mantles,
+headless, origin / drawn soles / camera against the top every frame through the handoff):
+
+- **The cause.** Locking Hips Y at its frame-1 (hanging) height left `climb_up`'s last frame with his
+  soles 0.259 m *above his own origin*. The exit snap puts the soles on the top, so it parked the
+  origin - and the re-enabled capsule - 0.259 m inside the platform.
+- **What it looked like.** The frame after the exit, the physics pushed the capsule out: origin and
+  camera **+0.226 m in a single frame**. The 0.2 s fade to `Locomotion` (whose poses stand on the
+  origin) then showed the mesh floating ~0.2 m over the top and sinking back.
+- **Fix.** The builder's `_settle_climb_stand_up()` lowers the locked Hips over the stand-up only
+  (after the pull ends, smoothstepped to rest on the last frame) by exactly that soles-over-origin
+  height, so the end pose stands on its origin like every Locomotion pose. The path is re-derived
+  from the modified clip, so the mesh's world motion is unchanged - only the origin (capsule and
+  camera) moves differently, and it now finishes on the top. `climb_foot_offset.y` bakes to ~0
+  (was 0.259), and `climb_rise` to 1.583 m (was 1.324 - the origin now rises the full height).
+- **The lock is no longer flat on Y.** Hips Y is locked through the pull and only ever lowered after
+  it; `test_the_climb_pose_is_locked_in_place_on_both_axes` pins exactly that.
+
+After: no origin/camera step bigger than the path's own 0.057 m per frame, soles within 2 cm of the
+top through the whole fade, hands still exact through the pull. What remains is the authored
+pull-over: the origin (and so the camera) crests ~0.12 m over the top and eases back down over the
+last ~4 frames - the arc, not a pop.

@@ -166,6 +166,76 @@ fails loudly if any of the three moves; this platform adds no second guard for t
 double jump taken at apex gives about 15.4 m. Lanes past ~15 measure your timing more than they
 measure pilot9, and the spec says so rather than the platform pretending otherwise.
 
+## The dash and wall-run addition (2026-09-19)
+
+Both techs are built (`docs/specs/pilot9-dash.md`, `docs/specs/pilot9-wall-run.md`) and both
+already expose a distance the same way the jump does - `dash_distance()`,
+`wall_run_distance(speed)` - so the same instrument gets extended rather than a second one built
+next to it.
+
+**The dash needs no new geometry.** `dash_distance()` is 10.0 m at the shipping tuning
+(`dash_speed 40.0 * dash_time 0.25`), which already lands inside the double-jump ladder this
+platform builds from `sprint_gap + 1` to `double_gap` (9 -> 18 at the shipping numbers) - the
+10 m rung already exists, unlabelled. The only change is reading `dash_distance()` as a fifth
+named limit, spliced into whichever ladder it falls in (single side if it is at or under
+`sprint_gap`, double side otherwise) exactly the way `_pillar_heights()` already splices the two
+mantle ceilings into its own whole-metre run - so a dash retuned off a whole metre still gets its
+own rung rather than silently losing its label. **10 m · DASH** is what the existing rung reads
+once this lands.
+
+**Coincidence, not a bug:** `wall_run_distance(speed)` is also 10.0 m at the shipping tuning
+(`speed 5.0 * wall_run_flat_time 2.0`). The two never collide on the platform because they live
+on different axes - one is a gap in the lane ladder, the other is the length of a wall-run
+corridor, below - but it is worth recording the way `pilot9-dash.md` records the 9.0 m collision,
+since the next person to retune either number should know the other one used to match it.
+
+**The wall-run needs a corridor, not a gap**, because the tech is not "clear a void", it is
+"stay attached to a face while it lasts" - a lane and a landing pad cannot measure that; a wall he
+can run alongside, of a chosen length, can. `WallRuns` is a new generated group, a ladder of
+free-standing corridors at **every whole metre from 1 to `ceil(wall_run_distance(sprint_speed))`**
+(1 -> 15 at the shipping numbers), the same "every metre, not just the limits" reasoning the gap
+ladder and the pillar field already use - three boxes at 10 / 15 would answer "does the tech
+work", not "where does it stop feeling free".
+
+Each corridor is built to trigger the attach gates by construction rather than by asking the
+player to do anything clever:
+
+- A **launch pad**, `wall_run_approach` (6 m, same number as `TAKEOFF_LENGTH` and the same job -
+  runway for aiming and building speed, not for accelerating) of solid ground flush against the
+  base of the corridor's wall.
+- The **wall** itself runs the corridor's full length - under the launch pad *and* past it - so
+  the ground ends at the pad's far edge while the wall keeps going. Stepping off that edge leaves
+  him airborne, still moving parallel to the wall, still within `wall_run_probe_reach` of it: gates
+  1 (airborne), 3 (near-vertical face) and 4 (travelling along it, not into it) are satisfied by
+  the geometry itself, not by an instruction. Only gate 2 (`wall_run_min_speed`) is on the player -
+  walk off the edge and nothing happens, which is correct and worth leaving true.
+- A **catch slab** runs the full corridor underneath, below the wall's base, so a run that ends
+  early - droops out, or never speed-gated on - lands rather than falling forever. The wall-run
+  platform inherits the jump grid platform's own "measures reach, not nerve" trade from the main
+  slab, here for the same reason.
+- Corridors sit side by side, each in its own strip, spaced wider than a corridor's own footprint
+  so a run that overshoots one cannot drift into its neighbour - the same chaining guard the
+  pillar field already enforces, applied to a row instead of a grid.
+- The two named rungs, **`wall_run_distance(speed)`** and **`wall_run_distance(sprint_speed)`**,
+  are tinted and labelled **RUN** and **SPRINT** the way the gap ladder labels its own two; every
+  other rung is a plain metre count. Warm ramp, reused rather than reinvented, pinned between 1 m
+  and the sprint rung the same way the gap ladder's ramp is pinned between `walk_gap` and
+  `double_gap`.
+- The label sits at the **far end** of each corridor's wall, over the ground that has already
+  dropped away, so reading it means having got that far rather than reading it from the launch
+  pad before trying.
+
+**Placement.** The row sits beyond the pillar field, continuing the platform outward in the same
+direction the pillar field already continues it past the lane block - so the footprint grows in
+one direction rather than needing a second slab.
+
+**What this does not attempt to measure.** The wall-jump's own reach (`jump_height`, reused
+outright - see the wall-run spec), the per-flight budget (`wall_runs_per_flight`), same-wall 180s,
+and the dash-into-wall-run 25 m chain are all real numbers in the wall-run spec that this platform
+does not build geometry for. The corridor ladder answers one question - *how far does staying on
+the wall carry him* - the same scope the gap ladder holds for jumping. A second instrument for the
+budget and the chain is a separate question for whenever those turn out to need one.
+
 ## What the test fences
 
 `tests/test_pilot9_jump_grid_platform.gd`, on a generated instance, headless.
@@ -184,6 +254,21 @@ correctness is that file's job. This file's job is that the *instrument* does no
 
 The last three are the silent ones. Break any of them and the platform still looks entirely correct
 while measuring something else.
+
+**Added for the dash and wall-run:**
+
+- **The dash rung is labelled.** Whichever ladder rung equals `dash_distance()` reads `· DASH`,
+  by the same AABB-and-label check as the jump ladder, not by re-reading the export.
+- **Every wall-run corridor measures the length its label claims**, by AABB between the launch
+  pad's outer edge and the corridor's far wall face - the same "the label matches the geometry"
+  claim, applied to a corridor instead of a lane.
+- **The RUN and SPRINT corridors are labelled**, matching `wall_run_distance(speed)` and
+  `wall_run_distance(sprint_speed)` read independently off a pilot of the test's own.
+- **Corridors cannot be run into each other.** Every corridor is further from its neighbours than
+  its own width, the row's version of the pillar field's chaining guard.
+- **Every corridor's wall clears the launch pad**, and its catch slab sits under the wall's base -
+  or a corridor that looks right measures nothing because he never leaves the ground, or falls
+  through the floor when he does.
 
 ## Getting to it
 

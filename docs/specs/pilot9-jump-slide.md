@@ -1,9 +1,9 @@
 # Spec: pilot9's land-and-slide buffer
 
 > **Status:** built 2026-09-06; **loosened 2026-09-06** after the first read of the feel -
-> see "The 2026-09-06 loosening" below. The revised feel is unjudged.
+> see "The 2026-09-06 loosening" below. The revised feel was played 2026-09-28 and feels good.
 > **Fixed 2026-09-11:** the clip froze on the wrong frame coming out of a jump - see
-> "The 2026-09-11 freeze" below. Unjudged on play.
+> "The 2026-09-11 freeze" below. Played 2026-09-28 - feels good.
 > **Scene:** `scenes/pilot9.tscn`. **Character:** `assets/pilot9.glb`.
 > **Follows:** `docs/specs/pilot9-slide.md`, which built the slide this only changes the
 > *entry* of.

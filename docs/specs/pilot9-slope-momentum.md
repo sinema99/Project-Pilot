@@ -1,7 +1,7 @@
 # Spec: slopes as momentum
 
 > **Status:** built 2026-09-08, **played the same day**. The slopes read right; the stop did
-> not - `momentum_brake` below is the answer to that play and is itself unjudged.
+> not - `momentum_brake` below is the answer to that play and was played 2026-09-28 - feels good.
 > **Scene:** `scenes/pilot9.tscn`. **Character:** `assets/pilot9.glb`.
 > **Follows:** `docs/specs/pilot9-slide.md`, `docs/specs/pilot9-slide-hold.md` and
 > `docs/specs/pilot9-slide-crouch.md`. The slide's entry, its clip, its steering and its

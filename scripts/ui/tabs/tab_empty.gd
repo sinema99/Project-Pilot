@@ -11,6 +11,5 @@ extends VBoxContainer
 # Nothing here takes focus, so the row-navigation hints would be a lie.
 func hints() -> Array:
 	return [
-		{"key": "Q/E", "label": "TAB"},
 		{"key": "ESC", "label": "CLOSE"},
 	]

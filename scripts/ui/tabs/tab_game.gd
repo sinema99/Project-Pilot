@@ -3,11 +3,8 @@ extends VBoxContainer
 # The GAME tab: the four things you can do to a running game. Button presses are
 # wired in tab_game.tscn. See docs/specs/ui-shell.md.
 
-func _ready() -> void:
-	# Hover moves focus rather than drawing a second highlight, so the keyboard
-	# and the pointer can never disagree about which entry is selected.
-	for button in _buttons():
-		button.mouse_entered.connect(button.grab_focus)
+# Hover moves focus (MenuRow does it), so the keyboard and the pointer can never disagree about
+# which entry is selected.
 
 func focus_first() -> void:
 	var buttons := _buttons()

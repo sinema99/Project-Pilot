@@ -1,6 +1,6 @@
 # Spec: map crease ink
 
-> **Status:** built 2026-09-09, **not yet played**. Verified on the real Forward+ renderer by
+> **Status:** built 2026-09-09, **played 2026-09-28, feels good**. Verified on the real Forward+ renderer by
 > screenshot, not by eye in motion. Three claims in the first draft of this spec were wrong and
 > were corrected against the running build; all three are marked **[corrected]** below. The
 > third correction, on 2026-09-09 after the first look at the build, is the largest: the pass

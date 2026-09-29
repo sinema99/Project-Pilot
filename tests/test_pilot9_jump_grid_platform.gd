@@ -122,6 +122,15 @@ func _group(grid: Node3D, name_: String) -> Node:
 		check(node.get_child_count() > 0, "`%s` is empty" % name_)
 	return node
 
+# The marker a node's label CARRIES, past the metres - "10 m · DASH" -> "DASH", "" for an
+# unnamed rung.
+func _claimed_limit(node: Node) -> String:
+	var label := _label_of(node)
+	if label == null:
+		return ""
+	var parts := label.text.split(" · ")
+	return parts[1] if parts.size() > 1 else ""
+
 # --- a label matches its geometry -----------------------------------------
 
 # The failure this catches is a ruler that reads wrong: a lane captioned 7 m that is not 7 m
@@ -306,3 +315,178 @@ func test_the_surface_counts_in_metres() -> void:
 		"the minor grid is no longer 1 m - the surface cannot be counted")
 	approx(declared_default_float(path, "major_spacing"), 5.0, 0.0001,
 		"the heavy line is no longer every 5 m")
+
+# --- the dash and wall-run addition ---------------------------------------
+# docs/specs/pilot9-jump-grid-platform.md, "The dash and wall-run addition". dash_distance()
+# lands inside the double-jump ladder already; this checks it got a name, not a fresh box.
+
+func test_the_dash_rung_is_named() -> void:
+	var grid := _platform()
+	var p := _pilot()
+	check(grid != null and p != null, "platform or pilot9 did not instantiate")
+	if grid == null or p == null:
+		return
+	var lanes := _group(grid, "Lanes")
+	if lanes == null:
+		return
+	var dash_gap: float = p.dash_distance()
+	var found := false
+	for lane in lanes.get_children():
+		if is_equal_approx(_claimed_metres(lane), dash_gap):
+			found = true
+			check(_claimed_limit(lane) == "DASH",
+				"the %s m rung sits exactly on dash_distance() but is not labelled DASH"
+					% _claimed_metres(lane))
+	check(found, "no rung in the ladder measures dash_distance() (%.2f m) at all" % dash_gap)
+
+# --- wall-run corridors ----------------------------------------------------
+
+func _wall_run_box(corridor: Node, nm: String) -> StaticBody3D:
+	return corridor.get_node_or_null(nm) as StaticBody3D
+
+# The failure this catches is the corridor version of a lane that reads wrong: a corridor
+# captioned 10 m whose wall is not 10 m long. Measured between the launch pad's far edge (where
+# the ground actually ends) and the wall's own far face - the distance he is asked to stay
+# attached for.
+func test_every_wall_run_measures_the_length_its_label_claims() -> void:
+	var grid := _platform()
+	check(grid != null, "scenes/jump_grid.tscn did not instantiate")
+	if grid == null:
+		return
+	var corridors := _group(grid, "WallRuns")
+	if corridors == null:
+		return
+	for corridor in corridors.get_children():
+		var claimed := _claimed_metres(corridor)
+		check(not is_nan(claimed), "corridor `%s` carries no readable label" % corridor.name)
+		if is_nan(claimed):
+			continue
+		var launch := _wall_run_box(corridor, "Launch")
+		var wall := _wall_run_box(corridor, "Wall")
+		check(launch != null and wall != null,
+			"corridor `%s` is missing its launch pad or its wall" % corridor.name)
+		if launch == null or wall == null:
+			continue
+		# The pad only covers the corridor's near end (WALL_RUN_APPROACH of it); the wall runs
+		# the corridor's full advertised length, so its own extent is what the label claims.
+		var wall_box := _body_box(grid, wall)
+		var length := wall_box.size.z
+		approx(length, claimed, TOL,
+			"corridor `%s` says %s m and its wall measures %.3f m - the ruler reads wrong"
+				% [corridor.name, _label_of(corridor).text, length])
+
+func test_the_run_and_sprint_corridors_are_named() -> void:
+	var grid := _platform()
+	var p := _pilot()
+	check(grid != null and p != null, "platform or pilot9 did not instantiate")
+	if grid == null or p == null:
+		return
+	var corridors := _group(grid, "WallRuns")
+	if corridors == null:
+		return
+	var run_gap: float = p.wall_run_distance_for(p.speed, p.wall_run_flat_time)
+	var sprint_gap: float = p.wall_run_distance_for(p.sprint_speed, p.wall_run_flat_time)
+	var found_run := false
+	var found_sprint := false
+	for corridor in corridors.get_children():
+		var claimed := _claimed_metres(corridor)
+		if is_equal_approx(claimed, run_gap):
+			found_run = true
+			check(_claimed_limit(corridor) == "RUN",
+				"the %.1f m corridor sits on wall_run_distance(speed) but is not labelled RUN"
+					% claimed)
+		if is_equal_approx(claimed, sprint_gap):
+			found_sprint = true
+			check(_claimed_limit(corridor) == "SPRINT",
+				"the %.1f m corridor sits on wall_run_distance(sprint_speed) but is not labelled SPRINT"
+					% claimed)
+	check(found_run, "no corridor measures wall_run_distance(speed) (%.2f m)" % run_gap)
+	check(found_sprint, "no corridor measures wall_run_distance(sprint_speed) (%.2f m)" % sprint_gap)
+
+# The row's version of the pillar field's chaining guard: a drift off one corridor's wall must
+# not be able to reach its neighbour's.
+func test_wall_run_corridors_cannot_be_run_into_each_other() -> void:
+	var grid := _platform()
+	check(grid != null, "scenes/jump_grid.tscn did not instantiate")
+	if grid == null:
+		return
+	var corridors := _group(grid, "WallRuns")
+	if corridors == null:
+		return
+	var walls: Array[StaticBody3D] = []
+	for corridor in corridors.get_children():
+		var wall := _wall_run_box(corridor, "Wall")
+		if wall != null:
+			walls.append(wall)
+	check(walls.size() > 1, "there is no wall-run row to check for chaining")
+	for i in walls.size():
+		var box_i := _body_box(grid, walls[i])
+		for j in range(i + 1, walls.size()):
+			var box_j := _body_box(grid, walls[j])
+			var sep := minf(
+				absf(box_i.position.x - box_j.end.x), absf(box_j.position.x - box_i.end.x))
+			check(sep > box_i.size.x + box_j.size.x,
+				"`%s` and `%s` are only %.2f m apart edge to edge - the row can be run between"
+					% [walls[i].get_parent().name, walls[j].get_parent().name, sep])
+
+# The wall clears the launch pad (stands above it, not through it) and the catch slab sits
+# under the wall's own base, or a corridor that looks right leaves nothing to fall onto.
+func test_every_wall_run_wall_clears_its_pad_and_stands_over_its_catch() -> void:
+	var grid := _platform()
+	check(grid != null, "scenes/jump_grid.tscn did not instantiate")
+	if grid == null:
+		return
+	var corridors := _group(grid, "WallRuns")
+	if corridors == null:
+		return
+	for corridor in corridors.get_children():
+		var launch := _wall_run_box(corridor, "Launch")
+		var wall := _wall_run_box(corridor, "Wall")
+		var catch_slab := _wall_run_box(corridor, "Catch")
+		check(launch != null and wall != null and catch_slab != null,
+			"corridor `%s` is missing one of its three parts" % corridor.name)
+		if launch == null or wall == null or catch_slab == null:
+			continue
+		var pad_box := _body_box(grid, launch)
+		var wall_box := _body_box(grid, wall)
+		var catch_box := _body_box(grid, catch_slab)
+		check(wall_box.end.y > pad_box.end.y,
+			"corridor `%s`'s wall does not stand above its own launch pad" % corridor.name)
+		approx(catch_box.end.y, wall_box.position.y, TOL,
+			"corridor `%s`'s catch slab is not flush with its wall's base" % corridor.name)
+
+# --- the vault lanes ------------------------------------------------------
+
+# docs/specs/pilot9-vault.md, "Test bed". Same instrument rule as every row above: a lane
+# captioned 0.9 m is a 0.9 m wall, read off the collider it is, and the run-up in front of it is
+# long enough to reach a sprint (8 m, the spec's number) on level floor.
+func test_every_vault_wall_stands_as_tall_as_its_label_claims() -> void:
+	var grid := _platform()
+	if grid == null:
+		fail("scenes/jump_grid.tscn did not load")
+		return
+	var vaults := _group(grid, "Vaults")
+	if vaults == null:
+		return
+	var floor_body := vaults.get_node_or_null("Floor") as StaticBody3D
+	check(floor_body != null, "the vault row has no Floor")
+	if floor_body == null:
+		return
+	var floor_box := _body_box(grid, floor_body)
+	var walls := 0
+	for lane in vaults.get_children():
+		if not lane.name.begins_with("Vault_"):
+			continue
+		var wall := lane.get_node_or_null("Wall") as StaticBody3D
+		check(wall != null, "%s has no Wall" % lane.name)
+		if wall == null:
+			continue
+		walls += 1
+		var box := _body_box(grid, wall)
+		var claimed := _claimed_metres(lane)
+		approx(box.size.y, claimed, TOL, "%s's wall is not the height its label claims" % lane.name)
+		approx(box.position.y, floor_box.end.y, TOL, "%s's wall does not stand on the row's floor" % lane.name)
+		check(floor_box.end.z - box.end.z >= 8.0 - TOL,
+			"%s has %.2f m of run-up - the spec asks for 8 m to reach a sprint"
+			% [lane.name, floor_box.end.z - box.end.z])
+	eq(walls, 7, "five band lanes and two controls")

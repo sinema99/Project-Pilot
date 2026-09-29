@@ -1,6 +1,6 @@
 # Spec: pilot9's camera and walls
 
-> **Status:** built 2026-09-10. **Unplayed** - the feel is unjudged.
+> **Status:** built 2026-09-10. **Played 2026-09-28 - feels good.**
 > **Scene:** `scenes/pilot9.tscn`. **Touches:** `scripts/pilot9.gd` only.
 > No rebuild, no bake, no animation change. The SpringArm3D is configured from
 > `_ready()` rather than the scene file, so a rebuild of pilot9.tscn cannot lose it.

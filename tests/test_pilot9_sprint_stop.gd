@@ -217,9 +217,10 @@ func test_the_stop_is_checked_before_the_press() -> void:
 		"gate is dead and a fall now counts as a stop")
 
 # The toggle is read by _apply_movement(), the FOV and three slide predicates, so a new place
-# clearing it would be found by feel and not by log. Four writers, and all four are named: the
-# press flip, the `walk` clear, the stop clear, and _end_verbs_for_boarding(), which ends every
-# live verb on the way into EXIA - the sprint intent included.
+# clearing it would be found by feel and not by log. Five writers, and all five are named: the
+# press flip, the `walk` clear, the stop clear, _end_dash(), which comes out of every dash
+# toggled into a sprint, and _end_verbs_for_boarding(), which ends every live verb on the way
+# into EXIA - the sprint intent included.
 func test_the_toggle_still_has_one_writer() -> void:
 	var text := _source()
 	if text == "":
@@ -230,10 +231,11 @@ func test_the_toggle_still_has_one_writer() -> void:
 		var stripped := line.strip_edges()
 		if stripped.begins_with("sprint_toggled ="):
 			writes += 1
-	eq(writes, 4,
-		"sprint_toggled is written somewhere new - it should be assigned in exactly four " +
+	eq(writes, 5,
+		"sprint_toggled is written somewhere new - it should be assigned in exactly five " +
 		"places: the press flip, the `walk` clear and the stop clear (all in " +
-		"_update_sprint_toggle()/_update_sprint_stop()), plus _end_verbs_for_boarding()")
+		"_update_sprint_toggle()/_update_sprint_stop()), plus _end_dash() and " +
+		"_end_verbs_for_boarding()")
 	var stop_body := _body(text, "func _update_sprint_stop")
 	check(stop_body.contains("input_dir == Vector2.ZERO"),
 		"_update_sprint_stop() no longer requires a centred stick - running into a wall now " +

@@ -12,6 +12,12 @@
 ##    controller reads its distance curve at and freezes it on the hold pose, and the
 ##    TimeSeek that starts it on the right frame - see _sync_slide_clip(). RC has no slide;
 ##    docs/specs/pilot9-slide-hold.md, pilot9-slide-rate.md and pilot9-jump-slide.md.
+## 5. The rail's grind/sprint blend, eased off `is_rail_sprinting` - see _drive_rail(). RC has
+##    no rail; docs/specs/pilot9-rail-grind.md.
+## 6. The vault's TimeScale, held at 0 - see _drive_vault(). RC has no vault;
+##    docs/specs/pilot9-vault.md.
+## 7. The dash's TimeScale, the sprint cycle sped up - see _drive_dash(). RC has no dash;
+##    docs/specs/pilot9-dash.md, "The afterimages".
 extends Node
 
 ## The scale on the `crouch` state's TimeScale node, built by
@@ -40,6 +46,24 @@ const SLIDE_STATE := &"slide"
 ## The state the double jump restarts. There is no second-jump clip and no fall -> jump
 ## transition in the tree, so the air jump replays this one - see _on_air_jumped().
 const JUMP_STATE := "jump"
+
+## The Blend2 between the rail's two gear clips, built by
+## scripts/pilot9_build_scene.gd::_ensure_rail_state() as RAIL_GEAR_NODE. Same silent-rename
+## hazard as CROUCH_SCALE: a stale path and he grinds in the grind clip at both gears.
+const RAIL_GEAR := "parameters/rail/RailGear/blend_amount"
+## Seconds a full gear change of the clip blend takes - the spec's ~0.15 s crossfade.
+const RAIL_GEAR_BLEND_TIME := 0.15
+
+## The `vault` state's TimeScale, built by scripts/pilot9_build_scene.gd::_ensure_vault_state()
+## as VAULT_SCALE_NODE. Held at 0: the clip is moved only by the seek pilot9.gd writes each
+## physics tick (_seek_vault_clip()), never by the tree's own clock. Same silent-rename hazard
+## as CROUCH_SCALE - a stale path and the clip runs at authored speed under a body that is not.
+const VAULT_SCALE := "parameters/vault/VaultScale/scale"
+
+## The `dash` state's TimeScale, built by scripts/pilot9_build_scene.gd::_ensure_dash_state() as
+## DASH_SCALE_NODE. Same silent-rename hazard as CROUCH_SCALE - a stale path and every ghost in
+## the trail has the same legs.
+const DASH_SCALE := "parameters/dash/DashScale/scale"
 
 @onready var animation_tree: AnimationTree = $"../AnimationTree"
 @onready var playback = animation_tree.get("parameters/playback")
@@ -102,6 +126,9 @@ func _process(delta: float) -> void:
 
 	_drive_crouch(delta)
 	_drive_slide()
+	_drive_rail(delta)
+	_drive_vault()
+	_drive_dash()
 
 ## The blend position for all three locomotion blend spaces: where he is travelling,
 ## expressed in his own frame. Forward sits at (0, 1) in every one of them.
@@ -218,3 +245,32 @@ func _sync_slide_clip() -> void:
 		return
 	_slide_clip_synced = true
 	animation_tree.set(SLIDE_SEEK, player.slide_clip_time())
+
+## Crossfades the `rail` state's two clips toward the gear the controller is in. Linear over
+## RAIL_GEAR_BLEND_TIME rather than exponential, so a gear change reads as a crossfade that
+## finishes instead of one that only ever approaches. Written whether or not the state is playing, so a
+## catch already sprinting opens on the sprint clip rather than fading into it.
+func _drive_rail(delta: float) -> void:
+	var current: Variant = animation_tree.get(RAIL_GEAR)
+	if current == null:
+		return   # rail state absent - a pilot9.tscn built before _ensure_rail_state
+	var target := 1.0 if player.is_rail_sprinting else 0.0
+	if not player.is_rail_grinding:
+		target = 1.0 if player.sprint_toggled else 0.0
+	animation_tree.set(RAIL_GEAR, move_toward(float(current), target,
+		delta / RAIL_GEAR_BLEND_TIME))
+
+## Pins the vault clip's own clock at a standstill. pilot9.gd seeks it onto the controller's vault
+## time every physics tick, because each vault runs at its own rate (entry speed) with its own
+## run-up (distance to the wall) and no fixed timeline could stay under the body. Held while the
+## state blends out too, so the fade into Locomotion starts from the touchdown pose.
+func _drive_vault() -> void:
+	if animation_tree.get(VAULT_SCALE) == null:
+		return   # vault state absent - a pilot9.tscn built before _ensure_vault_state
+	animation_tree.set(VAULT_SCALE, 0.0)
+
+## The forced sprint cycle's rate for the dash. Written every frame, so the Inspector tunes it live.
+func _drive_dash() -> void:
+	if animation_tree.get(DASH_SCALE) == null:
+		return   # dash state absent - a pilot9.tscn built before _ensure_dash_state
+	animation_tree.set(DASH_SCALE, player.dash_anim_speed)

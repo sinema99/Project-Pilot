@@ -169,6 +169,77 @@ func test_left_and_right_are_not_bound_to_tab_next() -> void:
 		"tab_next is still bound to Right (4194321) - Right must fall through to ui_right for row adjustment")
 	check(block.contains("\"physical_keycode\":69"), "tab_next should still carry E")
 
+# --- 7. the display rows - see docs/specs/settings.md, Display Modes ---------
+
+func test_first_launch_is_a_1080p_window() -> void:
+	var s := _script()
+	if s == null:
+		return
+	eq(s.defaults()[&"window_mode"], "windowed", "first launch is WINDOWED")
+	eq(s.defaults()[&"resolution"], Vector2i(1920, 1080), "first launch is 1920x1080")
+
+func test_project_godot_has_no_window_override() -> void:
+	var text := _project_godot_text()
+	check(not text.contains("window_width_override"),
+		"project.godot overrides the window size again - it applies to exports too and fights the 1080p default")
+
+func test_the_modes_are_windowed_borderless_fullscreen() -> void:
+	var s := _script()
+	if s == null:
+		return
+	eq(s.values_of(&"window_mode"), ["windowed", "borderless", "fullscreen"],
+		"the row is WINDOWED / BORDERLESS / FULLSCREEN")
+
+func test_an_old_exclusive_save_loads_as_fullscreen() -> void:
+	var s := _script()
+	if s == null:
+		return
+	var out: Dictionary = s.sanitise({"version": 1, &"window_mode": "exclusive"})
+	eq(out[&"window_mode"], "fullscreen", "EXCLUSIVE was renamed, not removed - an old save keeps its mode")
+
+func test_a_window_that_fits_the_desktop_fits() -> void:
+	var s := _script()
+	if s == null:
+		return
+	var usable := Rect2i(0, 0, 2560, 1400)
+	check(s.window_fits(Vector2i(1920, 1080), usable, 31), "1080p fits a 1440p desktop with room to spare")
+	check(not s.window_fits(Vector2i(2560, 1440), usable, 31),
+		"a native-size window is taller than the desktop once the taskbar and title bar count")
+	check(not s.window_fits(Vector2i(1920, 1080), Rect2i(0, 0, 1920, 1040), 31),
+		"a 1080p window on a 1080p monitor does not fit under the taskbar")
+
+func test_3d_scale_in_a_window_is_just_render_scale() -> void:
+	var s := _script()
+	if s == null:
+		return
+	eq(s.scale_3d(Vector2i(1280, 720), Vector2i(1280, 720), 0.75), 0.75,
+		"a window the size of the resolution renders at render scale alone")
+
+func test_3d_scale_in_fullscreen_is_the_resolution_over_the_screen() -> void:
+	var s := _script()
+	if s == null:
+		return
+	eq(s.scale_3d(Vector2i(1280, 720), Vector2i(2560, 1440), 1.0), 0.5,
+		"720p on a 1440p screen renders the 3D at half size")
+	eq(s.scale_3d(Vector2i(1280, 720), Vector2i(2560, 1440), 0.5), 0.25,
+		"RESOLUTION and RENDER SCALE multiply")
+
+func test_3d_scale_never_supersamples() -> void:
+	var s := _script()
+	if s == null:
+		return
+	eq(s.scale_3d(Vector2i(2560, 1440), Vector2i(2560, 1400), 1.0), 1.0,
+		"a maximized window slightly smaller than the resolution renders at window size, not above it")
+
+func test_3d_scale_on_a_non_16_9_screen_measures_the_letterboxed_area() -> void:
+	var s := _script()
+	if s == null:
+		return
+	eq(s.scale_3d(Vector2i(1920, 1080), Vector2i(1920, 1200), 1.0), 1.0,
+		"stretch aspect is keep, so 16:10 letterboxes to 1920x1080 - 1080p already fills it")
+	eq(s.scale_3d(Vector2i(960, 540), Vector2i(1920, 1200), 1.0), 0.5,
+		"540p is half the letterboxed 1920x1080 area, not half of anything involving 1200")
+
 # --- helpers -----------------------------------------------------------------
 
 func _project_godot_text() -> String:

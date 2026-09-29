@@ -223,7 +223,8 @@ func test_the_untouched_dials_are_still_untouched() -> void:
 	# The one exception, and it is deliberate: 8.0 -> 7.5 on 2026-09-11, because 7.5 is what
 	# clears exactly 9 m in the 1.2 s airtime. See docs/specs/pilot9-jump-grid.md.
 	approx(p.sprint_speed, 7.5, 0.0001, "sprint_speed drifted off the jump grid")
-	approx(p.crouch_speed, 1.6, 0.0001, "crouch_speed drifted from its authored value")
+	# Raised 1.6 -> 5.0 on 2026-09-28: the crouch moves at run pace.
+	approx(p.crouch_speed, 5.0, 0.0001, "crouch_speed drifted from the run speed")
 	approx(p.rotation_speed, 10.0, 0.0001, "rotation_speed drifted from stock Real Controller")
 	approx(p.slide_scale, 1.0, 0.0001, "slide_scale drifted - the clip is no longer the slide")
 	approx(p.slide_cooldown, 0.4, 0.0001, "slide_cooldown drifted")

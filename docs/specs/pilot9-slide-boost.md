@@ -1,6 +1,6 @@
 # Spec: the slide is a burst, not a brake
 
-> **Status:** specified 2026-09-09, **built the same day, unplayed**.
+> **Status:** specified 2026-09-09, **built the same day, played 2026-09-28 - feels good**.
 > **Scene:** `scenes/pilot9.tscn`. **Character:** `assets/pilot9.glb`.
 > **Follows:** `docs/specs/pilot9-slide.md` (the clip drives the speed),
 > `docs/specs/pilot9-slide-hold.md` (the hold's constant speed) and

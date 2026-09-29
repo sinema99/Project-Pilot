@@ -1,97 +1,102 @@
-extends Control
+extends "res://scripts/ui/menu_row.gd"
 
-# One row of a continuous setting (BRIGHTNESS, both sensitivities, FOV),
-# drawn and dragged entirely in script rather than a stock HSlider - see
-# docs/specs/settings.md, A Row Is A Button. HSlider's grabber is a
-# Texture2D, an art asset this project does not have; this draws a flat
-# white handle instead, matching the theme's hairline aesthetic with no new
-# resources.
+# One row of a continuous setting (BRIGHTNESS, both sensitivities, FOV): LABEL, then
+# `[=======|------]  72` in the same fixed-width control column the selector rows use. Drawn and
+# dragged entirely in script rather than a stock HSlider - HSlider's grabber is a Texture2D, an art
+# asset this project does not have. See docs/specs/menu-refresh.md, "SETTINGS rows".
 #
-# Left/Right still index-step it exactly like a discrete row - _input() in
-# tab_settings.gd does not know this control is any different. The drag
-# below is additive, for a mouse.
-#
-# A drag writes straight to Settings and repaints the track from it, but the
-# printed value (_value_text) is only ever handed down by sync() - it has no
-# way to reformat itself, since _format_value() belongs to tab_settings.gd.
-# So a drag emits `dragged` and tab_settings.gd calls sync() again in
-# response, the same refresh a keyboard step already gets. Without this the
-# handle tracks the mouse and the number next to it does not.
+# Left/Right still index-step it exactly like a discrete row - tab_settings.gd's _input does not
+# know this control is any different. Dragging or clicking the track jumps; that is additive, for
+# a mouse. A drag writes straight to Settings and repaints the track from it, but the printed value
+# is only ever handed down by sync() (formatting belongs to tab_settings.gd), so a drag emits
+# `dragged` and the tab syncs again.
+
 signal dragged
 
-const TRACK_HEIGHT := 3.0
-const HANDLE_WIDTH := 4.0
-const HANDLE_HEIGHT := 14.0
-const SIDE_MARGIN := 16.0
+const CONTROL_WIDTH := 300.0
+const VALUE_WIDTH := 64.0
+const RIGHT_MARGIN := 16.0
+const TRACK_HEIGHT := 4.0
+const HANDLE_WIDTH := 8.0
+const HANDLE_HEIGHT := 16.0
+const TRACK_IDLE_ALPHA := 0.25
+const FILL_IDLE_ALPHA := 0.45
 
 var key: StringName
-var _label := ""
 var _value_text := ""
+var _dragging := false
 
 func setup(k: StringName) -> void:
 	key = k
-	focus_mode = Control.FOCUS_ALL
-	mouse_filter = Control.MOUSE_FILTER_STOP
-	custom_minimum_size.y = 52
-	size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	mouse_entered.connect(grab_focus)
-	focus_entered.connect(queue_redraw)
-	focus_exited.connect(queue_redraw)
-	resized.connect(queue_redraw)
 
-## Called by tab_settings.gd after every value change - it owns formatting
-## (_format_value), this control only ever draws strings it is handed.
+## Called by tab_settings.gd after every value change.
 func sync(label: String, value_text: String) -> void:
-	_label = label
+	text = label
 	_value_text = value_text
 	queue_redraw()
 
+## The track's horizontal extent, in this control's coordinates.
+func track_span() -> Vector2:
+	var x0 := size.x - RIGHT_MARGIN - CONTROL_WIDTH
+	return Vector2(x0, x0 + CONTROL_WIDTH - VALUE_WIDTH)
+
 func _gui_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-		grab_focus()
+	if disabled:
+		return
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed:
+			var span := track_span()
+			# A little slack either side so the ends are easy to hit.
+			if event.position.x >= span.x - 12.0 and event.position.x <= span.y + 12.0:
+				_dragging = true
+				grab_focus()
+				_set_from_x(event.position.x)
+				accept_event()
+				return
+		elif _dragging:
+			_dragging = false
+			accept_event()
+			return
+	elif event is InputEventMouseMotion and _dragging:
 		_set_from_x(event.position.x)
 		accept_event()
-	elif event is InputEventMouseMotion and (event.button_mask & MOUSE_BUTTON_MASK_LEFT):
-		_set_from_x(event.position.x)
-		accept_event()
+		return
+	super._gui_input(event)
 
 func _set_from_x(x: float) -> void:
 	var values := Settings.values_of(key)
-	var span := size.x - SIDE_MARGIN * 2.0
-	if values.is_empty() or span <= 0.0:
+	var span := track_span()
+	if values.is_empty() or span.y <= span.x:
 		return
-	var ratio := clampf((x - SIDE_MARGIN) / span, 0.0, 1.0)
+	var ratio := clampf((x - span.x) / (span.y - span.x), 0.0, 1.0)
 	var index := clampi(roundi(ratio * float(values.size() - 1)), 0, values.size() - 1)
 	Settings.set_value(key, values[index])
 	dragged.emit()
 	queue_redraw()
 
-func _draw() -> void:
-	var selected := has_focus()
-	if selected:
-		draw_rect(Rect2(Vector2.ZERO, size), Color(1, 1, 1, 1))
-	var font: Font = get_theme_font(&"font", &"Button")
-	var font_size: int = get_theme_font_size(&"font_size", &"Button")
-	var color := Color.BLACK if selected else Color.WHITE
-	var baseline := size.y * 0.5 - 8.0
-	draw_string(font, Vector2(SIDE_MARGIN, baseline), _label,
-		HORIZONTAL_ALIGNMENT_LEFT, size.x - SIDE_MARGIN * 2.0, font_size, color)
-	draw_string(font, Vector2(SIDE_MARGIN, baseline), _value_text,
-		HORIZONTAL_ALIGNMENT_RIGHT, size.x - SIDE_MARGIN * 2.0, font_size, color)
-	_draw_track(selected)
+func _draw_content() -> void:
+	super._draw_content()
+	var font := get_theme_font(&"font")
+	var font_size := get_theme_font_size(&"font_size")
+	var span := track_span()
+	var right_edge := size.x - RIGHT_MARGIN
+	draw_string(font, Vector2(span.y + 12.0, _baseline(font, font_size)), _value_text,
+		HORIZONTAL_ALIGNMENT_RIGHT, right_edge - span.y - 12.0, font_size, text_color())
+	_draw_track(span)
 
-func _draw_track(selected: bool) -> void:
+func _draw_track(span: Vector2) -> void:
 	var values := Settings.values_of(key)
 	if values.is_empty():
 		return
-	var index := Settings.index_for(key)
-	var ratio := float(index) / float(maxi(values.size() - 1, 1))
-	var span := size.x - SIDE_MARGIN * 2.0
-	var y := size.y - 14.0
-	var track_color := Color(0, 0, 0, 0.35) if selected else Color(1, 1, 1, 0.25)
-	var fill_color := Color(0, 0, 0, 0.85) if selected else Color(1, 1, 1, 0.85)
-	draw_rect(Rect2(SIDE_MARGIN, y, span, TRACK_HEIGHT), track_color)
-	draw_rect(Rect2(SIDE_MARGIN, y, span * ratio, TRACK_HEIGHT), fill_color)
-	var handle_x := SIDE_MARGIN + span * ratio
-	draw_rect(Rect2(handle_x - HANDLE_WIDTH * 0.5, y - (HANDLE_HEIGHT - TRACK_HEIGHT) * 0.5,
-		HANDLE_WIDTH, HANDLE_HEIGHT), fill_color)
+	var ratio := float(Settings.index_for(key)) / float(maxi(values.size() - 1, 1))
+	var y := size.y * 0.5 - TRACK_HEIGHT * 0.5
+	var accent := accent_color()
+	var scale := press_scale()
+	var track := Color(accent, lerpf(TRACK_IDLE_ALPHA, 0.35, selected_amount) * scale)
+	var fill := Color(accent, lerpf(FILL_IDLE_ALPHA, 1.0, selected_amount) * scale)
+	var width := span.y - span.x
+	draw_rect(Rect2(span.x, y, width, TRACK_HEIGHT), track)
+	draw_rect(Rect2(span.x, y, width * ratio, TRACK_HEIGHT), fill)
+	var handle_x := span.x + width * ratio
+	draw_rect(Rect2(handle_x - HANDLE_WIDTH * 0.5, size.y * 0.5 - HANDLE_HEIGHT * 0.5,
+		HANDLE_WIDTH, HANDLE_HEIGHT), fill)

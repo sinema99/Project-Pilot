@@ -1,25 +1,19 @@
 extends VBoxContainer
 
-# The SETTINGS tab: thirteen rows over three sections, all read and written
-# through the `Settings` autoload. See docs/specs/settings.md.
+# The SETTINGS tab: seventeen rows over three sections, all read and written through the
+# `Settings` autoload. See docs/specs/settings.md and docs/specs/menu-refresh.md.
 #
-# Instanced twice - once under the shell, once under settings_screen.tscn for
-# the main menu - and neither instance holds state: every rebuild reads
-# Settings fresh, so the two can never disagree with each other.
+# Instanced twice - once under the shell, once under settings_screen.tscn for the main menu - and
+# neither instance holds state: every refresh reads Settings fresh, so the two can never disagree.
 #
-# A row is a themed Button, the same white-selected-row look GAME's entries
-# already have. Left and Right come off ui_left / ui_right, which are not
-# bound to the tab strip any more - see docs/specs/settings.md, Left And Right.
-#
-# Clicking a discrete row (WINDOW MODE, RESOLUTION, VSYNC, ...) no longer just
-# steps it forward one notch - a mouse click could change a value but never
-# undo the click. It now expands an inline list of every value the row can
-# take, right below it, closed by picking one. A continuous row (BRIGHTNESS,
-# both sensitivities, FOV) is a SettingsSliderRow instead of a Button, so it
-# can be dragged directly. Left/Right still index-step either kind exactly as
-# before - the mouse got new options, the keyboard lost nothing.
+# A discrete row (WINDOW MODE, RESOLUTION, VSYNC, ...) is a SettingsSelectorRow, `<  VALUE  >`;
+# a continuous row (BRIGHTNESS, both sensitivities, FOV) is a SettingsSliderRow. Left and Right
+# step either kind, keyboard or pad; the mouse clicks an arrow or drags the track. The rows are
+# built once and re-synced, never rebuilt, so the shell's remembered focus stays valid.
 
-const SettingsSliderRow := preload("res://scripts/ui/tabs/settings_slider_row.gd")
+const SelectorRow := preload("res://scripts/ui/tabs/settings_selector_row.gd")
+const SliderRow := preload("res://scripts/ui/tabs/settings_slider_row.gd")
+const MenuRow := preload("res://scripts/ui/menu_row.gd")
 
 # The 16:9 list RESOLUTION offers before it is filtered to the screen.
 const PIXEL_PRESETS := [
@@ -27,22 +21,21 @@ const PIXEL_PRESETS := [
 	Vector2i(480, 270), Vector2i(640, 360),
 ]
 
-# Rows that get a SettingsSliderRow instead of a Button - the ones the spec
-# itself calls "continuous", stepped in fine fractions rather than a short
-# enum.
+# Rows that get a SliderRow instead of a SelectorRow - the ones the spec itself calls
+# "continuous", stepped in fine fractions rather than a short enum.
 const SLIDER_KEYS: Array[StringName] = [
 	&"brightness", &"mouse_sensitivity", &"controller_sensitivity", &"fov",
 ]
 
-const ROW_WIDTH := 58
+const RESET_KEY := &"__reset__"
 
 ## How long the display rows wait for you to stop stepping before they ask. See The Display
 ## Revert at the foot of this file.
 const DISPLAY_SETTLE := 1.0
 
+## control -> Settings key (or RESET_KEY), in row order.
 var _row_keys: Dictionary = {}
-var _buttons: Array[Control] = []
-var _expanded_key: StringName = &""
+var _rows: Array[Control] = []
 var _revert_window_mode: String
 var _revert_resolution: Vector2i
 ## Whether _revert_* already hold the values this run of display steps started from. Set on the
@@ -52,7 +45,7 @@ var _display_run := false
 var _display_timer: Timer
 
 func _ready() -> void:
-	add_theme_constant_override("separation", 4)
+	add_theme_constant_override("separation", 2)
 	_display_timer = Timer.new()
 	_display_timer.one_shot = true
 	_display_timer.wait_time = DISPLAY_SETTLE
@@ -64,54 +57,49 @@ func hints() -> Array:
 		{"key": "W/S", "label": "SELECT"},
 		{"key": "LEFT/RIGHT", "label": "ADJUST"},
 		{"key": "ENTER", "label": "CONFIRM"},
-		{"key": "Q/E", "label": "TAB"},
 		{"key": "ESC", "label": "CLOSE"},
 	]
 
-# Rebuilt every time the tab is shown, the same reason tab_abilities.gd rebuilds:
-# it cannot be allowed to go stale, and here that means against a config that
-# may have just been reverted or reset out from under it.
-func focus_first() -> void:
-	_rebuild()
+## Builds the rows on first use - not in _ready, which can run before the Settings autoload
+## exists - then re-reads every value. Called by the host whenever the tab is shown.
+func refresh() -> void:
+	if _rows.is_empty():
+		_build()
+	_sync_all()
 
-# Left/Right never reach a focused Button's own input handling (there is
-# nothing to their left or right to navigate to), so they fall through here.
-# Caught by whichever of the two live instances currently owns GUI focus -
-# the other's rows hold none, so it is a no-op there.
+func focus_first() -> void:
+	if _rows.is_empty():
+		refresh()
+	if not _rows.is_empty():
+		_rows[0].grab_focus()
+
+## The rows in order, for the host's tests and focus memory.
+func rows() -> Array[Control]:
+	return _rows
+
+func key_of(row: Control) -> StringName:
+	return _row_keys.get(row, &"")
+
+# Left/Right never reach a focused Button's own input handling (there is nothing to their left or
+# right to navigate to), so they fall through here. Caught by whichever of the two live instances
+# currently owns GUI focus - the other's rows hold none, so it is a no-op there.
 func _input(event: InputEvent) -> void:
 	var focused := get_viewport().gui_get_focus_owner()
 	if focused == null or not _row_keys.has(focused):
 		return
 	var key: StringName = _row_keys[focused]
-	if key == &"__reset__":
+	if key == RESET_KEY:
 		return
 	if event.is_action_pressed(&"ui_left"):
 		get_viewport().set_input_as_handled()
-		_step(key, -1)
+		_step(-1, key)
 	elif event.is_action_pressed(&"ui_right"):
 		get_viewport().set_input_as_handled()
-		_step(key, 1)
+		_step(1, key)
 
 # --- building --------------------------------------------------------------
 
-## `focus_key` forces which row gets focus after the rebuild - used when a
-## click or a selection triggers the rebuild itself, so focus lands on the row
-## that was just acted on rather than whatever `gui_get_focus_owner()` still
-## reports mid-rebuild.
-func _rebuild(focus_key: StringName = &"") -> void:
-	var focused_key: StringName = focus_key
-	if focused_key == &"":
-		focused_key = _row_keys.get(get_viewport().gui_get_focus_owner(), &"")
-	for child in get_children():
-		# Every row is rebuilt from scratch, but _display_timer is state, not a row: freeing it
-		# mid-run would swallow the confirm for a display mode that has already been applied.
-		if child == _display_timer:
-			continue
-		remove_child(child)
-		child.queue_free()
-	_row_keys.clear()
-	_buttons.clear()
-
+func _build() -> void:
 	var last_section := ""
 	for row: Array in Settings.DEFS:
 		var key: StringName = row[0]
@@ -120,16 +108,15 @@ func _rebuild(focus_key: StringName = &"") -> void:
 			if last_section != "":
 				_add_spacer()
 			_add_header(section.to_upper())
+			if section == "display" and Settings.is_embedded():
+				_add_embedded_note()
 			last_section = section
 		if SLIDER_KEYS.has(key):
 			_add_slider_row(key)
 		else:
-			_add_row(key)
-			if _expanded_key == key:
-				_add_options(key)
+			_add_selector_row(key)
+	_add_spacer()
 	_add_reset_row()
-
-	_restore_focus(focused_key)
 
 func _add_header(text: String) -> void:
 	var label := Label.new()
@@ -137,96 +124,94 @@ func _add_header(text: String) -> void:
 	label.text = text
 	add_child(label)
 
+## Under the DISPLAY header when the game is playing inside the editor's Game tab, which accepts
+## neither a mode nor a size - see docs/specs/settings.md, Embedded In The Editor. Without it the
+## two rows save, do nothing, and look broken.
+func _add_embedded_note() -> void:
+	var label := Label.new()
+	label.theme_type_variation = &"BodyDim"
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.text = "RUNNING INSIDE THE EDITOR'S GAME TAB - WINDOW MODE AND RESOLUTION SAVE BUT CANNOT APPLY. TURN OFF EMBED GAME ON NEXT PLAY IN THE GAME TAB."
+	add_child(label)
+
 func _add_spacer() -> void:
 	var spacer := Control.new()
 	spacer.custom_minimum_size.y = 20
 	add_child(spacer)
 
-func _add_row(key: StringName) -> void:
-	var button := Button.new()
-	button.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	button.text = _row_text(key)
-	# Hover moves focus rather than drawing a second highlight, so the keyboard
-	# and the pointer can never disagree about which entry is selected -
-	# tab_game.gd's own rule.
-	button.mouse_entered.connect(button.grab_focus)
-	button.pressed.connect(_toggle_expand.bind(key))
-	add_child(button)
-	_row_keys[button] = key
-	_buttons.append(button)
-
-## The inline "dropdown": every value the row can take, added as rows of
-## their own directly under it. No PopupMenu, no OptionButton - both need
-## panel/hover/separator styling the theme does not have (docs/specs/
-## settings.md says so explicitly) - just more of the same Button this whole
-## screen is already built from.
-func _add_options(key: StringName) -> void:
-	var options: Array = _resolution_options() if key == &"resolution" else Settings.values_of(key)
-	var current: Variant = Settings.get_value(key)
-	for value: Variant in options:
-		var option := Button.new()
-		option.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		var marker := "> " if value == current else "    "
-		option.text = marker + _format_value(key, value)
-		option.mouse_entered.connect(option.grab_focus)
-		option.pressed.connect(_select_value.bind(key, value))
-		add_child(option)
-		# Not entered into _row_keys: Left/Right has nothing to do on an
-		# option row, and _input() already ignores anything not in that map.
-		_buttons.append(option)
+func _add_selector_row(key: StringName) -> void:
+	var row := SelectorRow.new()
+	row.name = "Row_" + String(key)
+	row.text = Settings.label_of(key)
+	row.toggles_on_confirm = _options_of(key).size() == 2
+	row.stepped.connect(_step.bind(key))
+	add_child(row)
+	_row_keys[row] = key
+	_rows.append(row)
 
 func _add_slider_row(key: StringName) -> void:
-	var row := SettingsSliderRow.new()
+	var row := SliderRow.new()
+	row.name = "Row_" + String(key)
 	row.setup(key)
+	row.text = Settings.label_of(key)
 	add_child(row)
-	row.sync(Settings.label_of(key), _format_value(key, Settings.get_value(key)))
-	# A drag writes straight to Settings and repaints the track itself, but it
-	# has no way to reformat its own printed value - that's _format_value()
-	# below, which belongs to this file. Without this the handle tracks the
-	# mouse and the number next to it does not.
+	# A drag writes straight to Settings and repaints the track itself, but it has no way to
+	# reformat its own printed value - that's _format_value() below, which belongs to this file.
 	row.dragged.connect(_refresh_row.bind(key))
 	_row_keys[row] = key
-	_buttons.append(row)
+	_rows.append(row)
 
 func _add_reset_row() -> void:
-	var button := Button.new()
-	button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	var button := MenuRow.new()
+	button.name = "Row_reset"
 	button.text = "RESET TO DEFAULTS"
-	button.mouse_entered.connect(button.grab_focus)
+	button.destructive = true
 	button.pressed.connect(_on_reset_pressed)
 	add_child(button)
-	_row_keys[button] = &"__reset__"
-	_buttons.append(button)
+	_row_keys[button] = RESET_KEY
+	_rows.append(button)
 
-func _restore_focus(key: StringName) -> void:
-	for control: Control in _row_keys:
-		if _row_keys[control] == key:
-			control.grab_focus()
-			return
-	if not _buttons.is_empty():
-		_buttons[0].grab_focus()
+# --- syncing ---------------------------------------------------------------
 
-func _row_text(key: StringName) -> String:
-	var label := Settings.label_of(key)
-	var value := _format_value(key, Settings.get_value(key))
-	var dots := ROW_WIDTH - label.length() - value.length() - 2
-	return "%s %s %s" % [label, ".".repeat(maxi(dots, 3)), value]
+func _sync_all() -> void:
+	for control: Control in _rows:
+		var key: StringName = _row_keys[control]
+		if key != RESET_KEY:
+			_refresh_row(key)
 
 func _refresh_row(key: StringName) -> void:
 	for control: Control in _row_keys:
 		if _row_keys[control] != key:
 			continue
-		if control is SettingsSliderRow:
-			control.sync(Settings.label_of(key), _format_value(key, Settings.get_value(key)))
+		var label := Settings.label_of(key)
+		var value := _format_value(key, Settings.get_value(key))
+		if control is SliderRow:
+			control.sync(label, value)
 		else:
-			(control as Button).text = _row_text(key)
+			control.sync(label, value, _can_step(key, -1), _can_step(key, 1))
 		return
+
+## The list a row steps through. RESOLUTION's is filtered to the screen; the rest are Settings'.
+func _options_of(key: StringName) -> Array:
+	return _resolution_options() if key == &"resolution" else Settings.values_of(key)
+
+func _index_of(key: StringName) -> int:
+	if key == &"resolution":
+		return maxi(_resolution_options().find(Settings.resolution), 0)
+	return Settings.index_for(key)
+
+## Whether a step that way lands on a value. False at either end: the list clamps, it does not
+## wrap, and the row draws that arrow at 35 %.
+func _can_step(key: StringName, direction: int) -> bool:
+	var target := _index_of(key) + direction
+	return target >= 0 and target < _options_of(key).size()
 
 # --- display -----------------------------------------------------------------
 
 func _format_value(key: StringName, value: Variant) -> String:
 	match key:
-		&"window_mode", &"vsync", &"shadow_quality":
+		&"window_mode", &"vsync", &"shadow_quality", &"camera_motion", &"hologram_menu", &"movement_effects":
 			return String(value).to_upper()
 		&"msaa":
 			return "OFF" if value == "off" else String(value).to_upper()
@@ -252,34 +237,13 @@ func _format_value(key: StringName, value: Variant) -> String:
 		_:
 			return str(value)
 
-# --- the dropdown: expand, collapse, pick -------------------------------------
-
-func _toggle_expand(key: StringName) -> void:
-	_expanded_key = &"" if _expanded_key == key else key
-	_rebuild(key)
-
-func _select_value(key: StringName, value: Variant) -> void:
-	var old_window_mode := Settings.window_mode
-	var old_resolution := Settings.resolution
-	Settings.set_value(key, value)
-	_expanded_key = &""
-	_rebuild(key)
-	if key == &"window_mode" or key == &"resolution":
-		_queue_display_confirm(old_window_mode, old_resolution)
-
 # --- stepping ------------------------------------------------------------------
 #
-# Left/Right on a focused row, keyboard or pad. A row with its dropdown open
-# is, by construction, the focused row (_toggle_expand and _select_value both
-# refocus the row they act on) - so stepping it here always means the open
-# list is now describing a value it no longer points at, and gets closed
-# rather than left stale.
+# Left/Right on a focused row, keyboard or pad, or a click on an arrow.
 
-func _step(key: StringName, direction: int) -> void:
-	var was_expanded := _expanded_key == key
-	_expanded_key = &""
-	if was_expanded:
-		_rebuild(key)
+func _step(direction: int, key: StringName) -> void:
+	if not _can_step(key, direction):
+		return
 	match key:
 		&"resolution":
 			_step_resolution(direction)
@@ -327,8 +291,7 @@ func _on_reset_pressed() -> void:
 
 func _on_reset_confirmed() -> void:
 	Settings.reset_to_defaults()
-	_expanded_key = &""
-	_rebuild()
+	_sync_all()
 
 # --- the display revert ---------------------------------------------------------------
 #
@@ -360,6 +323,9 @@ func _confirm_dialog() -> Control:
 ## Called by every display change. Starts a run if one is not already open, then pushes the
 ## confirm back by another DISPLAY_SETTLE.
 func _queue_display_confirm(old_window_mode: String, old_resolution: Vector2i) -> void:
+	# Embedded, nothing on screen changed, so there is nothing to keep or revert.
+	if Settings.is_embedded():
+		return
 	if not _display_run:
 		_display_run = true
 		_revert_window_mode = old_window_mode
@@ -392,5 +358,4 @@ func _on_display_reverted() -> void:
 	Settings.set_value(&"resolution", _revert_resolution)
 	# Those two set_value calls do not re-queue a confirm - _queue_display_confirm() is only
 	# reached from a row the player stepped, never from here.
-	_expanded_key = &""
-	_rebuild()
+	_sync_all()

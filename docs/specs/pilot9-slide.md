@@ -1,7 +1,7 @@
 # Spec: pilot9's slide (and the climb clip, imported and parked)
 
 > **Status:** built 2026-09-06; **trimmed and made steerable 2026-09-06** after the first
-> play - see "The 2026-09-06 feel pass" below. The revised feel is unjudged.
+> play - see "The 2026-09-06 feel pass" below. The revised feel was played 2026-09-28 and feels good.
 > **Superseded in part 2026-09-07** by `docs/specs/pilot9-slide-hold.md`, which parks the
 > clip on its frame-30 pose instead of playing it straight through. The entry, the bake, the
 > steering and the run-out are all as described here; what changed is that there is now an

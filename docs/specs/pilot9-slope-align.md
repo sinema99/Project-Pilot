@@ -1,6 +1,6 @@
 # Spec: slope alignment for pilot9
 
-> **Status:** written 2026-09-11, built the same day. Not yet played - the look is unjudged.
+> **Status:** written 2026-09-11, built the same day. Played 2026-09-28 - looks good.
 > **Scene:** `scenes/pilot9.tscn`. **Scripts:** `scripts/pilot9.gd`, `scripts/pilot9_animation.gd`.
 > **Sibling:** `docs/specs/pilot9-slope-momentum.md` - that one is what a slope does to his
 > *speed*; this is what it does to his *pose*. They share nothing but the floor normal.

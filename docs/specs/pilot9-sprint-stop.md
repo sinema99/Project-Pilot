@@ -1,6 +1,6 @@
 # Spec: a complete stop clears the sprint
 
-> **Status:** built 2026-09-10, **unplayed**.
+> **Status:** built 2026-09-10, **played 2026-09-28 - feels good**.
 > **Scene:** `scenes/pilot9.tscn`. **Character:** `assets/pilot9.glb`.
 > **Touches:** `scripts/pilot9.gd` only - `_update_sprint_toggle()` plus one constant and one
 > member. No rebuild, no bake, no animation change, no new input action.

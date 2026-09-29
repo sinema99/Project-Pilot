@@ -29,14 +29,20 @@ const CONFIG_VERSION := 1
 static func is_test_run() -> bool:
 	return DisplayServer.get_name() == "headless"
 
+## True when playing inside the editor's Game tab. That window refuses every mode but windowed
+## and every resize or move, so WINDOW MODE and RESOLUTION save there but cannot apply.
+static func is_embedded() -> bool:
+	return Engine.is_embedded_in_editor()
+
 # key, label, section, values, default index
 #
 # The two continuous rows (BRIGHTNESS, both sensitivities) and FOV are written
 # out as literal ranges rather than generated: GDScript const initializers must
 # be constant expressions, so a helper function call is not allowed here.
 const DEFS := [
+	# BORDERLESS is borderless *fullscreen*, FULLSCREEN is exclusive - see the spec's Display Modes.
 	[&"window_mode", "WINDOW MODE", "display",
-		["windowed", "borderless", "exclusive"], 1],
+		["windowed", "borderless", "fullscreen"], 0],
 	[&"resolution", "RESOLUTION", "display",
 		[Vector2i(1280, 720), Vector2i(1600, 900), Vector2i(1920, 1080),
 			Vector2i(2560, 1440), Vector2i(3840, 2160)], 2],
@@ -63,10 +69,26 @@ const DEFS := [
 		1.75, 1.80, 1.85, 1.90, 1.95, 2.00], 15],
 	# 60 .. 110, step 5. Default index 3 = 75.
 	[&"fov", "FOV", "controls", [60, 65, 70, 75, 80, 85, 90, 95, 100, 105, 110], 3],
+	# pilot9's run/sprint sway and landing dip - see docs/specs/pilot9-camera-sway.md.
+	[&"camera_motion", "CAMERA MOTION", "controls", ["off", "on"], 1],
+	# The pause menu as a projection from pilot9's visor - see docs/specs/pilot9-hologram-pause.md.
+	[&"hologram_menu", "HOLOGRAM MENU", "controls", ["off", "on"], 1],
+	# pilot9's sparks, dust and air - see docs/specs/pilot9-movement-vfx.md.
+	[&"movement_effects", "MOVEMENT EFFECTS", "controls", ["off", "on"], 1],
 ]
+
+## The size the UI is laid out at. With stretch aspect `keep` this is also the shape the 3D is
+## letterboxed to, which is what scale_3d() measures a resolution against.
+const BASE_SIZE := Vector2(1920, 1080)
+## Title bar height to assume when the window has not been decorated yet (first boot, or coming
+## out of fullscreen). Windows 10 at 100% scaling is 31; this errs a little large, towards
+## maximizing rather than hanging a window under the taskbar.
+const FALLBACK_TITLE_BAR := 40
 
 var _values: Dictionary = {}
 var _save_timer: Timer
+## Bumped by every display apply, so a stale deferred resize from an earlier one gives up.
+var _display_generation := 0
 
 # --- static model, no tree behind it -------------------------------------------
 
@@ -96,6 +118,9 @@ static func sanitise(raw: Dictionary) -> Dictionary:
 		var values: Array = row[3]
 		var default_index: int = row[4]
 		var value: Variant = raw.get(key, values[default_index])
+		# EXCLUSIVE was renamed FULLSCREEN, not removed: an old save keeps the mode it picked.
+		if key == &"window_mode" and value == "exclusive":
+			value = "fullscreen"
 		out[key] = value if values.has(value) else values[default_index]
 	return out
 
@@ -137,6 +162,22 @@ static func values_of(key: StringName) -> Array:
 	var row := _row(key)
 	return row[3] if not row.is_empty() else []
 
+## Whether a WINDOWED window of `size` fits the desktop's usable area (the screen minus the
+## taskbar) with its title bar on top. One that does not is maximized instead.
+static func window_fits(size: Vector2i, usable: Rect2i, title_bar: int) -> bool:
+	return size.x <= usable.size.x and size.y + title_bar <= usable.size.y
+
+## Viewport.scaling_3d_scale for a `resolution` shown in a window of `window_size`. The 3D
+## renders inside the 16:9 area the window letterboxes to, so the resolution is measured against
+## that; in a window sized to the resolution this is 1 and RENDER SCALE is all that is left. In
+## fullscreen it is the render-resolution half of the row. Capped at 1: a maximized window a
+## little smaller than the resolution renders at window size rather than supersampling.
+static func scale_3d(resolution: Vector2i, window_size: Vector2i, render_scale: float) -> float:
+	var content_width := minf(window_size.x, window_size.y * BASE_SIZE.x / BASE_SIZE.y)
+	if content_width <= 0.0:
+		return render_scale
+	return minf(resolution.x / content_width, 1.0) * render_scale
+
 static func keys() -> Array:
 	var out: Array = []
 	for row: Array in DEFS:
@@ -146,7 +187,7 @@ static func keys() -> Array:
 # --- the autoload ---------------------------------------------------------------
 
 var window_mode: String:
-	get: return _values.get(&"window_mode", "borderless")
+	get: return _values.get(&"window_mode", "windowed")
 var resolution: Vector2i:
 	get: return _values.get(&"resolution", Vector2i(1920, 1080))
 var vsync: String:
@@ -169,6 +210,12 @@ var controller_sensitivity: float:
 	get: return _values.get(&"controller_sensitivity", 1.0)
 var fov: float:
 	get: return _values.get(&"fov", 75.0)
+var camera_motion: bool:
+	get: return _values.get(&"camera_motion", "on") == "on"
+var hologram_menu: bool:
+	get: return _values.get(&"hologram_menu", "on") == "on"
+var movement_effects: bool:
+	get: return _values.get(&"movement_effects", "on") == "on"
 
 func _ready() -> void:
 	_save_timer = Timer.new()
@@ -176,6 +223,8 @@ func _ready() -> void:
 	_save_timer.wait_time = SAVE_DEBOUNCE
 	_save_timer.timeout.connect(_save)
 	add_child(_save_timer)
+	# A WINDOWED window dragged to a new size keeps its 3D at the chosen resolution.
+	get_viewport().size_changed.connect(_update_3d_scale)
 	_load()
 
 func get_value(key: StringName) -> Variant:
@@ -201,7 +250,6 @@ func step_value(key: StringName, direction: int) -> void:
 
 func reset_to_defaults() -> void:
 	_values = defaults()
-	_values[&"resolution"] = _native_resolution()
 	for row: Array in DEFS:
 		_apply(row[0], _values[row[0]])
 	_save_timer.start(SAVE_DEBOUNCE)
@@ -216,7 +264,6 @@ func _load() -> void:
 		# used and nothing is written until something changes. A headless run
 		# takes this path too - see is_test_run().
 		_values = defaults()
-		_values[&"resolution"] = _native_resolution()
 	else:
 		var raw: Dictionary = {"version": cfg.get_value("meta", "version")}
 		for row: Array in DEFS:
@@ -224,7 +271,7 @@ func _load() -> void:
 			raw[key] = cfg.get_value(String(row[2]), String(key))
 		_values = sanitise(raw)
 	for row: Array in DEFS:
-		_apply(row[0], _values[row[0]], true)
+		_apply(row[0], _values[row[0]])
 
 func _save() -> void:
 	if is_test_run():
@@ -236,22 +283,16 @@ func _save() -> void:
 		cfg.set_value(String(row[2]), String(key), _values[key])
 	cfg.save(SAVE_PATH)
 
-func _native_resolution() -> Vector2i:
-	return DisplayServer.screen_get_size()
-
 # --- the applying half: DisplayServer, RenderingServer, the viewport, the ------
 # --- gamma uniform. Deliberately not tested - see What The Test Fences. -------
 
-## `booting` marks the sweep _load() does over every row at startup, as opposed to a row the
-## player just changed. The two display rows are the only ones that care.
-func _apply(key: StringName, value: Variant, booting: bool = false) -> void:
+func _apply(key: StringName, value: Variant) -> void:
 	match key:
-		&"window_mode":
-			if not _skip_display(booting):
-				_apply_window_mode(value)
-		&"resolution":
-			if not _skip_display(booting):
-				DisplayServer.window_set_size(value)
+		&"window_mode", &"resolution", &"render_scale":
+			# One apply for all three, from the current values rather than `value`: each depends
+			# on the other two, and applying just the one that changed is how the mode and the
+			# size drifted apart before.
+			_apply_display()
 		&"vsync":
 			var modes := {
 				"off": DisplayServer.VSYNC_DISABLED,
@@ -263,8 +304,6 @@ func _apply(key: StringName, value: Variant, booting: bool = false) -> void:
 			Engine.max_fps = value
 		&"brightness":
 			Brightness.set_gamma(value)
-		&"render_scale":
-			get_viewport().scaling_3d_scale = value
 		&"shadow_quality":
 			var sizes := {"low": 2048, "medium": 4096, "high": 8192}
 			var qualities := {
@@ -290,7 +329,7 @@ func _apply(key: StringName, value: Variant, booting: bool = false) -> void:
 			var filter := get_tree().get_first_node_in_group(&"pixel_filter")
 			if filter:
 				filter.apply_setting(value)
-		&"mouse_sensitivity", &"controller_sensitivity", &"fov":
+		&"mouse_sensitivity", &"controller_sensitivity", &"fov", &"camera_motion", &"hologram_menu", &"movement_effects":
 			# No global to push to, because every consumer reads these off this
 			# autoload at the point of use rather than caching them: both
 			# _unhandled_input() handlers and pilot9's
@@ -307,25 +346,51 @@ func _apply(key: StringName, value: Variant, booting: bool = false) -> void:
 			# Applies Live. Anything added here later must read live or say so.
 			pass
 
-## WINDOW MODE and RESOLUTION apply on change everywhere, including from the editor - that is
-## the only way they can be QA'd, since this project is tested by playing it, and previously
-## they were switched off in exactly that case and still raised the fifteen-second confirm.
-##
-## What stays exempt is applying them *on boot* from the editor. project.godot sets
-## window/size/window_width_override=2560x1440, which only applies to an F6 playtest; letting a
-## saved mode override it would mean every iteration inherits whatever display mode was last
-## picked - set EXCLUSIVE once and every playtest afterwards takes the monitor before you have
-## touched anything. An exported build has no such override and applies both on boot.
-func _skip_display(booting: bool) -> bool:
-	return booting and OS.has_feature("editor")
-
-func _apply_window_mode(value: String) -> void:
-	match value:
-		"windowed":
+## WINDOW MODE, RESOLUTION and RENDER SCALE together - see docs/specs/settings.md, Display
+## Modes. Applies on boot too, from the editor as well as an export: what you last picked is
+## what the next launch opens in.
+func _apply_display() -> void:
+	_display_generation += 1
+	if is_test_run() or is_embedded():
+		# No window to move under --headless, and the editor's Game tab refuses to move or resize
+		# its (logging each refusal); the 3D scale is still worth keeping honest.
+		get_viewport().scaling_3d_scale = render_scale
+		return
+	match window_mode:
+		"borderless":
+			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
+		"fullscreen":
+			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN)
+		_:
 			DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, false)
 			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
-		"borderless":
-			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
-			DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, true)
-		"exclusive":
-			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN)
+	_update_3d_scale()
+	# Sized and centred a frame later: coming out of fullscreen, Windows restores the old
+	# windowed rect after window_set_mode() returns and would overwrite anything set now.
+	_settle_window.call_deferred(_display_generation)
+
+func _settle_window(generation: int) -> void:
+	await get_tree().process_frame
+	if generation != _display_generation:
+		return
+	if window_mode == "windowed":
+		var screen := DisplayServer.window_get_current_screen()
+		var usable := DisplayServer.screen_get_usable_rect(screen)
+		var title_bar := DisplayServer.window_get_size_with_decorations().y 			- DisplayServer.window_get_size().y
+		if title_bar <= 0:
+			title_bar = FALLBACK_TITLE_BAR
+		if window_fits(resolution, usable, title_bar):
+			if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_MAXIMIZED:
+				DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+			DisplayServer.window_set_size(resolution)
+			# window_set_position() places the client area, so the title bar is added back on.
+			var outer := resolution + Vector2i(0, title_bar)
+			DisplayServer.window_set_position(
+				usable.position + (usable.size - outer) / 2 + Vector2i(0, title_bar))
+		else:
+			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_MAXIMIZED)
+	# Once more, now the window is the size it is going to be.
+	_update_3d_scale()
+
+func _update_3d_scale() -> void:
+	get_viewport().scaling_3d_scale = scale_3d(resolution, DisplayServer.window_get_size(), render_scale)

@@ -251,7 +251,7 @@ func test_a_slow_entry_leaves_the_clip_untouched() -> void:
 	if bare == null:
 		fail("scenes/pilot9.tscn did not load")
 		return
-	var reference := 1.6                  # crouch_speed: the slowest entry that exists
+	var reference := 1.6                  # a slow entry, the old crouch_speed
 	var ceiling := reference * float(root.get("slide_entry_boost"))
 	var frames := int(1.0 / STEP)
 	_begin_slide(root, reference)

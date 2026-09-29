@@ -1,5 +1,7 @@
 # settings
 
+> **Superseded in part (2026-09-29):** the dropdown rows (now `<  VALUE  >` selectors) and the slider look now live in [menu-refresh.md](menu-refresh.md).
+
 **2026-09-14.** A settings screen that writes to disk: window mode, resolution, vsync, frame
 cap, brightness, render scale, shadow quality, anti-aliasing, the pixel filter, two
 sensitivities and FOV. Reached from the shell's SETTINGS tab while playing, and from the main
@@ -98,7 +100,7 @@ Fences.
 version=1
 
 [display]
-window_mode="borderless"
+window_mode="windowed"
 resolution=Vector2i(1920, 1080)
 vsync="on"
 max_fps=0
@@ -141,8 +143,8 @@ and nothing new is needed.
 
 | Section | Row | Values | Default |
 |---|---|---|---|
-| DISPLAY | WINDOW MODE | WINDOWED / BORDERLESS / EXCLUSIVE | BORDERLESS |
-| | RESOLUTION | 16:9 list, filtered to the screen | native |
+| DISPLAY | WINDOW MODE | WINDOWED / BORDERLESS / FULLSCREEN | WINDOWED |
+| | RESOLUTION | 16:9 list, filtered to the screen | 1920x1080 |
 | | VSYNC | OFF / ON / ADAPTIVE | ON |
 | | MAX FPS | UNCAPPED / 30 / 60 / 120 / 144 | UNCAPPED |
 | | BRIGHTNESS | 0.60 - 1.40, step 0.05 | 1.00 |
@@ -153,6 +155,8 @@ and nothing new is needed.
 | CONTROLS | MOUSE SENSITIVITY | 0.25x - 2.00x, step 0.05 | 1.00x |
 | | CONTROLLER SENSITIVITY | 0.25x - 2.00x, step 0.05 | 1.00x |
 | | FOV | 60 - 110, step 5 | 75 |
+| | CAMERA MOTION | OFF / ON | ON - added 2026-09-26, see pilot9-camera-sway.md |
+| | MOVEMENT EFFECTS | OFF / ON | ON - added 2026-09-28, see pilot9-movement-vfx.md |
 | | RESET TO DEFAULTS | - | - |
 
 **Every graphics default is what `project.godot` runs today**, read off it rather than chosen:
@@ -360,7 +364,7 @@ the 65 % dim while the shell is open, so changing BRIGHTNESS previews live again
 judged by feel, and an Apply button would mean setting them blind. It also keeps any notion of
 dirty state out of a screen that otherwise has none.
 
-Two rows can strand a player: a RESOLUTION larger than the display, or an EXCLUSIVE mode the
+Two rows can strand a player: a RESOLUTION larger than the display, or a FULLSCREEN (exclusive) mode the
 monitor rejects. Both leave someone unable to reach the menu that would undo them, and the manual
 fix is deleting a file in `user://`.
 
@@ -389,37 +393,79 @@ not learn what a display mode is.
 The timer runs while paused for free: the dialog is a child of the `UI` autoload, which is
 `PROCESS_MODE_ALWAYS`, and children inherit it.
 
-## The editor exemption
+## Display Modes
 
-`project.godot` sets `window/size/window_width_override=2560x1440`, which applies **only when
-running from the editor**. The F6 playtest window is 1440p; an exported build would be a 1080p
-window.
+**2026-09-29.** Rebuilt after "i know in the settings its already there, but it doesnt work",
+grilled first. The first build had four faults that together made both rows look dead:
+BORDERLESS only stripped the title bar off a 2560x1440 window; RESOLUTION only ever called
+`window_set_size()`, which both fullscreen modes ignore; changing the mode never re-applied the
+size or re-centred the window, so it drifted off-screen; and the saved pair was skipped on boot
+in the editor, so every relaunch looked like the choice had not saved.
 
-If `Settings` applied a saved window mode and resolution on boot it would override that override,
-and every F6 would go fullscreen. That is friction paid on every iteration of a project whose QA
-loop is "play it" — the same argument `ui-shell.md` used for refusing to make the main menu the
-boot scene.
+| Mode | What it is | RESOLUTION means |
+|---|---|---|
+| WINDOWED | A framed window, centred on its monitor's usable area on every change | the window size |
+| BORDERLESS | Borderless **fullscreen** — `WINDOW_MODE_FULLSCREEN` | the 3D render resolution |
+| FULLSCREEN | Exclusive — `WINDOW_MODE_EXCLUSIVE_FULLSCREEN` | the 3D render resolution |
 
-**The first build drew that line in the wrong place.** It skipped those two rows in the editor
-*entirely*, which meant they were inert in the only way this project is ever played during
-development — while still raising the fifteen-second confirm. Pressing Right on RESOLUTION
-changed nothing, then asked whether you wanted to keep the nothing. The row was not broken in
-some subtle way; it was switched off, and the confirm made it look like it was working.
+**BORDERLESS means borderless fullscreen**, as it does in nearly every PC game; a frameless
+floating window is a streaming niche. **FULLSCREEN was EXCLUSIVE** — renamed because that is the
+word players use. On Windows it looks the same as BORDERLESS and skips the compositor. An old
+save holding `exclusive` loads as `fullscreen` (`sanitise()` maps it; the config version did not
+change).
 
-Applying a setting is two moments, and only one of them was ever the problem:
+**In the fullscreen modes RESOLUTION is a render resolution.** Godot cannot change the monitor's
+mode, even in exclusive fullscreen, so the window is always the screen. The 3D renders at the
+chosen size via `Viewport.scaling_3d_scale` and is stretched to fill; the UI stays at native. It
+**multiplies with RENDER SCALE**: 1280x720 at 50% on a 1440p screen is a 0.25 scale.
+`Settings.scale_3d()` is the formula, and it measures against the **16:9 area the window
+letterboxes to**, not the raw window, because stretch aspect is `keep`.
 
-- **On change** — a row the player just stepped. This applies everywhere, editor included. It is
-  the only way these two rows can be QA'd at all, since this project is tested by playing it.
-- **On boot** — the sweep `_load()` does over every row at startup. This is what fights
-  `window_width_override`, and this is what stays exempt in the editor. An exported build has no
-  such override and applies both.
+**A WINDOWED size that does not fit maximizes.** "Fits" is `window_fits()`: the size plus the
+title bar inside `screen_get_usable_rect()`, which excludes the taskbar. Native size as a window
+never fits. The maximized window renders at its own size — `scale_3d()` caps at 1 rather than
+supersampling the few pixels the taskbar took, which is the one place this departs from "renders
+at the resolution you chose".
 
-`_apply()` takes a `booting` flag and `_skip_display()` is the whole of the rule. Everything
-else — vsync, frame cap, brightness, render scale, shadows, MSAA, the pixel filter, sensitivity,
-FOV — applies in-editor on boot and on change exactly as it does in a build.
+**The three rows are one apply.** WINDOW MODE, RESOLUTION and RENDER SCALE all go through
+`_apply_display()`, reading the current values of all three, so the mode and size can no longer
+disagree. The resize and centring run a frame later: coming out of fullscreen, Windows restores
+the old windowed rect after `window_set_mode()` returns and would overwrite anything set in the
+same frame. A generation counter drops a stale deferred resize. The 3D scale also follows a
+window the player drags to a new size (`size_changed`).
 
-Default window mode is **BORDERLESS at the display's native size**, which is what a player
-expects on first launch and avoids a 1080p window floating on a larger monitor.
+**They apply on boot everywhere, the editor included.** The old editor exemption existed to
+protect `window_width_override=2560x1440` — which also applied to exports, not only to F6 as this
+spec used to claim, so an exported build on a 1080p monitor opened a window bigger than the
+screen. The override is gone from `project.godot`; **first launch and RESET TO DEFAULTS are
+WINDOWED at 1920x1080**, centred, maximizing on a monitor too small for it. The one cost: leave
+the game on BORDERLESS or FULLSCREEN and every playtest opens fullscreen until you pick WINDOWED.
+
+The fifteen-second `KEEP THIS DISPLAY MODE?` revert is unchanged and now actually has something
+to revert.
+
+**Tested:** the defaults, the `exclusive` migration, the absent override, `window_fits()` and
+`scale_3d()` (test_settings.gd section 7). **Checked by launching the real game** with each mode
+in `settings.cfg` and switching at runtime, reading back mode, size, position and 3D scale:
+all six boot cases and fullscreen → windowed → maximized → windowed landed where specified.
+
+### Embedded In The Editor
+
+**2026-09-29, same day.** The first play of the rebuild reported "nothing happened" for both
+rows. The build was fine; the game was running inside the editor's **Game** tab (Godot 4.6
+embeds on Play by default), and the log was full of `Embedded window only supports Windowed
+mode.` / `can't be resized.` / `can't be moved.`
+
+The embed toggle is the editor's, not the game's (Game tab → ⋮ → *Embed Game on Next Play*), so
+the fix is the user's to flip. What the game does about it, detected by
+`Settings.is_embedded()` (`Engine.is_embedded_in_editor()`):
+
+- A dimmed `BodyDim` note under the DISPLAY header says the two rows save but cannot apply, and
+  where the toggle is.
+- `_apply_display()` skips the window calls (only the 3D scale), so the log is not flooded.
+- No `KEEP THIS DISPLAY MODE?` countdown: nothing on screen changed, so there is nothing to keep.
+
+Values still save, so un-embedding and pressing Play opens in what was picked.
 
 ## Two hosts, one content scene
 
@@ -528,7 +574,8 @@ Not a save system. Nothing here knows about tech unlocks, checkpoints or contrac
 `[meta] version` key is the only concession to a future beyond settings.
 
 Not an accessibility pass. No colourblind modes, no subtitle settings, no UI scale, no reduced
-motion, no hold-versus-toggle. FOV happens to serve motion sickness and brightness happens to
+motion, no hold-versus-toggle. (CAMERA MOTION, added 2026-09-26, switches off pilot9's
+run/sprint sway and landing dip only - it is not a general reduced-motion setting.) FOV happens to serve motion sickness and brightness happens to
 serve poor displays, but neither was chosen for that, and the screen should not be mistaken for
 having covered it.
 

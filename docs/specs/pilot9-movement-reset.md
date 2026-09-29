@@ -1,6 +1,6 @@
 # Spec: the movement reset
 
-> **Status:** built 2026-09-10, **unplayed**. 426 tests pass headless.
+> **Status:** built 2026-09-10, **played 2026-09-28 - feels good**. 426 tests pass headless.
 > **Scene:** `scenes/pilot9.tscn`. **Character:** `assets/pilot9.glb`.
 > **Touches:** `scripts/pilot9.gd` export defaults and their doc comments; two existing test
 > files re-pointed at the mechanisms they cover; one new test file. No rebuild, no bake, no

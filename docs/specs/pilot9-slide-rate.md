@@ -1,6 +1,6 @@
 # Spec: the slide's playback rate
 
-> **Status:** built 2026-09-11. **Unplayed** - the feel is unjudged.
+> **Status:** built 2026-09-11. **Played 2026-09-28 - feels good.**
 > **Scene:** `scenes/pilot9.tscn`. **Character:** `assets/pilot9.glb`.
 > **Follows:** `docs/specs/pilot9-slide.md` (the slide itself),
 > `docs/specs/pilot9-slide-hold.md` (the hold, and the TimeScale this generalises),

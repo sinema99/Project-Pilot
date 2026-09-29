@@ -5,7 +5,7 @@
 > the 2026-09-10 pass that was parked by the movement reset; its numbers are history, not
 > the current jump. The derivation below still holds.
 >
-> **Status:** built 2026-09-10, height revised to 2.3 m the same day, **unplayed**.
+> **Status:** built 2026-09-10, height revised to 2.3 m the same day; superseded before it was played on its own.
 > 409 tests pass headless.
 > **Scene:** `scenes/pilot9.tscn`. **Character:** `assets/pilot9.glb`.
 > **Touches:** `scripts/pilot9.gd` only - `_handle_gravity_and_jump()`, the `Movement`

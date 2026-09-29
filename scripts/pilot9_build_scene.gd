@@ -19,7 +19,8 @@ extends SceneTree
 #   DISCARDS every editor change to pilot9.tscn, including added clips and states.
 #
 # What this script OWNS in both modes, and therefore overwrites on every run: the GLB_CLIPS
-# entries in the library, the whole `crouch` state with its transitions, RC's two
+# and FBX_CLIPS entries in the library, the whole `crouch` state with its transitions (and the
+# `slide`, `climb`, `wall_run`, `rail`, `vault` and `dash` states with theirs), RC's two
 # `-> jump_land` transitions (see _ensure_slide_state), AnimationTree.deterministic, and the
 # rig camera's `current` flag. Editing any of them in
 # the editor is wasted work - change it here.
@@ -55,9 +56,10 @@ const HEIGHT_TOLERANCE := 0.02        # metres of drift before the capsule is wo
 #         has to say so here or it plays once and freezes.
 const GLB_CLIPS := {
 	"P_crouchwalk": {"as": &"crouch_walk", "loop": Animation.LOOP_LINEAR},
-	# Imported and available, deliberately NOT wired into the state machine: this is the
-	# climb-into-the-cockpit clip for the mech handover, which does not exist yet.
-	"P_sitting": {"as": &"sit_down", "loop": Animation.LOOP_NONE},
+	# P_sitting (the climb-into-the-cockpit clip for the mech handover, not wired yet) is
+	# absent from the 2026-09-21 export - flagged to the user, not silently re-added. If it
+	# comes back in a later export, restore this entry:
+	# "P_sitting": {"as": &"sit_down", "loop": Animation.LOOP_NONE},
 	# A one-shot verb with its own run-in and run-out, not a cycle. Exported WITHOUT Mixamo's
 	# In Place, and left that way on purpose - _ensure_slide_motion() below takes its 7.8 m
 	# of root motion apart into a curve the controller drives the body with, and only then
@@ -67,6 +69,39 @@ const GLB_CLIPS := {
 	# _ensure_climb_motion() below bakes its Hips travel into a pair of curves and then
 	# locks the clip's Y *and* Z. See docs/specs/pilot9-climb.md.
 	"P_climbing": {"as": &"climb_up", "loop": Animation.LOOP_NONE},
+	# The wall-run cycle. The 2026-09-19 export had this key holding the skeleton's rest pose
+	# (a Blender authoring miss - see the wall-run spec's "The animation" section for the
+	# forced-sprint-clip workaround that shipped instead), which is why this entry once
+	# refused to be wired. The 2026-09-21 re-export separated the rest pose into its own
+	# `TPOSE` action (imported but deliberately not in this dict - Blender-authoring use
+	# only) and re-keyed this one for real: 16 keys over 0.5s on the leg bones. Wired into
+	# the `wall_run` state by _ensure_wall_run_state() below.
+	# Retired 2026-09-26: the wall-run plays the ground sprint cycle instead (see the wall-run
+	# spec's "Sprint cycle on the wall"). Still in the GLB; restore this entry to lift it again:
+	# "P_wall-runR": {"as": &"wall_run_r", "loop": Animation.LOOP_LINEAR},
+	# The rail grind's two gears, same 2026-09-21 export. Both in place - checked at wiring
+	# (2026-09-24): P_rail-grind's Hips bob 1 cm in Y and nothing else, P_rail-sprint's hold one
+	# key - so, like the wall-run's, there is nothing to bake or lock. Blended in the `rail`
+	# state by _ensure_rail_state() below. See docs/specs/pilot9-rail-grind.md.
+	"P_rail-grind": {"as": &"rail_grind", "loop": Animation.LOOP_LINEAR},
+	"P_rail-sprint": {"as": &"rail_sprint", "loop": Animation.LOOP_LINEAR},
+}
+
+# Clips that arrive as loose FBX files rather than as Blender actions inside pilot9.glb - the
+# no-Blender route for a Mixamo download (docs/reimport.md, "Adding a clip from a loose FBX").
+# Each FBX's .import carries the same BoneMap as assets/pilot9.glb.import, keyed on the FBX's
+# OWN skeleton path, so the importer retargets it onto the humanoid profile exactly as it does
+# the GLB's actions. _ensure_fbx_clips() lifts them into the library beside GLB_CLIPS.
+#
+# Key    - the FBX's res:// path.
+# "clip" - the clip name inside it. Every Mixamo download calls its one clip `mixamo_com`.
+# "as"/"loop" - as in GLB_CLIPS.
+const FBX_CLIPS := {
+	# The vault: Mixamo "Jumping" (really a hand-plant vault), NOT In Place. Its 5.4 m of Hips
+	# travel is baked into curves by _ensure_vault_motion() below and then locked, like the
+	# slide's and the mantle's. See docs/specs/pilot9-vault.md.
+	"res://assets/pilot9_vault.fbx": {"clip": "mixamo_com", "as": &"vault",
+		"loop": Animation.LOOP_NONE},
 }
 
 const CROUCH_STATE := &"crouch"
@@ -87,6 +122,19 @@ const SLIDE_SCALE_NODE := "SlideScale"
 ## controller's clock when the `slide` state starts late. See _ensure_slide_state().
 const SLIDE_SEEK_NODE := "SlideSeek"
 const CLIMB_CLIP := &"climb_up"
+
+const WALL_RUN_STATE := &"wall_run"
+## The ground sprint's own forward cycle since 2026-09-26 - P_wall-runR is retired. The lean off
+## the wall is pilot9.gd's (_align_model_to_slope()), not the clip's.
+const WALL_RUN_CLIP := &"sprint_forward"
+
+const RAIL_STATE := &"rail"
+const RAIL_GRIND_CLIP := &"rail_grind"
+const RAIL_SPRINT_CLIP := &"rail_sprint"
+## The Blend2 between the two gears. scripts/pilot9_animation.gd eases its blend_amount toward
+## is_rail_sprinting - same const-next-to-the-builder discipline as CROUCH_SCALE_NODE, and the
+## same silent failure if the two halves drift: he would grind in the grind clip at both gears.
+const RAIL_GEAR_NODE := "RailGear"
 
 ## The track the slide's travel lives on. The retargeter rewrites every GLB clip's paths to
 ## %GeneralSkeleton:<ProfileBone>, so this is the same address RC's own clips use - and
@@ -160,9 +208,61 @@ const CLIMB_HAND_BONES := ["LeftHand", "RightHand"]
 ## on the floor, and that difference is the correction - see _ensure_climb_motion().
 const CLIMB_FOOT_BONES := ["LeftToes", "RightToes"]
 
+## The window, in fractions of the clip, over which the body path hands over from "hands held
+## on the lip" to the authored stand-up after the pull ends. Short, because the hands leave
+## the lip at the end of the pull; non-zero, because a hard switch is a kink in his velocity.
+## See _climb_path().
+const CLIMB_GRIP_RELEASE_BLEND := 0.1
+
 ## Same discipline as SLIDE_BAKED, and more of it to get wrong.
 const CLIMB_BAKED := ["climb_motion_y", "climb_motion_z", "climb_duration", "climb_speed",
 	"climb_rise", "climb_reach", "climb_inset", "climb_hand_offset", "climb_foot_offset"]
+
+const VAULT_STATE := &"vault"
+const VAULT_CLIP := &"vault"
+## The `vault` state's TimeSeek and TimeScale. scripts/pilot9_animation.gd seeks the clip onto
+## pilot9.gd's own vault clock every frame and holds the scale at 0, so the clip never runs on
+## a clock of its own - the time scale and the run-up warp change per vault, and a clip playing
+## at any fixed rate would part from the body. Same const-next-to-the-builder discipline as
+## SLIDE_SEEK_NODE, and the same silent failure if the halves drift: he would vault frozen on
+## frame 0.
+const VAULT_SEEK_NODE := "VaultSeek"
+const VAULT_SCALE_NODE := "VaultScale"
+
+const DASH_STATE := &"dash"
+## The ground sprint's forward cycle, forced for the whole dash so the afterimages have a pose to
+## freeze - see docs/specs/pilot9-dash.md, "The afterimages". Same clip as the wall-run.
+const DASH_CLIP := &"sprint_forward"
+## pilot9.gd writes both - the scale every frame (via pilot9_animation.gd) and the seek on launch.
+## Same const-next-to-the-builder discipline as CROUCH_SCALE_NODE.
+const DASH_SEEK_NODE := "DashSeek"
+const DASH_SCALE_NODE := "DashScale"
+## Samples across the vault clip. Finer than the climb's 64 because the hand plant is short
+## (~0.1-0.2 s of a 1.2 s clip) and its two ends are found by sample.
+const VAULT_CURVE_SAMPLES := 96
+## Metres forward the Hips must travel for the vault to count as NOT In Place - the whole move
+## is this travel, as with the mantle's CLIMB_MIN_RISE.
+const VAULT_MIN_TRAVEL := 3.0
+## A hand slower than this (m/s, in the clip's own world) is planted. The two wrists hold
+## within ~1 m/s of still on the top and move at 2-5 m/s either side of it.
+const VAULT_PLANT_SPEED := 1.5
+## A planted wrist is lifted again once it passes this. Above VAULT_PLANT_SPEED on purpose: the
+## left wrist shuffles at ~2.2 m/s mid-plant without leaving the top, and lifts at ~2.7.
+const VAULT_LIFT_SPEED := 2.5
+## Metres of wrist above the surface the hand is flat on - the palm under the wrist bone.
+## Subtracted from the planted wrists to give the top the clip was authored over, and added
+## back at runtime so the wrists sit this far over the detected top.
+const VAULT_PALM := 0.05
+## A toe within this of its rest height (metres) is on the floor - the takeoff and the
+## touchdown are measured against it.
+const VAULT_GROUND_EPS := 0.05
+## Metres past the planted hands a toe still counts as over the top when measuring the foot
+## clearance - about the depth of the thin walls the clip was authored over.
+const VAULT_OVER_TOP_DEPTH := 0.5
+const VAULT_BAKED := ["vault_motion_y", "vault_motion_z", "vault_duration", "vault_travel",
+	"vault_clip_speed", "vault_takeoff_time", "vault_plant_time", "vault_release_time",
+	"vault_touchdown_time", "vault_top_height", "vault_plant_reach", "vault_post_travel",
+	"vault_foot_clearance", "vault_palm", "vault_hand_spread"]
 
 ## RC's camera rig, unchanged by either mode. Only the `current` flag is asserted on it -
 ## see _ensure_camera_current().
@@ -170,7 +270,11 @@ const CAMERA_PATH := "CameraPivot/SpringArm3D/Camera3D"
 const CAMERA_PIVOT_PATH := "CameraPivot"
 
 
-func _init() -> void:
+## MainLoop's _initialize(), not Object's _init() - the constructor runs before autoloads
+## are registered, so any script this loads that touches Settings (pilot9.gd's base_fov)
+## fails to compile with "Identifier not found: Settings" the moment load(OUT) reloads it.
+## tests/run_tests.gd sidesteps the same trap by hanging off _process() instead.
+func _initialize() -> void:
 	var fresh := _has_flag("--fresh")
 	if not fresh and not ResourceLoader.exists(OUT):
 		print("no ", OUT, " yet - building fresh")
@@ -184,6 +288,9 @@ func _init() -> void:
 	# Both run in either mode and are idempotent: a swap has to refresh the clip a
 	# re-export just changed, and a fresh build has to add what RC never had.
 	if not _ensure_glb_clips(root):
+		quit(1)
+		return
+	if not _ensure_fbx_clips(root):
 		quit(1)
 		return
 	if not _ensure_crouch_state(root):
@@ -204,6 +311,22 @@ func _init() -> void:
 		quit(1)
 		return
 	if not _ensure_climb_state(root):
+		quit(1)
+		return
+	if not _ensure_wall_run_state(root):
+		quit(1)
+		return
+	if not _ensure_rail_state(root):
+		quit(1)
+		return
+	# Same ordering argument again: the bake reads the vault's root motion and then locks it.
+	if not _ensure_vault_motion(root):
+		quit(1)
+		return
+	if not _ensure_vault_state(root):
+		quit(1)
+		return
+	if not _ensure_dash_state(root):
 		quit(1)
 		return
 	if not _ensure_deterministic_blending(root):
@@ -374,6 +497,9 @@ func _ensure_glb_clips(root: Node) -> bool:
 	for glb_name in GLB_CLIPS:
 		var spec: Dictionary = GLB_CLIPS[glb_name]
 		var to: StringName = spec["as"]
+		if not src.has_animation(glb_name) and spec.get("optional", false):
+			print("  clip %s not in the export yet (optional) - skipped" % glb_name)
+			continue
 		if not src.has_animation(glb_name):
 			push_error(("%s carries no clip named '%s'. It has %s. Rename the action in " +
 				"Blender or update GLB_CLIPS in this script.")
@@ -399,6 +525,62 @@ func _ensure_glb_clips(root: Node) -> bool:
 
 	pilot.free()
 	return ok
+
+
+# The FBX_CLIPS half of _ensure_glb_clips(): same copy-and-replace into pilot9's library, from
+# a loose FBX instead of the GLB. The one thing the GLB route got for free is checked here
+# rather than trusted - that the retarget actually ran. A BoneMap filed under the wrong
+# subresource key is silently ignored, and the clip then arrives addressing `mixamorig_*` bones
+# pilot9's skeleton does not have: it plays, binds nothing, and he vaults in his idle pose.
+func _ensure_fbx_clips(root: Node) -> bool:
+	var ap := root.get_node_or_null("AnimationPlayer") as AnimationPlayer
+	var lib := ap.get_animation_library(&"") if ap != null else null
+	if lib == null:
+		push_error("%s has no AnimationPlayer default library to hold the FBX clips" % OUT)
+		return false
+
+	for fbx_path in FBX_CLIPS:
+		var spec: Dictionary = FBX_CLIPS[fbx_path]
+		var packed := load(fbx_path) as PackedScene
+		if packed == null:
+			push_error("%s did not import - is it in assets/ with its .import beside it?" % fbx_path)
+			return false
+		var scene := packed.instantiate()
+		var players := scene.find_children("*", "AnimationPlayer", true, false)
+		var src: AnimationPlayer = players[0] if not players.is_empty() else null
+		if src == null or not src.has_animation(spec["clip"]):
+			push_error("%s carries no clip '%s' (has %s)" % [fbx_path, spec["clip"],
+				str(src.get_animation_list()) if src != null else "no AnimationPlayer"])
+			scene.free()
+			return false
+
+		var anim := (src.get_animation(spec["clip"]) as Animation).duplicate(true) as Animation
+		scene.free()
+		anim.resource_path = ""
+		anim.resource_name = spec["as"]
+		anim.loop_mode = spec["loop"]
+		for t in anim.get_track_count():
+			var path := str(anim.track_get_path(t))
+			var bone := path.get_slice(":", 1)
+			if bone.begins_with("mixamorig"):
+				push_error(("%s's track '%s' still names a Mixamo bone - the retarget did not run. " +
+					"Its .import needs assets/pilot9.glb.import's BoneMap under the FBX's own " +
+					"skeleton path (\"PATH:Skeleton3D\" for a Mixamo FBX) - see docs/reimport.md.")
+					% [fbx_path, path])
+				return false
+			# The importer names the skeleton `GeneralSkeleton` and marks it unique, so the tracks
+			# normally come out as %GeneralSkeleton:<Bone> already. Rewritten if not, onto the one
+			# address every other clip in the library uses.
+			if not path.begins_with("%GeneralSkeleton:"):
+				anim.track_set_path(t, NodePath("%GeneralSkeleton:" + bone))
+
+		if lib.has_animation(spec["as"]):
+			lib.remove_animation(spec["as"])
+		lib.add_animation(spec["as"], anim)
+		print("  fbx clip %s:%s -> \"%s\"  %.3fs, %d tracks, loop_mode %d"
+			% [fbx_path.get_file(), spec["clip"], spec["as"], anim.length,
+			anim.get_track_count(), anim.loop_mode])
+	return true
 
 
 # -- crouch ---------------------------------------------------------------------------
@@ -764,9 +946,12 @@ func _set_transition(sm: AnimationNodeStateMachine, from: StringName, to: String
 #    with his hands floating over the lip through the middle of the pull.
 #
 #    So the distances are derived from the two poses that touch geometry, and the authored
-#    travel is kept only for its SHAPE (the normalised curves) and for climb_inset, which is
-#    how far in from the edge he lands. That is the same discipline the slide uses - drive
-#    the body from the animator's own numbers - applied to the frames that actually matter.
+#    travel is kept only for the SHAPE of the stand-up and for climb_inset, which is how far
+#    in from the edge he lands.
+#
+# 3. **Between the two contacts the hands are the anchor, not the Hips.** Through the pull the
+#    body is placed so his hands stay on the lip - see _climb_path(). The authored Hips walk
+#    let them sag a quarter of a metre off the edge on this rig.
 #
 # What is written onto scripts/pilot9.gd: the two curves, the clip length, the rise and the
 # reach in metres, the inset, and the two contact offsets the snaps subtract from the lip.
@@ -801,8 +986,13 @@ func _ensure_climb_motion(root: Node) -> bool:
 			"fall back on.") % [CLIMB_CLIP, rise])
 		return false
 
-	var curve_y := _normalised_curve(anim, track, length, Vector3.UP, p0)
-	var curve_z := _normalised_curve(anim, track, length, Vector3.BACK, p0)
+	# The authored Hips travel per sample, in metres, read BEFORE the lock below destroys it.
+	# Only the stand-up half of the path uses it - see _climb_path().
+	var hips := PackedVector2Array()
+	for i in CLIMB_CURVE_SAMPLES + 1:
+		var d := (anim.position_track_interpolate(track,
+			float(i) / float(CLIMB_CURVE_SAMPLES) * length) - p0) * scale
+		hips.append(Vector2(d.y, d.z))
 
 	# Both axes, unlike the slide's Z-only lock. What is left animates in place and
 	# cross-fades like every other clip in the tree.
@@ -819,13 +1009,25 @@ func _ensure_climb_motion(root: Node) -> bool:
 		push_error(("could not find %s / %s on the retargeted rig - the entry and exit " +
 			"snaps are measured between them.") % [str(CLIMB_HAND_BONES), str(CLIMB_FOOT_BONES)])
 		return false
+	var release := _climb_pull_end(skel, anim, length)
+	if release == -1:
+		return false
+	var toes_rest := _contact_point(skel, null, 0.0, CLIMB_FOOT_BONES)
+	_settle_climb_stand_up(skel, anim, track, length, release, p0.y, toes_rest.y)
+
 	var hand := _contact_point(skel, anim, 0.0, CLIMB_HAND_BONES)
 	var toes_end := _contact_point(skel, anim, length, CLIMB_FOOT_BONES)
-	var toes_rest := _contact_point(skel, null, 0.0, CLIMB_FOOT_BONES)
 	# The toe bone sits a little above the sole even when he is standing on the floor, and
 	# the rest pose is where that offset is read from. Subtracting it turns "where the toes
 	# are" into "where the ground under them is", which is what the exit snap wants.
 	var foot := Vector3(toes_end.x, toes_end.y - toes_rest.y, toes_end.z)
+
+	var target := Vector2(hand.y - foot.y, hand.z - foot.z + reach)
+	var path := _climb_path(skel, anim, length, hips, target, release)
+	if path.is_empty():
+		return false
+	var curve_y := _climb_curve(path, 0, target.x)
+	var curve_z := _climb_curve(path, 1, target.y)
 
 	root.set("climb_motion_y", curve_y)
 	root.set("climb_motion_z", curve_z)
@@ -851,7 +1053,106 @@ func _ensure_climb_motion(root: Node) -> bool:
 	return true
 
 
-# One axis of the Hips track as a normalised curve: time fraction in, distance fraction out.
+# The body's path over the mantle, in metres (x = up, y = forward), one entry per sample.
+# Two halves, because the clip does two different things:
+#
+# 1. **The pull - hands held on the lip.** From the catch to the end of the pull (the sample
+#    where his hands sit lowest against his own origin) the body is placed so the hand
+#    contact stays exactly where frame 1 put it: offset = hand(0) - hand(u). The authored
+#    Hips travel is NOT used here, and that is the fix of 2026-09-26. Mixamo's travel was
+#    authored for Mixamo's arms; on pilot9's retargeted rig it let his hands sag ~0.23 m
+#    below the lip and ~0.23 m out from the wall through the middle of the pull. Anchoring
+#    the body to the hands is correct on any rig by construction.
+# 2. **The stand-up - the authored arc.** After the pull the hands leave the lip, so the
+#    authored Hips travel takes over, bent by a smoothstep so it still lands on `target` (the
+#    exit snap's soles-on-the-top endpoint). The handover is blended over
+#    CLIMB_GRIP_RELEASE_BLEND so his velocity does not kink where the halves meet.
+#
+# `release` is the sample the pull ends on - see _climb_pull_end().
+func _climb_path(skel: Skeleton3D, anim: Animation, length: float,
+		hips: PackedVector2Array, target: Vector2, release: int) -> PackedVector2Array:
+	var n := CLIMB_CURVE_SAMPLES
+	var grip := PackedVector2Array()
+	for i in n + 1:
+		var h := _contact_point(skel, anim, float(i) / float(n) * length, CLIMB_HAND_BONES)
+		grip.append(Vector2(h.y, h.z))
+	var anchored := PackedVector2Array()
+	for i in n + 1:
+		anchored.append(grip[0] - grip[i])
+
+	var ur := float(release) / float(n)
+	var at_release := anchored[release]
+	var authored_rest := hips[n] - hips[release]
+	var correction := target - at_release - authored_rest
+	var path := PackedVector2Array()
+	for i in n + 1:
+		var u := float(i) / float(n)
+		if i <= release:
+			path.append(anchored[i])
+			continue
+		var stand := at_release + (hips[i] - hips[release]) 			+ correction * smoothstep(0.0, 1.0, (u - ur) / (1.0 - ur))
+		var w := smoothstep(0.0, 1.0, (u - ur) / CLIMB_GRIP_RELEASE_BLEND)
+		path.append(anchored[i].lerp(stand, w))
+	path[n] = target   # exact, so the curve's last point is 1.0 on both axes
+	print("    pull ends at %.0f%% of the clip, hands held on the lip until then" % (ur * 100.0))
+	return path
+
+
+# The sample, of CLIMB_CURVE_SAMPLES, where the pull ends: his hands at their lowest against
+# his own origin. Everything before it is the pull (_climb_path() holds the hands on the lip),
+# everything after it the stand-up (_settle_climb_stand_up() lowers the pose onto the origin).
+#
+# Returns -1 (after push_error) when the clip has no recognisable pull.
+func _climb_pull_end(skel: Skeleton3D, anim: Animation, length: float) -> int:
+	var n := CLIMB_CURVE_SAMPLES
+	var release := -1
+	var lowest := INF
+	for i in range(int(n * 0.1), int(n * 0.9) + 1):
+		var y := _contact_point(skel, anim, float(i) / float(n) * length, CLIMB_HAND_BONES).y
+		if y < lowest:
+			lowest = y
+			release = i
+	if release <= int(n * 0.1) or release >= int(n * 0.9):
+		push_error(("climb_up's hands never finish a pull (lowest at sample %d of %d) - " +
+			"the clip is not a pull-up any more, and anchoring the body to its hands would " +
+			"drag him anywhere.") % [release, n])
+		return -1
+	return release
+
+
+# Lowers the locked Hips over the stand-up so the clip's last frame stands on his own origin,
+# the way every Locomotion pose does. The fix for the exit pop of 2026-09-26.
+#
+# Locking Hips Y at its frame-1 height (the hang) left the end pose with his soles ~0.26 m
+# above his origin, so the exit snap - soles on the top - parked the origin, and the capsule
+# with it, 0.26 m inside the platform. On the next frame the physics pushed him out in one
+# step (origin and camera +0.23 m in a frame) and the 0.2 s fade to Locomotion floated the
+# mesh 0.2 m over the top before settling it. Settled here, the origin ends ON the top: the
+# snap is exact, the capsule comes back clear of the floor, and the fade blends two poses
+# that already stand in the same place.
+#
+# Only after `release`, so the pull - and the hands held on the lip through it - is untouched.
+# Eased with a smoothstep over the whole stand-up, so the settle has no velocity on the last
+# frame. The mesh's world path does not change: _climb_path() measures this modified clip, so
+# the body is carried up by exactly what the pose is lowered by. Only the origin (the capsule
+# and the camera) moves differently, and it now finishes where the feet are.
+func _settle_climb_stand_up(skel: Skeleton3D, anim: Animation, track: int, length: float,
+		release: int, hips_y: float, toes_rest_y: float) -> void:
+	var soles := _contact_point(skel, anim, length, CLIMB_FOOT_BONES).y - toes_rest_y
+	# Key values are pre-motion_scale - see the note on _ensure_climb_motion().
+	var drop := soles / skel.motion_scale
+	var ur := float(release) / float(CLIMB_CURVE_SAMPLES)
+	for k in anim.track_get_key_count(track):
+		var u := anim.track_get_key_time(track, k) / length
+		if u <= ur:
+			continue
+		var v: Vector3 = anim.track_get_key_value(track, k)
+		v.y = hips_y - drop * smoothstep(0.0, 1.0, (u - ur) / (1.0 - ur))
+		anim.track_set_key_value(track, k, v)
+	print("    stand-up settled %.3f m so the last frame stands on his origin" % soles)
+
+
+# One axis of _climb_path() as a normalised curve: time fraction in, distance fraction out.
 # Linear tangents on every point, like the slide's - a curve that overshoots between samples
 # is a body that lurches between them.
 #
@@ -859,16 +1160,13 @@ func _ensure_climb_motion(root: Node) -> bool:
 # the lip before he settles back onto it) and the Z curve dips below 0 at the start (the
 # swing back before the pull); both are the arc the spec asks for, and Curve's default 0..1
 # value range would quietly flatten them.
-func _normalised_curve(anim: Animation, track: int, length: float, axis: Vector3,
-		origin: Vector3) -> Curve:
-	var total := (anim.position_track_interpolate(track, length) - origin).dot(axis)
+func _climb_curve(path: PackedVector2Array, axis: int, total: float) -> Curve:
 	var curve := Curve.new()
 	curve.min_value = -1.0
 	curve.max_value = 2.0
-	for i in CLIMB_CURVE_SAMPLES + 1:
-		var u := float(i) / float(CLIMB_CURVE_SAMPLES)
-		var travelled := (anim.position_track_interpolate(track, u * length) - origin).dot(axis)
-		var idx := curve.add_point(Vector2(u, travelled / total))
+	var n := path.size() - 1
+	for i in n + 1:
+		var idx := curve.add_point(Vector2(float(i) / float(n), path[i][axis] / total))
 		curve.set_point_left_mode(idx, Curve.TANGENT_LINEAR)
 		curve.set_point_right_mode(idx, Curve.TANGENT_LINEAR)
 	return curve
@@ -982,6 +1280,457 @@ func _ensure_climb_state(root: Node) -> bool:
 	print("  state \"%s\" -> %s at %.2fx (timeline %.3fs), %d states, %d transitions"
 		% [CLIMB_STATE, CLIMB_CLIP, CLIMB_SPEED, clip.timeline_length,
 		sm.get_node_list().size(), sm.get_transition_count()])
+	return true
+
+
+# The `wall_run` state: one looping clip, entered and left on `is_wall_running`.
+#
+# A plain AnimationNodeAnimation, no custom timeline - unlike the slide and the climb, nothing
+# in pilot9.gd paces its own clock against this clip's. _apply_wall_run_velocity() drives
+# position from _wall_run_time directly, and the clip's own two Hips tracks hold a single key
+# each (in place, not root motion - Blender exported it that way, unlike P.slide/P.climbing),
+# so there is nothing here to bake or lock. It just loops at authored speed for as long as
+# is_wall_running is true.
+#
+# The 30 degree lean off the wall is a separate channel - see _align_model_to_slope() in
+# pilot9.gd, which drives character.rotation directly and does not go through this state at
+# all. This state is only the leg cycle: the ground sprint's, since 2026-09-26.
+func _ensure_wall_run_state(root: Node) -> bool:
+	var at := root.get_node_or_null("AnimationTree") as AnimationTree
+	if at == null:
+		push_error("%s has no AnimationTree" % OUT)
+		return false
+	var sm := at.tree_root as AnimationNodeStateMachine
+	if sm == null:
+		push_error("%s's AnimationTree root is not an AnimationNodeStateMachine" % OUT)
+		return false
+
+	var ap := root.get_node_or_null("AnimationPlayer") as AnimationPlayer
+	if ap == null or not ap.has_animation(WALL_RUN_CLIP):
+		push_error("no '%s' clip to wire the `wall_run` state to" % WALL_RUN_CLIP)
+		return false
+
+	var clip := AnimationNodeAnimation.new()
+	clip.animation = WALL_RUN_CLIP
+
+	if sm.has_node(WALL_RUN_STATE):
+		sm.remove_node(WALL_RUN_STATE)   # takes its transitions with it - see _ensure_crouch_state
+	sm.add_node(WALL_RUN_STATE, clip, Vector2(630, 1100))
+
+	# Entered from both airborne states, same reasoning as the climb's: a wall-run can start
+	# off a still-rising jump (`jump`) or past the apex (`fall`), and gate 1 in
+	# _wall_run_gates() ("Airborne. Never off the floor.") means Locomotion never needs the
+	# transition at all.
+	_set_transition(sm, "jump", WALL_RUN_STATE, 0.1, "is_wall_running", 0)
+	_set_transition(sm, "fall", WALL_RUN_STATE, 0.1, "is_wall_running", 0)
+	# Same priority argument as the slide's and the crouch's: the wall-jump sets velocity.y
+	# positive and is_wall_running false in the same call (_take_wall_jump(), then
+	# _end_wall_run()), so both exits are eligible on that frame and the leap has to win or it
+	# plays as a plain fall.
+	#
+	# `not is_wall_running` on the leap too, not just the fall: attaching on a still-rising jump
+	# keeps velocity.y positive for the rest of the rise (see _apply_wall_run_velocity()), and a
+	# bare `velocity.y > 0` would bounce him wall_run -> jump -> wall_run every frame of it - the
+	# run that starts, stops, then starts again.
+	_set_transition(sm, WALL_RUN_STATE, "jump", 0.1, "velocity.y > 0 and not is_wall_running", 0)
+	_set_transition(sm, WALL_RUN_STATE, "fall", 0.2, "not is_wall_running", 1)
+	# The mantle out of a run goes straight to `climb`, same near-hard cut as the airborne
+	# entries. Without it the tree went wall_run -> fall -> climb, and the wall-run's lean
+	# blending out through `fall` played over the mantle's first frames as a tilt. Priority 0
+	# beats the `fall` exit, which is also eligible on that frame.
+	_set_transition(sm, WALL_RUN_STATE, CLIMB_STATE, 0.08, "is_climbing", 0)
+
+	print("  state \"%s\" -> %s, %d states, %d transitions"
+		% [WALL_RUN_STATE, WALL_RUN_CLIP, sm.get_node_list().size(), sm.get_transition_count()])
+	return true
+
+
+# The `rail` state: the two gear clips through a Blend2, entered and left on `is_rail_grinding`.
+#
+# A blend rather than two states because the gear flips while he rides, and a state change
+# restarts a cycle where a blend keeps both running in step - scripts/pilot9_animation.gd eases
+# RailGear's amount toward is_rail_sprinting over ~0.15 s. Neither clip carries root motion
+# (see GLB_CLIPS), so nothing here is baked or locked; the controller places him on the curve.
+func _ensure_rail_state(root: Node) -> bool:
+	var at := root.get_node_or_null("AnimationTree") as AnimationTree
+	if at == null:
+		push_error("%s has no AnimationTree" % OUT)
+		return false
+	var sm := at.tree_root as AnimationNodeStateMachine
+	if sm == null:
+		push_error("%s's AnimationTree root is not an AnimationNodeStateMachine" % OUT)
+		return false
+
+	var ap := root.get_node_or_null("AnimationPlayer") as AnimationPlayer
+	for clip_name in [RAIL_GRIND_CLIP, RAIL_SPRINT_CLIP]:
+		if ap == null or not ap.has_animation(clip_name):
+			push_error("no '%s' clip to wire the `rail` state to" % clip_name)
+			return false
+
+	var bt := AnimationNodeBlendTree.new()
+	var grind := AnimationNodeAnimation.new()
+	grind.animation = RAIL_GRIND_CLIP
+	var sprint := AnimationNodeAnimation.new()
+	sprint.animation = RAIL_SPRINT_CLIP
+	var gear := AnimationNodeBlend2.new()
+	bt.add_node(&"Grind", grind, Vector2(0, 0))
+	bt.add_node(&"Sprint", sprint, Vector2(0, 160))
+	bt.add_node(RAIL_GEAR_NODE, gear, Vector2(240, 60))
+	bt.connect_node(RAIL_GEAR_NODE, 0, &"Grind")
+	bt.connect_node(RAIL_GEAR_NODE, 1, &"Sprint")
+	bt.connect_node(&"output", 0, RAIL_GEAR_NODE)
+
+	if sm.has_node(RAIL_STATE):
+		sm.remove_node(RAIL_STATE)   # takes its transitions with it - see _ensure_crouch_state
+	sm.add_node(RAIL_STATE, bt, Vector2(850, 1100))
+
+	# Air only, so the airborne states are the real entries. Locomotion too, for a catch on the
+	# first frame off a ledge before Locomotion -> fall has fired.
+	for from in [&"jump", &"fall", &"Locomotion"]:
+		_set_transition(sm, from, RAIL_STATE, 0.1, "is_rail_grinding", 0)
+	# The wall-run's exits and the wall-run's reasoning: the jump off sets velocity.y positive
+	# and is_rail_grinding false in one call, so the leap takes priority 0 over the fall, and the
+	# leap names `not is_rail_grinding` too so a rail sloping up (positive velocity.y while
+	# riding) cannot bounce him rail -> jump -> rail.
+	_set_transition(sm, RAIL_STATE, "jump", 0.1, "velocity.y > 0 and not is_rail_grinding", 0)
+	_set_transition(sm, RAIL_STATE, "fall", 0.2, "not is_rail_grinding", 1)
+
+	print("  state \"%s\" -> %s / %s, %d states, %d transitions"
+		% [RAIL_STATE, RAIL_GRIND_CLIP, RAIL_SPRINT_CLIP, sm.get_node_list().size(),
+		sm.get_transition_count()])
+	return true
+
+
+# -- vault ----------------------------------------------------------------------------
+
+# The mantle's bake, pointed at a clip that goes OVER rather than up. See
+# docs/specs/pilot9-vault.md, "Motion".
+#
+# Mixamo's "Jumping" was downloaded without In Place: its Hips run 5.4 m forward and arc 0.8 m
+# up and back down over 1.2 s. As with the slide and the mantle that travel is taken out of the
+# clip and baked into curves the controller drives the body along, and the clip is locked.
+#
+# The clip is cut into five moments, all measured here off the clip itself (FK'd on pilot9's
+# own skeleton, so every number is in his metres):
+#
+#   takeoff   - the last sample before the plant with a toe still on the floor
+#   plant     - the first sample both wrists are still (under VAULT_PLANT_SPEED)
+#   release   - the first sample after it either wrist moves again
+#   touchdown - the first sample after the release a toe is back on the floor
+#
+# and the body path is built in three pieces:
+#
+# 1. **Clip start -> plant: the authored Hips travel.** The controller warps it at runtime so
+#    the hands land on the detected top edge - see pilot9.gd::_vault_offset().
+# 2. **Plant -> release: hands pinned.** The body is placed so the wrists' midpoint stays where
+#    the plant put it, the mantle's _climb_path() method. Mixamo's hands slide ~0.2 m forward
+#    while "planted"; anchored, they do not.
+# 3. **Release -> end: the authored travel again**, continued from wherever the pin left him.
+#
+# Y is locked differently from the mantle's. Up to the release the lock holds Hips Y at its
+# first key, so the whole arc is the body's. From the release to the touchdown the lock eases
+# off, and from the touchdown on the clip's own Hips Y plays untouched - the run-out is an
+# ordinary in-place run, feet on his origin, which is what lets the controller hand him to
+# physics on the release and land him with move_and_slide().
+func _ensure_vault_motion(root: Node) -> bool:
+	var ap := root.get_node_or_null("AnimationPlayer") as AnimationPlayer
+	if ap == null or not ap.has_animation(VAULT_CLIP):
+		push_error("no '%s' clip in the library - _ensure_fbx_clips() did not run" % VAULT_CLIP)
+		return false
+	var skel := root.get_node_or_null("character/Armature/GeneralSkeleton") as Skeleton3D
+	if skel == null:
+		push_error("no character/Armature/GeneralSkeleton to measure the vault against")
+		return false
+	var hands := ["LeftHand", "RightHand"]
+	if not _has_bones(skel, hands) or not _has_bones(skel, CLIMB_FOOT_BONES):
+		push_error("the retargeted rig is missing %s / %s - the vault is measured between them"
+			% [str(hands), str(CLIMB_FOOT_BONES)])
+		return false
+
+	var anim := ap.get_animation(VAULT_CLIP)
+	var track := anim.find_track(NodePath(SLIDE_MOTION_TRACK), Animation.TYPE_POSITION_3D)
+	if track == -1:
+		push_error("'%s' has no position track on '%s'" % [VAULT_CLIP, SLIDE_MOTION_TRACK])
+		return false
+
+	var n := VAULT_CURVE_SAMPLES
+	var length := anim.length
+	var dt := length / float(n)
+	var scale := skel.motion_scale
+	var p0: Vector3 = anim.position_track_interpolate(track, 0.0)
+
+	# Everything as authored, BEFORE the lock: Mixamo's world, origin fixed, Hips carrying him.
+	var hips := PackedVector3Array()
+	var lh := PackedVector3Array()
+	var rh := PackedVector3Array()
+	var low_toe := PackedFloat32Array()
+	for i in n + 1:
+		var t := float(i) * dt
+		hips.append((anim.position_track_interpolate(track, t) - p0) * scale)
+		lh.append(_contact_point(skel, anim, t, ["LeftHand"]))
+		rh.append(_contact_point(skel, anim, t, ["RightHand"]))
+		low_toe.append(minf(_contact_point(skel, anim, t, ["LeftToes"]).y,
+			_contact_point(skel, anim, t, ["RightToes"]).y))
+	if hips[n].z < VAULT_MIN_TRAVEL:
+		push_error(("'%s' travels only %.2f m forward. It was downloaded In Place - the vault " +
+			"is driven entirely by that travel. Re-download it from Mixamo with In Place OFF.")
+			% [VAULT_CLIP, hips[n].z])
+		return false
+	var toes_rest := _contact_point(skel, null, 0.0, CLIMB_FOOT_BONES).y
+
+	# The four moments. The hands do NOT plant together on this rig: the left lands first
+	# (~46%), the right ~0.07 s later, and the left lifts while the right is still down (~62%).
+	# So each wrist gets its own window, and the plant is the first hand down and the release
+	# the last hand up. Measured 2026-09-27; see the vault spec's "Built" notes.
+	var lwin := _vault_plant_window(lh, dt)
+	var rwin := _vault_plant_window(rh, dt)
+	if lwin.x == -1 or rwin.x == -1:
+		push_error(("'%s' has a wrist that never plants (left %v, right %v) - it is not a " +
+			"hand-plant vault") % [VAULT_CLIP, lwin, rwin])
+		return false
+	var plant := mini(lwin.x, rwin.x)
+	var release := maxi(lwin.y, rwin.y) + 1
+	var takeoff := 0
+	for i in plant:
+		if low_toe[i] <= toes_rest + VAULT_GROUND_EPS:
+			takeoff = i
+	var touchdown := -1
+	for i in range(release + 1, n + 1):
+		if low_toe[i] <= toes_rest + VAULT_GROUND_EPS:
+			touchdown = i
+			break
+	if touchdown == -1:
+		push_error("'%s' never puts a foot back down after the hands release" % VAULT_CLIP)
+		return false
+	var ur := float(release) / float(n)
+	var utd := float(touchdown) / float(n)
+
+	# The lock. X and Z to the first key throughout; Y to the first key up to the release, then
+	# eased back onto the authored Hips Y by the touchdown - see the note above.
+	for k in anim.track_get_key_count(track):
+		var v: Vector3 = anim.track_get_key_value(track, k)
+		var w := _vault_y_lock(anim.track_get_key_time(track, k) / length, ur, utd)
+		v = Vector3(p0.x, lerpf(v.y, p0.y, w), p0.z)
+		anim.track_set_key_value(track, k, v)
+
+	# The body path, and each wrist against it on the LOCKED clip, which is what plays.
+	var body := PackedVector2Array()   # x = up, y = forward, metres from the start origin
+	var lgrip := PackedVector2Array()
+	var rgrip := PackedVector2Array()
+	for i in n + 1:
+		var u := float(i) / float(n)
+		body.append(Vector2(hips[i].y * _vault_y_lock(u, ur, utd), hips[i].z))
+		var l := _contact_point(skel, anim, float(i) * dt, ["LeftHand"])
+		var r := _contact_point(skel, anim, float(i) * dt, ["RightHand"])
+		lgrip.append(Vector2(l.y, l.z))
+		rgrip.append(Vector2(r.y, r.z))
+	# Through the plant, each step moves the body by whatever keeps the planted wrists still:
+	# minus their own step against the body, weighted toward the slower one. One wrist down,
+	# that wrist is pinned outright; both down, the slower one wins, which is the one bearing
+	# weight - and the weights cross over smoothly as the left lifts off.
+	var path := PackedVector2Array()
+	for i in n + 1:
+		if i <= plant:
+			path.append(body[i])
+		elif i <= release:
+			var wl := _vault_pin_weight(lh, lwin, i, dt)
+			var wr := _vault_pin_weight(rh, rwin, i, dt)
+			var step := -((lgrip[i] - lgrip[i - 1]) * wl + (rgrip[i] - rgrip[i - 1]) * wr) \
+				/ maxf(wl + wr, 0.000001)
+			path.append(path[i - 1] + step)
+		else:
+			var off := path[release] - body[release]
+			var u := float(i) / float(n)
+			path.append(Vector2(body[i].x + off.x * (1.0 - smoothstep(ur, utd, u)),
+				body[i].y + off.y))
+
+	# Where each wrist sits on the path the moment it goes down, and the point between the two -
+	# the controller puts THAT on the detected top. The top is under the lower wrist.
+	var lplant := path[lwin.x] + lgrip[lwin.x]
+	var rplant := path[rwin.x] + rgrip[rwin.x]
+	var top := minf(lplant.x, rplant.x) - VAULT_PALM
+	var reach := (lplant.y + rplant.y) * 0.5
+	var travel := path[n].y
+
+	# Lowest toe over the top, anywhere between the takeoff and the touchdown. The legs swing
+	# over BEFORE the hands go down on this clip (the toes are already ~0.8 m past the hands at
+	# the plant), so the window is the whole flight, not the plant.
+	var clearance := INF
+	for i in range(takeoff, touchdown + 1):
+		for toe in CLIMB_FOOT_BONES:
+			var p := _contact_point(skel, anim, float(i) * dt, [toe])
+			var z := path[i].y + p.z
+			if absf(z - reach) <= VAULT_OVER_TOP_DEPTH * 0.5:
+				clearance = minf(clearance, path[i].x + p.y - top)
+	if clearance == INF:
+		push_error("no toe of '%s' ever passes over the planted hands - not a vault" % VAULT_CLIP)
+		return false
+
+	var curve_y := _climb_curve(path, 0, top)
+	var curve_z := _climb_curve(path, 1, travel)
+	root.set("vault_motion_y", curve_y)
+	root.set("vault_motion_z", curve_z)
+	root.set("vault_duration", length)
+	root.set("vault_travel", travel)
+	root.set("vault_clip_speed", travel / length)
+	root.set("vault_takeoff_time", float(takeoff) / float(n))
+	root.set("vault_plant_time", float(plant) / float(n))
+	root.set("vault_release_time", ur)
+	root.set("vault_touchdown_time", utd)
+	root.set("vault_top_height", top)
+	root.set("vault_plant_reach", reach)
+	root.set("vault_post_travel", path[touchdown].y - reach)
+	root.set("vault_hand_spread", absf(rplant.y - lplant.y))
+	root.set("vault_foot_clearance", clearance)
+	root.set("vault_palm", VAULT_PALM)
+	for prop in VAULT_BAKED:
+		if root.get(prop) == null:
+			push_error("scripts/pilot9.gd declares no '%s' - Object.set() dropped it silently" % prop)
+			return false
+
+	print(("  clip \"%s\" locked (X, Z; Y until the touchdown); %.3fs, %.2f m forward " +
+		"(%.2f m/s), authored top %.3f m, hands %.3f m ahead at the plant")
+		% [VAULT_CLIP, length, travel, travel / length, top, reach])
+	print(("    takeoff %.0f%%  plant %.0f%%  release %.0f%%  touchdown %.0f%%  " +
+		"hands to touchdown %.2f m  foot clearance %.3f m  body at release %v")
+		% [100.0 * takeoff / n, 100.0 * plant / n, 100.0 * ur, 100.0 * utd, path[touchdown].y - reach,
+		clearance, path[release]])
+	print(("    left wrist down %.0f-%.0f%% at %v, right %.0f-%.0f%% at %v (up, forward) - " +
+		"%.2f m apart along the travel")
+		% [100.0 * lwin.x / n, 100.0 * lwin.y / n, lplant, 100.0 * rwin.x / n,
+		100.0 * rwin.y / n, rplant, rplant.y - lplant.y])
+	return true
+
+
+# The samples one wrist is down for, as (first, last); (-1, -1) if it never is. Down means under
+# VAULT_PLANT_SPEED to start, and staying down until it passes VAULT_LIFT_SPEED - the left wrist
+# shuffles at ~2 m/s mid-plant without leaving the top, and a single threshold split its window.
+func _vault_plant_window(points: PackedVector3Array, dt: float) -> Vector2i:
+	var n := points.size() - 1
+	for i in range(int(n * 0.2), int(n * 0.85)):
+		if _vault_hand_speed(points, i, dt) < VAULT_PLANT_SPEED:
+			var last := i
+			while last + 1 < n and _vault_hand_speed(points, last + 1, dt) < VAULT_LIFT_SPEED:
+				last += 1
+			return Vector2i(i, last)
+	return Vector2i(-1, -1)
+
+
+# How hard a wrist holds the body at sample `i`: nothing outside its window, and inside it the
+# slower the wrist the more it counts.
+static func _vault_pin_weight(points: PackedVector3Array, window: Vector2i, i: int,
+		dt: float) -> float:
+	if i < window.x or i > window.y:
+		return 0.0
+	var s := _vault_hand_speed(points, i, dt) + 0.25
+	return 1.0 / (s * s)
+
+
+# How much of the Hips' authored Y the lock takes away at `u`: all of it up to the release, none
+# of it from the touchdown on, eased between. The body path carries exactly what the lock takes.
+static func _vault_y_lock(u: float, release: float, touchdown: float) -> float:
+	if u <= release:
+		return 1.0
+	return 1.0 - smoothstep(release, touchdown, u)
+
+
+# A wrist's speed at sample `i`, central difference, in m/s.
+static func _vault_hand_speed(points: PackedVector3Array, i: int, dt: float) -> float:
+	var a := maxi(i - 1, 0)
+	var b := mini(i + 1, points.size() - 1)
+	return (points[b] - points[a]).length() / (float(b - a) * dt)
+
+
+# The `vault` state: the clip through a TimeSeek and a TimeScale held at 0. The controller owns
+# the clock - pilot9_animation.gd seeks the clip onto pilot9.gd::vault_clip_time() every frame -
+# because the vault's rate changes per vault (entry speed) and its run-up is warped per vault
+# (distance to the wall), so no fixed timeline could stay under the body.
+func _ensure_vault_state(root: Node) -> bool:
+	var at := root.get_node_or_null("AnimationTree") as AnimationTree
+	var sm := at.tree_root as AnimationNodeStateMachine if at != null else null
+	if sm == null:
+		push_error("%s has no AnimationTree state machine" % OUT)
+		return false
+	var ap := root.get_node_or_null("AnimationPlayer") as AnimationPlayer
+	if ap == null or not ap.has_animation(VAULT_CLIP):
+		push_error("no '%s' clip to wire the `vault` state to" % VAULT_CLIP)
+		return false
+
+	var clip := AnimationNodeAnimation.new()
+	clip.animation = VAULT_CLIP
+	var scale := AnimationNodeTimeScale.new()
+	var bt := AnimationNodeBlendTree.new()
+	bt.add_node("Clip", clip, Vector2(-160, 40))
+	bt.add_node(VAULT_SEEK_NODE, AnimationNodeTimeSeek.new(), Vector2(0, 40))
+	bt.add_node(VAULT_SCALE_NODE, scale, Vector2(180, 40))
+	bt.set_node_position("output", Vector2(440, 40))
+	# Same order as the slide's: the seek inside the scale, so a seek lands on the clip second it
+	# names even with the scale at 0.
+	bt.connect_node(VAULT_SEEK_NODE, 0, "Clip")
+	bt.connect_node(VAULT_SCALE_NODE, 0, VAULT_SEEK_NODE)
+	bt.connect_node("output", 0, VAULT_SCALE_NODE)
+
+	if sm.has_node(VAULT_STATE):
+		sm.remove_node(VAULT_STATE)   # takes its transitions with it - see _ensure_crouch_state
+	sm.add_node(VAULT_STATE, bt, Vector2(850, 980))
+
+	# In from every state a grounded `jump` press can find the tree in - the landing ones too,
+	# since a press on the frame he lands can beat the tree's own landing fade. 0.1 s: the clip
+	# opens mid-stride and he is arriving from a run, so a short fade reads as continuous where
+	# the mantle's hard cut would pop (docs/specs/pilot9-vault.md, "Entry").
+	for from in [&"Locomotion", CROUCH_STATE, SLIDE_STATE, &"jump_land", &"fall", &"jump"]:
+		_set_transition(sm, from, VAULT_STATE, 0.1, "is_vaulting", 0)
+	# Out: the jump cancel (velocity.y > 0 in the same call that clears is_vaulting, so it has to
+	# outrank the landing), the buffered slide, touchdown, and a vault off an edge.
+	_set_transition(sm, VAULT_STATE, "jump", 0.1, "velocity.y > 0 and not is_vaulting", 0)
+	_set_transition(sm, VAULT_STATE, SLIDE_STATE, 0.1, "is_sliding", 0)
+	_set_transition(sm, VAULT_STATE, "Locomotion", 0.15, "not is_vaulting and is_on_floor()", 1)
+	_set_transition(sm, VAULT_STATE, "fall", 0.2, "not is_vaulting and not is_on_floor()", 2)
+
+	print("  state \"%s\" -> %s (TimeSeek + TimeScale 0, driven by the controller), %d states, %d transitions"
+		% [VAULT_STATE, VAULT_CLIP, sm.get_node_list().size(), sm.get_transition_count()])
+	return true
+
+
+# The `dash` state: the sprint cycle through a TimeSeek and a TimeScale. No transition IN -
+# pilot9.gd::_cut_to_dash_clip() hard-cuts with playback.start() from whatever state he is in, the
+# mantle's pattern, so the first afterimage (dropped the same tick) is already the sprint pose.
+# Out: ~0.1 s blends, all gated on `not is_dashing` so nothing leaves early.
+func _ensure_dash_state(root: Node) -> bool:
+	var at := root.get_node_or_null("AnimationTree") as AnimationTree
+	var sm := at.tree_root as AnimationNodeStateMachine if at != null else null
+	if sm == null:
+		push_error("%s has no AnimationTree state machine" % OUT)
+		return false
+	var ap := root.get_node_or_null("AnimationPlayer") as AnimationPlayer
+	if ap == null or not ap.has_animation(DASH_CLIP):
+		push_error("no '%s' clip to wire the `dash` state to" % DASH_CLIP)
+		return false
+
+	var clip := AnimationNodeAnimation.new()
+	clip.animation = DASH_CLIP
+	var bt := AnimationNodeBlendTree.new()
+	bt.add_node("Clip", clip, Vector2(-160, 40))
+	bt.add_node(DASH_SEEK_NODE, AnimationNodeTimeSeek.new(), Vector2(0, 40))
+	bt.add_node(DASH_SCALE_NODE, AnimationNodeTimeScale.new(), Vector2(180, 40))
+	bt.set_node_position("output", Vector2(440, 40))
+	# Seek inside the scale, as the slide's and the vault's are.
+	bt.connect_node(DASH_SEEK_NODE, 0, "Clip")
+	bt.connect_node(DASH_SCALE_NODE, 0, DASH_SEEK_NODE)
+	bt.connect_node("output", 0, DASH_SCALE_NODE)
+
+	if sm.has_node(DASH_STATE):
+		sm.remove_node(DASH_STATE)   # takes its transitions with it - see _ensure_crouch_state
+	sm.add_node(DASH_STATE, bt, Vector2(1070, 980))
+
+	# The tilted dash's exit rise (velocity.y > 0) has to outrank the plain fall.
+	_set_transition(sm, DASH_STATE, "jump", 0.1,
+		"not is_dashing and velocity.y > 0 and not is_on_floor()", 0)
+	_set_transition(sm, DASH_STATE, "Locomotion", 0.1, "not is_dashing and is_on_floor()", 1)
+	_set_transition(sm, DASH_STATE, "fall", 0.1, "not is_dashing and not is_on_floor()", 2)
+
+	print("  state \"%s\" -> %s (TimeSeek + TimeScale, hard-cut in by the controller), %d states, %d transitions"
+		% [DASH_STATE, DASH_CLIP, sm.get_node_list().size(), sm.get_transition_count()])
 	return true
 
 

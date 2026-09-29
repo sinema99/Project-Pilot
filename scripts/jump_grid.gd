@@ -32,6 +32,8 @@ const PILOT_TSCN := "res://scenes/pilot9.tscn"
 ## The same script pilot9.tscn carries, held separately because the gaps are derived through
 ## its STATICS rather than through the instance - see _read_dials().
 const PILOT_SCRIPT := preload("res://scripts/pilot9.gd")
+## Rails are real Rail nodes, the ones a map pastes - so the ruler rides exactly what a map does.
+const RAIL_SCRIPT := preload("res://scripts/rail.gd")
 const GRID_SHADER := "res://shaders/metre_grid.gdshader"
 
 # --- layout ---------------------------------------------------------------
@@ -63,6 +65,49 @@ const SLAB_THICKNESS := 1.0
 ## Grab strips and pillar caps float this far proud of the surface they mark, purely to keep
 ## two coplanar faces out of a z-fight.
 const DECAL_LIFT := 0.01
+
+## Wall-run corridors: docs/specs/pilot9-jump-grid-platform.md, "The dash and wall-run
+## addition". Ground flush against the wall before it drops away - same job as TAKEOFF_LENGTH,
+## same number.
+const WALL_RUN_APPROACH := 6.0
+const WALL_RUN_WIDTH := 3.0
+const WALL_RUN_THICKNESS := 1.0
+## Wider than the corridor's own footprint (pad + wall, 4.0 m) is wide, on purpose - the same
+## "further apart than a sprint jump plus the mantle assist" reasoning the pillar field pitch
+## uses, applied to a row instead of a grid: a drift off one corridor must not be able to reach
+## its neighbour's wall.
+const WALL_RUN_PITCH := 10.0
+const WALL_RUN_HEIGHT := 8.0
+## How far the wall's base (and the catch slab under it) sits below the launch pad's floor -
+## room for the droop and for a jump taken off the edge, so a run does not clip the pad on the
+## way down.
+const WALL_RUN_DROP := 4.0
+const WALL_RUN_SLAB_THICKNESS := 1.0
+## Gap left clear beyond the pillar field before the corridor row starts, so a chained pillar
+## jump cannot carry into the first corridor's launch pad.
+const WALL_RUN_FIELD_MARGIN := 4.0
+
+## Rail stations: docs/specs/pilot9-rail-grind.md, "Test geometry". Each is a launch pad, a
+## straight flat rail you jump onto off it, and - for the two jump-off stations - a landing pad
+## exactly the gear's jump distance past the rail's end, its top level with his feet on the rail.
+## The rail is long enough to reach either gear and hold it well before the end.
+const RAIL_APPROACH := 6.0
+const RAIL_LENGTH := 14.0
+## How far above the launch pad the rail's centreline sits: under a single jump's 3 m apex with
+## room to come down onto it, and over the pad so the jump is a jump.
+const RAIL_LIFT := 1.0
+const RAIL_PITCH := 10.0
+## The parallel pair's centre-to-centre spacing - the spec's "~3 m, the 45 degree hop across".
+const RAIL_PAIR_SPACING := 3.0
+
+## Vault lanes: docs/specs/pilot9-vault.md, "Test bed". Each is a flat run-up long enough to
+## reach a sprint, one thin wall, and a landing strip - all on the row's own floor, level with
+## the slab, because a vault is a GROUND move and the pads everywhere else stand over it.
+const VAULT_RUNUP := 10.0
+const VAULT_LANDING := 6.0
+## The thin walls' depth - the thin top the clip was authored for, and under vault_max_depth.
+const VAULT_WALL_DEPTH := 0.4
+const VAULT_PITCH := 5.0
 
 # --- colour ---------------------------------------------------------------
 # One distinction and only one: warm is what you CLEAR, cyan is what you GRAB.
@@ -97,6 +142,14 @@ class Dials extends RefCounted:
 	var grab_depth := 0.0        ## climb_probe_reach
 	var pad_height := 0.0        ## how far the pads stand over the slab
 	var headroom := 0.0          ## climb_headroom
+	var dash_gap := 0.0          ## dash_distance()
+	var wall_run_gap := 0.0      ## wall_run_distance(speed)
+	var wall_run_sprint_gap := 0.0 ## wall_run_distance(sprint_speed)
+	var rail_gap := 0.0          ## rail_jump_distance(rail_grind_speed)
+	var rail_sprint_gap := 0.0   ## rail_jump_distance(rail_sprint_speed)
+	var vault_band_min := 0.0    ## vault_band_min
+	var vault_band_max := 0.0    ## vault_band_max
+	var vault_max_depth := 0.0   ## vault_max_depth
 
 
 @export_tool_button("Rebuild now") var rebuild_action: Callable = rebuild
@@ -177,6 +230,17 @@ func _read_dials() -> Dials:
 	# goes. Getting back up is the loop that runs hundreds of times a session; it is the one
 	# worth making free.
 	d.pad_height = lerpf(p.climb_band_min, p.climb_band_max, 0.6)
+	d.dash_gap = PILOT_SCRIPT.dash_distance_for(p.dash_speed, p.dash_time)
+	d.wall_run_gap = PILOT_SCRIPT.wall_run_distance_for(p.speed, p.wall_run_flat_time)
+	d.wall_run_sprint_gap = PILOT_SCRIPT.wall_run_distance_for(
+		p.sprint_speed, p.wall_run_flat_time)
+	d.rail_gap = PILOT_SCRIPT.rail_jump_distance_for(
+		p.rail_grind_speed, p.jump_time_to_apex, p.jump_fall_multiplier)
+	d.rail_sprint_gap = PILOT_SCRIPT.rail_jump_distance_for(
+		p.rail_sprint_speed, p.jump_time_to_apex, p.jump_fall_multiplier)
+	d.vault_band_min = p.vault_band_min
+	d.vault_band_max = p.vault_band_max
+	d.vault_max_depth = p.vault_max_depth
 	p.free()
 	return d
 
@@ -189,6 +253,11 @@ func _build(d: Dials) -> void:
 	# what two jumps clear. Raise sprint_speed and the ladder grows a rung on its own.
 	var single := _whole_metres(1, d.sprint_gap)
 	var double := _whole_metres(int(round(d.sprint_gap)) + 1, d.double_gap)
+	# The dash's own rung, spliced into whichever side it falls on rather than assumed to be a
+	# whole metre already in the ladder - see "The dash and wall-run addition" in the spec. At
+	# the shipping tuning it already IS a whole metre (10) inside `double`, so this is a no-op
+	# there; it only matters the day someone retunes dash_speed or dash_time off that.
+	_splice_rung(single, double, d.dash_gap, d.sprint_gap)
 	var positions: int = maxi(single.size(), double.size())
 	if positions <= 0:
 		push_warning("jump_grid: pilot9's gaps came out under a metre; nothing to build.")
@@ -222,12 +291,29 @@ func _build(d: Dials) -> void:
 	var field_far_z := field_near_z - float(rows - 1) * pitch
 	var field_half_x := float(cols - 1) * 0.5 * pitch + PILLAR_TOP * 0.5
 
+	var wall_lengths := _wall_run_lengths(d)
+	var wall_span_x := 0.0
+	if not wall_lengths.is_empty():
+		wall_span_x = (
+			float(wall_lengths.size() - 1) * WALL_RUN_PITCH
+			+ WALL_RUN_WIDTH + WALL_RUN_THICKNESS)
+	var wall_half_x := wall_span_x * 0.5
+	var wall_near_z := field_far_z - PILLAR_TOP * 0.5 - WALL_RUN_FIELD_MARGIN
+
 	_build_slab(
-		minf(spine_min_x, -field_half_x), maxf(spine_max_x, field_half_x),
+		minf(spine_min_x, minf(-field_half_x, -wall_half_x)),
+		maxf(spine_max_x, maxf(field_half_x, wall_half_x)),
 		field_far_z - PILLAR_TOP * 0.5, single_far)
 	_build_spine(d, spine_min_x, spine_max_x)
 	_build_lanes(d, single, double, positions)
 	_build_pillars(d, heights, pitch, cols, field_near_z)
+	_build_wall_runs(d, wall_lengths, wall_near_z)
+	var wall_depth := RAIL_APPROACH
+	for length in wall_lengths:
+		wall_depth = maxf(wall_depth, length)
+	var rails_far := _build_rails(d, wall_near_z - wall_depth - WALL_RUN_FIELD_MARGIN * 2.0)
+	# Flush against the rail row's floor, so the two rows are one walk rather than two islands.
+	_build_vaults(d, rails_far - SLAB_MARGIN)
 
 
 func _build_slab(min_x: float, max_x: float, min_z: float, max_z: float) -> void:
@@ -246,15 +332,15 @@ func _build_spine(d: Dials, min_x: float, max_x: float) -> void:
 		COLOUR_SPINE)
 
 
-func _build_lanes(d: Dials, single: Array[int], double: Array[int], positions: int) -> void:
+func _build_lanes(d: Dials, single: Array[float], double: Array[float], positions: int) -> void:
 	var group := Node3D.new()
 	group.name = "Lanes"
 	add_child(group)
 	var span := float(positions - 1) * LANE_PITCH
 	for i in single.size():
-		_build_lane(d, group, float(single[i]), -span * 0.5 + float(i) * LANE_PITCH, 1.0, i)
+		_build_lane(d, group, single[i], -span * 0.5 + float(i) * LANE_PITCH, 1.0, i)
 	for i in double.size():
-		_build_lane(d, group, float(double[i]), -span * 0.5 + float(i) * LANE_PITCH, -1.0, i)
+		_build_lane(d, group, double[i], -span * 0.5 + float(i) * LANE_PITCH, -1.0, i)
 
 
 # One lane: takeoff pad, gap, landing pad, the grab strip on the landing lip, and the label
@@ -354,6 +440,180 @@ func _build_pillar(d: Dials, group: Node3D, height: float, x: float, z: float) -
 		tint if limit != "" else Color.WHITE)
 
 
+func _build_wall_runs(d: Dials, lengths: Array[float], near_z: float) -> void:
+	if lengths.is_empty():
+		return
+	var group := Node3D.new()
+	group.name = "WallRuns"
+	add_child(group)
+	var span := float(lengths.size() - 1) * WALL_RUN_PITCH
+	for i in lengths.size():
+		_build_wall_run(d, group, lengths[i], -span * 0.5 + float(i) * WALL_RUN_PITCH, near_z)
+
+
+# One corridor: a launch pad flush against the base of a wall that keeps going past the pad's
+# far edge, so leaving the pad leaves him airborne and still hugging the face - the attach gates
+# fire because of what the geometry does, not because of an instruction to the player. A catch
+# slab runs the whole length underneath, flush with the wall's own base, so a run that droops
+# out early lands rather than falling forever. See "The dash and wall-run addition" in
+# docs/specs/pilot9-jump-grid-platform.md.
+func _build_wall_run(d: Dials, group: Node3D, length: float, x: float, near_z: float) -> void:
+	var limit := _wall_run_limit(length, d)
+	var tint := _warm_between(length, 1.0, d.wall_run_sprint_gap) if limit != "" else COLOUR_PAD
+
+	var corridor := Node3D.new()
+	corridor.name = "WallRun_%sm" % _metre_tag(length)
+	group.add_child(corridor)
+
+	var wall_x := x + WALL_RUN_WIDTH * 0.5 + WALL_RUN_THICKNESS * 0.5
+	var far_z := near_z - length
+
+	_box(corridor, "Launch",
+		Vector3(WALL_RUN_WIDTH, d.pad_height, WALL_RUN_APPROACH),
+		Vector3(x, d.pad_height * 0.5, near_z - WALL_RUN_APPROACH * 0.5),
+		tint if limit != "" else COLOUR_PAD)
+
+	# The wall stands proud of the pad by a few metres (room to jump alongside it) and reaches
+	# well below it (room for the droop, plus the catch slab flush against its own base).
+	var wall_top := d.pad_height + (WALL_RUN_HEIGHT - WALL_RUN_DROP - WALL_RUN_SLAB_THICKNESS)
+	var wall_base := wall_top - WALL_RUN_HEIGHT
+	_box(corridor, "Wall",
+		Vector3(WALL_RUN_THICKNESS, WALL_RUN_HEIGHT, length),
+		Vector3(wall_x, (wall_base + wall_top) * 0.5, near_z - length * 0.5),
+		tint)
+
+	_box(corridor, "Catch",
+		Vector3(WALL_RUN_WIDTH + WALL_RUN_THICKNESS, WALL_RUN_SLAB_THICKNESS, length),
+		Vector3(x + WALL_RUN_THICKNESS * 0.5, wall_base - WALL_RUN_SLAB_THICKNESS * 0.5,
+			near_z - length * 0.5),
+		COLOUR_SLAB)
+
+	# Over the far end, past the ground that has already dropped away - reading it means having
+	# got that far, not reading it from the launch pad before trying.
+	_label(corridor, "Label", _marker_text(length, limit),
+		Vector3(wall_x, wall_top - 0.6, far_z + 0.4),
+		tint if limit != "" else Color.WHITE)
+
+
+## Returns the far edge of the row's floor, where the next row can start.
+func _build_rails(d: Dials, near_z: float) -> float:
+	var group := Node3D.new()
+	group.name = "Rails"
+	add_child(group)
+	var stations := [
+		{"gap": d.rail_gap, "limit": "RAIL"},
+		{"gap": d.rail_sprint_gap, "limit": "RAIL SPRINT"},
+		{"gap": 0.0, "limit": "RAIL HOP"},
+	]
+	var span := float(stations.size() - 1) * RAIL_PITCH
+	var deepest := 0.0
+	for st: Dictionary in stations:
+		deepest = maxf(deepest, float(st["gap"]))
+	var row_depth := RAIL_APPROACH + RAIL_LENGTH + deepest + LANDING_LENGTH
+	# The row's own floor, flush with the slab's top. A miss lands on it rather than in the void,
+	# and the launch pads stand pad_height over it so getting back up is a mantle.
+	_box(group, "Floor",
+		Vector3(span + RAIL_PITCH, SLAB_THICKNESS, row_depth + SLAB_MARGIN * 2.0),
+		Vector3(0.0, -SLAB_THICKNESS * 0.5, near_z - row_depth * 0.5),
+		COLOUR_SLAB)
+	for i in stations.size():
+		var st: Dictionary = stations[i]
+		_build_rail_station(d, group, -span * 0.5 + float(i) * RAIL_PITCH, near_z,
+			float(st["gap"]), String(st["limit"]))
+	return near_z - row_depth - SLAB_MARGIN
+
+
+# One station. Everything runs toward -Z: pad, rail, gap, landing. The landing pad's top sits at
+# the rail's TOP - where his feet ride - so the gap is flat-to-flat, the same measurement the
+# jump grid's lanes make.
+func _build_rail_station(d: Dials, group: Node3D, x: float, near_z: float, gap: float,
+		limit: String) -> void:
+	var station := Node3D.new()
+	station.name = "Rail_%s" % (_metre_tag(gap) + "m" if gap > 0.0 else "Hop")
+	group.add_child(station)
+
+	_box(station, "Launch",
+		Vector3(LANE_WIDTH, d.pad_height, RAIL_APPROACH),
+		Vector3(x, d.pad_height * 0.5, near_z - RAIL_APPROACH * 0.5),
+		COLOUR_PAD)
+
+	var rail_y := d.pad_height + RAIL_LIFT
+	var rail_start := near_z - RAIL_APPROACH
+	var rail_end := rail_start - RAIL_LENGTH
+	var xs: Array[float] = [x]
+	if gap <= 0.0:
+		xs = [x - RAIL_PAIR_SPACING * 0.5, x + RAIL_PAIR_SPACING * 0.5]
+	var top := rail_y
+	for j in xs.size():
+		var rail = RAIL_SCRIPT.new()
+		rail.name = "Rail" if xs.size() == 1 else "Rail%d" % (j + 1)
+		var c := Curve3D.new()
+		c.add_point(Vector3.ZERO)
+		c.add_point(Vector3(0.0, 0.0, rail_end - rail_start))
+		rail.curve = c
+		rail.position = Vector3(xs[j], rail_y, rail_start) + _shift
+		station.add_child(rail)
+		top = rail_y + float(rail.rail_radius)
+
+	var tint := COLOUR_GRAB
+	if gap > 0.0:
+		tint = _warm_between(gap, d.rail_gap, d.rail_sprint_gap)
+		_box(station, "Landing",
+			Vector3(LANE_WIDTH, top, LANDING_LENGTH),
+			Vector3(x, top * 0.5, rail_end - gap - LANDING_LENGTH * 0.5),
+			tint)
+	var text := "%s · %s" % [_metre_text(RAIL_PAIR_SPACING if gap <= 0.0 else gap), limit]
+	_label(station, "Label", text,
+		Vector3(x, rail_y + 1.6, rail_start - 1.0), tint)
+
+
+func _build_vaults(d: Dials, near_z: float) -> void:
+	var group := Node3D.new()
+	group.name = "Vaults"
+	add_child(group)
+	# The band in four even steps - 0.5 / 0.7 / 0.9 / 1.1 / 1.3 at the shipping dials - then the
+	# two controls: a thin wall just over the band (the jump, and the mantle it carries into) and
+	# a block in the band but twice too deep to vault (a platform, jumped onto).
+	var lanes: Array[Dictionary] = []
+	for k in 5:
+		lanes.append({"h": lerpf(d.vault_band_min, d.vault_band_max, float(k) / 4.0),
+			"depth": VAULT_WALL_DEPTH, "limit": "VAULT"})
+	lanes.append({"h": d.vault_band_max + 0.2, "depth": VAULT_WALL_DEPTH, "limit": "JUMP"})
+	lanes.append({"h": lerpf(d.vault_band_min, d.vault_band_max, 0.75),
+		"depth": d.vault_max_depth * 2.0, "limit": "TOO DEEP"})
+	var span := float(lanes.size() - 1) * VAULT_PITCH
+	var deepest := 0.0
+	for lane in lanes:
+		deepest = maxf(deepest, float(lane["depth"]))
+	var row_depth := VAULT_RUNUP + deepest + VAULT_LANDING
+	_box(group, "Floor",
+		Vector3(span + VAULT_PITCH, SLAB_THICKNESS, row_depth + SLAB_MARGIN * 2.0),
+		Vector3(0.0, -SLAB_THICKNESS * 0.5, near_z - row_depth * 0.5),
+		COLOUR_SLAB)
+	for i in lanes.size():
+		_build_vault_lane(d, group, lanes[i], -span * 0.5 + float(i) * VAULT_PITCH, near_z)
+
+
+# One lane, running toward -Z: VAULT_RUNUP of bare floor, the wall, VAULT_LANDING past it. The
+# label reads the wall's height, which is what the lane measures.
+func _build_vault_lane(d: Dials, group: Node3D, lane: Dictionary, x: float, near_z: float) -> void:
+	var h: float = lane["h"]
+	var depth: float = lane["depth"]
+	var limit: String = lane["limit"]
+	var tint := _warm_between(h, d.vault_band_min, d.vault_band_max)
+	if limit == "JUMP":
+		tint = COLOUR_GRAB
+	elif limit == "TOO DEEP":
+		tint = COLOUR_PILLAR
+	var node := Node3D.new()
+	node.name = "Vault_%sm%s" % [_metre_tag(h), "" if limit == "VAULT" else "_" + limit.replace(" ", "")]
+	group.add_child(node)
+	var face_z := near_z - VAULT_RUNUP
+	_box(node, "Wall", Vector3(LANE_WIDTH, h, depth), Vector3(x, h * 0.5, face_z - depth * 0.5), tint)
+	_label(node, "Label", "%s m · %s" % [_metre_text(h), limit],
+		Vector3(x, h + 1.2, face_z - depth * 0.5), tint)
+
+
 # --- node helpers ---------------------------------------------------------
 
 # A solid box: one StaticBody3D carrying the collision the player actually stands on and the
@@ -439,15 +699,35 @@ func _material(tint: Color) -> Material:
 # comfortable distance is. That is not a number the physics can be asked for - it is one you
 # find by jumping 7, then 8, then 9, and noticing where it stops feeling free. A ladder costs
 # one `for` loop and answers it.
-func _whole_metres(from_m: int, to_m: float) -> Array[int]:
-	var out: Array[int] = []
+func _whole_metres(from_m: int, to_m: float) -> Array[float]:
+	var out: Array[float] = []
 	for m in range(from_m, int(floor(to_m + 0.001)) + 1):
-		out.append(m)
+		out.append(float(m))
 	return out
 
 
-func _last(metres: Array[int]) -> float:
-	return float(metres[-1]) if not metres.is_empty() else 0.0
+func _last(metres: Array[float]) -> float:
+	return metres[-1] if not metres.is_empty() else 0.0
+
+
+## Drops a named, possibly-fractional distance into whichever ladder it falls on - `single` at
+## or under `threshold`, `double` past it - the same move `_pillar_heights()` already makes for
+## the two mantle ceilings. Without this, a rung only exists at whole metres and a knob retuned
+## off one (the dash, if `dash_speed` or `dash_time` ever moves) silently loses its label rather
+## than growing its own rung.
+func _splice_rung(single: Array[float], double: Array[float], value: float, threshold: float) -> void:
+	_splice(single if value <= threshold else double, value)
+
+
+## Inserts `value` into `arr` if it is not already there (within `_same()`), keeping it sorted.
+func _splice(arr: Array[float], value: float) -> void:
+	if value <= 0.0:
+		return
+	for existing in arr:
+		if _same(existing, value):
+			return
+	arr.append(value)
+	arr.sort()
 
 
 # The ten pillar tops: every whole metre up to the double-jump mantle ceiling, plus the two
@@ -463,6 +743,16 @@ func _pillar_heights(d: Dials) -> Array[float]:
 	return out
 
 
+## Every whole metre from 1 to the sprint wall-run's own ceiling, the corridor row's version of
+## the gap ladder and the pillar field's "every metre, not just the limits" reasoning: three
+## corridors at 1 / 10 / 15 would answer whether the tech works, not where it stops feeling free.
+func _wall_run_lengths(d: Dials) -> Array[float]:
+	var out := _whole_metres(1, d.wall_run_sprint_gap)
+	_splice(out, d.wall_run_gap)
+	_splice(out, d.wall_run_sprint_gap)
+	return out
+
+
 ## The named limit a gap is, or "" for a rung of the ladder that is only a distance.
 func _lane_limit(gap: float, d: Dials) -> String:
 	if _same(gap, d.walk_gap):
@@ -473,6 +763,8 @@ func _lane_limit(gap: float, d: Dials) -> String:
 		return "SPRINT"
 	if _same(gap, d.double_gap):
 		return "DOUBLE"
+	if _same(gap, d.dash_gap):
+		return "DASH"
 	return ""
 
 
@@ -497,8 +789,26 @@ func _pillar_limit(height: float, d: Dials) -> String:
 # either of them being told what colour it is - and it moves with the dials, so a faster
 # sprint re-ranks the ramp instead of stranding it.
 func _warm(metres: float, d: Dials) -> Color:
-	var t := clampf(inverse_lerp(d.walk_gap, d.double_gap, metres), 0.0, 1.0)
+	return _warm_between(metres, d.walk_gap, d.double_gap)
+
+
+## The same ramp, pinned to a caller-chosen pair of ends instead of the gap ladder's own -
+## the wall-run corridors are a separate axis (a length run alongside, not a gap cleared) with
+## its own smallest and largest named rung, and forcing them onto the gap ladder's ramp would
+## make a 10 m corridor and a 10 m gap the same colour by accident rather than by the ramp
+## agreeing they are both roughly "sprint-ish".
+func _warm_between(metres: float, low: float, high: float) -> Color:
+	var t := clampf(inverse_lerp(low, high, metres), 0.0, 1.0)
 	return WARM_LOW.lerp(WARM_HIGH, t)
+
+
+## The named limit a wall-run corridor's length is, or "" for a plain rung.
+func _wall_run_limit(length: float, d: Dials) -> String:
+	if _same(length, d.wall_run_gap):
+		return "RUN"
+	if _same(length, d.wall_run_sprint_gap):
+		return "SPRINT"
+	return ""
 
 
 func _marker_text(metres: float, limit: String) -> String:

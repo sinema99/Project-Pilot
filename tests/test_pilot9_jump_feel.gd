@@ -426,14 +426,13 @@ func test_a_freeze_drops_both_graces() -> void:
 
 func test_the_mantle_drops_both_graces() -> void:
 	var src := _source()
-	var body := _body(src, "func _handle_gravity_and_jump(delta: float) -> void:")
+	# In the entry snap since 2026-09-23 - the mantle is started from two places now
+	# (_handle_mantle_trigger()'s two regimes), and both go through _start_climb().
+	var body := _body(src, "func _start_climb(lip: Vector3, wall_normal: Vector3) -> void:")
 	if body == "":
-		fail("could not find _handle_gravity_and_jump() in scripts/pilot9.gd")
+		fail("could not find _start_climb() in scripts/pilot9.gd")
 		return
-	var idx := body.find("_try_start_climb():")
-	check(idx >= 0, "the mantle probe is gone from _handle_gravity_and_jump()")
-	var after := body.substr(idx, 400)
-	check(after.contains("_coyote_left = 0.0") and after.contains("_jump_buffered = 0.0"),
+	check(body.contains("_coyote_left = 0.0") and body.contains("_jump_buffered = 0.0"),
 		"a mantle does not clear the graces - _climb_jump_buffered is the only buffer that " +
 		"should survive into the exit, and two racing to spend one press is one too many")
 

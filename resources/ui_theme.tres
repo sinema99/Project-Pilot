@@ -6,124 +6,142 @@
 
 [sub_resource type="FontVariation" id="FontVariation_row"]
 base_font = ExtResource("2_medium")
-spacing_glyph = 3
+spacing_glyph = 2
 
-[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_row"]
-content_margin_left = 16.0
-content_margin_top = 10.0
-content_margin_right = 16.0
-content_margin_bottom = 10.0
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_row_selected"]
-content_margin_left = 16.0
-content_margin_top = 10.0
-content_margin_right = 16.0
-content_margin_bottom = 10.0
-bg_color = Color(1, 1, 1, 1)
+[sub_resource type="FontVariation" id="FontVariation_body"]
+base_font = ExtResource("2_medium")
+spacing_glyph = 1
 
 [sub_resource type="FontVariation" id="FontVariation_tab"]
 base_font = ExtResource("3_semibold")
 spacing_glyph = 4
 
-[sub_resource type="StyleBoxLine" id="StyleBoxLine_rule"]
-color = Color(1, 1, 1, 0.85)
-
-[sub_resource type="FontVariation" id="FontVariation_hint"]
-base_font = ExtResource("1_regular")
-spacing_glyph = 2
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_keycap"]
-content_margin_left = 8.0
-content_margin_top = 3.0
-content_margin_right = 8.0
-content_margin_bottom = 3.0
-draw_center = false
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 1
-border_color = Color(1, 1, 1, 0.85)
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_outline"]
-content_margin_left = 24.0
-content_margin_top = 24.0
-content_margin_right = 24.0
-content_margin_bottom = 24.0
-draw_center = false
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 1
-border_color = Color(1, 1, 1, 0.85)
+[sub_resource type="FontVariation" id="FontVariation_header"]
+base_font = ExtResource("3_semibold")
+spacing_glyph = 3
 
 [sub_resource type="FontVariation" id="FontVariation_title"]
 base_font = ExtResource("3_semibold")
 spacing_glyph = 6
 
+[sub_resource type="FontVariation" id="FontVariation_hint"]
+base_font = ExtResource("2_medium")
+spacing_glyph = 2
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_row"]
+content_margin_left = 22.0
+content_margin_top = 10.0
+content_margin_right = 16.0
+content_margin_bottom = 10.0
+
 [sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_tab"]
-content_margin_left = 4.0
-content_margin_top = 4.0
-content_margin_right = 4.0
-content_margin_bottom = 8.0
+content_margin_left = 14.0
+content_margin_top = 6.0
+content_margin_right = 14.0
+content_margin_bottom = 10.0
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_panel"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_keycap"]
+content_margin_left = 8.0
+content_margin_top = 2.0
+content_margin_right = 8.0
+content_margin_bottom = 2.0
+draw_center = false
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.251, 0.949, 0.902, 0.6)
+
+[sub_resource type="StyleBoxLine" id="StyleBoxLine_rule"]
+color = Color(0.251, 0.949, 0.902, 0.4)
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_scroll"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_grabber"]
+bg_color = Color(0.251, 0.949, 0.902, 0.5)
 
 [resource]
 default_font = ExtResource("1_regular")
-default_font_size = 18
+default_font_size = 20
 Body/base_type = &"Label"
-Body/colors/font_color = Color(1, 1, 1, 1)
-Body/font_sizes/font_size = 18
-Body/fonts/font = ExtResource("1_regular")
+Body/colors/font_color = Color(0.91, 0.945, 0.949, 1)
+Body/font_sizes/font_size = 20
+Body/fonts/font = SubResource("FontVariation_body")
 BodyDim/base_type = &"Label"
-BodyDim/colors/font_color = Color(1, 1, 1, 0.45)
-BodyDim/font_sizes/font_size = 18
-BodyDim/fonts/font = ExtResource("1_regular")
-Button/colors/font_color = Color(1, 1, 1, 1)
-Button/colors/font_disabled_color = Color(1, 1, 1, 0.45)
-Button/colors/font_focus_color = Color(0, 0, 0, 1)
-Button/colors/font_hover_color = Color(0, 0, 0, 1)
-Button/colors/font_pressed_color = Color(0, 0, 0, 1)
-Button/font_sizes/font_size = 24
+BodyDim/colors/font_color = Color(0.91, 0.945, 0.949, 0.5)
+BodyDim/font_sizes/font_size = 20
+BodyDim/fonts/font = SubResource("FontVariation_body")
+Button/colors/font_color = Color(0.91, 0.945, 0.949, 1)
+Button/colors/font_disabled_color = Color(0.91, 0.945, 0.949, 0.35)
+Button/colors/font_focus_color = Color(0.91, 0.945, 0.949, 1)
+Button/colors/font_hover_color = Color(0.91, 0.945, 0.949, 1)
+Button/colors/font_pressed_color = Color(0.91, 0.945, 0.949, 1)
+Button/font_sizes/font_size = 26
 Button/fonts/font = SubResource("FontVariation_row")
 Button/styles/disabled = SubResource("StyleBoxEmpty_row")
-Button/styles/focus = SubResource("StyleBoxFlat_row_selected")
-Button/styles/hover = SubResource("StyleBoxFlat_row_selected")
+Button/styles/focus = SubResource("StyleBoxEmpty_row")
+Button/styles/hover = SubResource("StyleBoxEmpty_row")
 Button/styles/normal = SubResource("StyleBoxEmpty_row")
-Button/styles/pressed = SubResource("StyleBoxFlat_row_selected")
+Button/styles/pressed = SubResource("StyleBoxEmpty_row")
 DialogTitle/base_type = &"Label"
-DialogTitle/colors/font_color = Color(1, 1, 1, 1)
+DialogTitle/colors/font_color = Color(0.251, 0.949, 0.902, 1)
 DialogTitle/font_sizes/font_size = 28
 DialogTitle/fonts/font = SubResource("FontVariation_tab")
 HSeparator/constants/separation = 1
 HSeparator/styles/separator = SubResource("StyleBoxLine_rule")
 HintKey/base_type = &"Label"
-HintKey/colors/font_color = Color(1, 1, 1, 1)
+HintKey/colors/font_color = Color(0.251, 0.949, 0.902, 1)
 HintKey/font_sizes/font_size = 16
 HintKey/fonts/font = SubResource("FontVariation_hint")
 HintLabel/base_type = &"Label"
-HintLabel/colors/font_color = Color(1, 1, 1, 0.45)
+HintLabel/colors/font_color = Color(0.91, 0.945, 0.949, 0.5)
 HintLabel/font_sizes/font_size = 16
 HintLabel/fonts/font = SubResource("FontVariation_hint")
 Keycap/base_type = &"PanelContainer"
 Keycap/styles/panel = SubResource("StyleBoxFlat_keycap")
-Label/colors/font_color = Color(1, 1, 1, 1)
-PanelContainer/styles/panel = SubResource("StyleBoxFlat_outline")
+Label/colors/font_color = Color(0.91, 0.945, 0.949, 1)
+MenuRow/base_type = &"Button"
+MenuRow/colors/accent = Color(0.251, 0.949, 0.902, 1)
+MenuRow/colors/destructive = Color(1, 0.416, 0.239, 1)
+MenuRow/colors/font_color = Color(0, 0, 0, 0)
+MenuRow/colors/font_disabled_color = Color(0, 0, 0, 0)
+MenuRow/colors/font_focus_color = Color(0, 0, 0, 0)
+MenuRow/colors/font_hover_color = Color(0, 0, 0, 0)
+MenuRow/colors/font_pressed_color = Color(0, 0, 0, 0)
+MenuRow/colors/text = Color(0.91, 0.945, 0.949, 1)
+MenuRow/font_sizes/font_size = 26
+MenuRow/fonts/font = SubResource("FontVariation_row")
+MenuRow/styles/disabled = SubResource("StyleBoxEmpty_row")
+MenuRow/styles/focus = SubResource("StyleBoxEmpty_row")
+MenuRow/styles/hover = SubResource("StyleBoxEmpty_row")
+MenuRow/styles/normal = SubResource("StyleBoxEmpty_row")
+MenuRow/styles/pressed = SubResource("StyleBoxEmpty_row")
+MenuTab/base_type = &"Button"
+MenuTab/colors/font_color = Color(0, 0, 0, 0)
+MenuTab/colors/font_disabled_color = Color(0, 0, 0, 0)
+MenuTab/colors/font_focus_color = Color(0, 0, 0, 0)
+MenuTab/colors/font_hover_color = Color(0, 0, 0, 0)
+MenuTab/colors/font_pressed_color = Color(0, 0, 0, 0)
+MenuTab/font_sizes/font_size = 24
+MenuTab/fonts/font = SubResource("FontVariation_tab")
+MenuTab/styles/disabled = SubResource("StyleBoxEmpty_tab")
+MenuTab/styles/focus = SubResource("StyleBoxEmpty_tab")
+MenuTab/styles/hover = SubResource("StyleBoxEmpty_tab")
+MenuTab/styles/normal = SubResource("StyleBoxEmpty_tab")
+MenuTab/styles/pressed = SubResource("StyleBoxEmpty_tab")
+PanelContainer/styles/panel = SubResource("StyleBoxEmpty_panel")
 ScreenTitle/base_type = &"Label"
-ScreenTitle/colors/font_color = Color(1, 1, 1, 1)
-ScreenTitle/font_sizes/font_size = 44
+ScreenTitle/colors/font_color = Color(0.251, 0.949, 0.902, 1)
+ScreenTitle/font_sizes/font_size = 40
 ScreenTitle/fonts/font = SubResource("FontVariation_title")
 SectionHeader/base_type = &"Label"
-SectionHeader/colors/font_color = Color(1, 1, 1, 0.45)
-SectionHeader/font_sizes/font_size = 22
-SectionHeader/fonts/font = SubResource("FontVariation_tab")
-TabButton/base_type = &"Button"
-TabButton/colors/font_color = Color(1, 1, 1, 1)
-TabButton/colors/font_focus_color = Color(1, 1, 1, 1)
-TabButton/colors/font_hover_color = Color(1, 1, 1, 1)
-TabButton/colors/font_pressed_color = Color(1, 1, 1, 1)
-TabButton/font_sizes/font_size = 22
-TabButton/fonts/font = SubResource("FontVariation_tab")
-TabButton/styles/disabled = SubResource("StyleBoxEmpty_tab")
-TabButton/styles/focus = SubResource("StyleBoxEmpty_tab")
-TabButton/styles/hover = SubResource("StyleBoxEmpty_tab")
-TabButton/styles/normal = SubResource("StyleBoxEmpty_tab")
-TabButton/styles/pressed = SubResource("StyleBoxEmpty_tab")
+SectionHeader/colors/font_color = Color(0.251, 0.949, 0.902, 1)
+SectionHeader/font_sizes/font_size = 18
+SectionHeader/fonts/font = SubResource("FontVariation_header")
+VScrollBar/styles/grabber = SubResource("StyleBoxFlat_grabber")
+VScrollBar/styles/grabber_highlight = SubResource("StyleBoxFlat_grabber")
+VScrollBar/styles/grabber_pressed = SubResource("StyleBoxFlat_grabber")
+VScrollBar/styles/scroll = SubResource("StyleBoxEmpty_scroll")
+VScrollBar/styles/scroll_focus = SubResource("StyleBoxEmpty_scroll")

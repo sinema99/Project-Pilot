@@ -716,6 +716,49 @@ so the slide under-travels its own animation by ~6%. It is a one-line change in
 `slide_scale` with it), so it is left for a pass that can be played rather than folded into
 this one.
 
+### Adding a clip from a loose FBX (no Blender)
+
+Added 2026-09-27 for the vault (`docs/specs/pilot9-vault.md`). A Mixamo download can go
+straight onto pilot9 without passing through Blender or `pilot9.glb`: the FBX gets the same
+retarget the GLB gets, and the builder lifts its clip into the library.
+
+1. **Copy the FBX in** under `assets/` - the download stays where it is:
+
+   ```bash
+   cp ~/Downloads/Jumping.fbx assets/pilot9_vault.fbx
+   ```
+
+2. **Import it once, then give its `.import` pilot9's BoneMap.** Run
+   `"$GODOT" --headless --path . --import` to create `assets/<name>.fbx.import`, then replace
+   its `_subresources={}` with the whole `_subresources` block from `assets/pilot9.glb.import`,
+   **re-keyed to the FBX's own skeleton path**: a Mixamo FBX puts the `Skeleton3D` straight
+   under the scene root, so the key is `"PATH:Skeleton3D"`, not the GLB's
+   `"PATH:Armature/Skeleton3D"`. The wrong key is ignored without a word - the GLB gotcha
+   above, in reverse. Also set `animation/trimming=false` to match the GLB. Then clear the
+   cache and import again:
+
+   ```bash
+   rm -fv .godot/imported/<name>.fbx-*
+   "$GODOT" --headless --path . --import
+   ```
+
+   It worked if the imported skeleton is called `GeneralSkeleton` and the clip's tracks read
+   `%GeneralSkeleton:<ProfileBone>` (`Hips`, `LeftUpperLeg`, ...) rather than
+   `Skeleton3D:mixamorig_*`. Checked 2026-09-27: the FBX retarget lands on
+   `%GeneralSkeleton` directly, so no path rewrite was needed.
+
+3. **Add an `FBX_CLIPS` entry** in `scripts/pilot9_build_scene.gd` - the FBX's path, the clip
+   name inside it (every Mixamo download calls its clip `mixamo_com`), the name it takes in
+   pilot9's library and its loop mode - and run the builder. `_ensure_fbx_clips()` copies it
+   in, refuses (with the fix in the error) if any track still names a `mixamorig_*` bone, and
+   rewrites any path that is not `%GeneralSkeleton:` onto it.
+
+A clip that is **not In Place** then needs a bake like the slide's, the mantle's or the
+vault's before it is usable; a clip that is In Place only needs a state.
+
+The vault's `.import` is the working example: `assets/pilot9_vault.fbx.import`.
+`tests/test_pilot9_vault.gd` guards its BoneMap key and the retarget.
+
 ---
 
 ## Finally

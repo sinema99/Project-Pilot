@@ -1,6 +1,6 @@
 # Spec: turn-to-face movement for pilot9
 
-> **Status:** agreed and built 2026-09-06. Not yet played - the feel is unjudged.
+> **Status:** agreed and built 2026-09-06. Played 2026-09-28 - feels good.
 > **Scene:** `scenes/pilot9.tscn`. **Character:** `assets/pilot9.glb`.
 > **Follows:** `docs/specs/pilot9-real-controller.md`, which this deviates from on purpose.
 

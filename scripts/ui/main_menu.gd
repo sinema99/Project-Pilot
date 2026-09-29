@@ -14,8 +14,6 @@ extends Control
 
 func _ready() -> void:
 	UI.shell_enabled = false
-	for button in _buttons():
-		button.mouse_entered.connect(button.grab_focus)
 	var buttons := _buttons()
 	if not buttons.is_empty():
 		buttons[0].grab_focus()

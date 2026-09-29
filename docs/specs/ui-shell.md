@@ -1,5 +1,7 @@
 # Spec: UI Shell
 
+> **Superseded in part (2026-09-29):** the look, the shell layout and the per-tab layouts (window, rows, tabs, motion, confirm dialog, main menu skin) now live in [menu-refresh.md](menu-refresh.md).
+
 > Supersedes `docs/specs/ui-system.md`. Where the two disagree, this document wins.
 > The older file is kept for its reasoning, not its conclusions.
 

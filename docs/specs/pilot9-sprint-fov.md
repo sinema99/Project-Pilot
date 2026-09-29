@@ -1,6 +1,6 @@
 # Spec: pilot9's sprint FOV
 
-> **Status:** built 2026-09-07. **Unplayed** - the feel is unjudged.
+> **Status:** built 2026-09-07. **Played 2026-09-28 - feels good.**
 > **Scene:** `scenes/pilot9.tscn`. **Character:** `assets/pilot9.glb`.
 > **Touches:** `scripts/pilot9.gd` only. No rebuild, no bake, no animation change.
 

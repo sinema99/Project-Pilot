@@ -227,10 +227,10 @@ func test_the_controller_exposes_is_crouching_and_crouch_speed() -> void:
 	check(props.has("is_crouching"),
 		"scripts/pilot9.gd has no 'is_crouching' - every crouch advance_expression silently never fires")
 	check(props.has("crouch_speed"), "scripts/pilot9.gd has no 'crouch_speed'")
-	if props.has("crouch_speed") and props.has("walk_speed"):
-		check(root.get("crouch_speed") < root.get("walk_speed"),
-			"crouch_speed (%s) should be slower than walk_speed (%s)"
-			% [root.get("crouch_speed"), root.get("walk_speed")])
+	if props.has("crouch_speed") and props.has("speed"):
+		check(is_equal_approx(root.get("crouch_speed"), root.get("speed")),
+			"crouch_speed (%s) should match the run speed (%s)"
+			% [root.get("crouch_speed"), root.get("speed")])
 	if props.has("is_crouching"):
 		check(root.get("is_crouching") == false, "pilot9 must not start crouched")
 

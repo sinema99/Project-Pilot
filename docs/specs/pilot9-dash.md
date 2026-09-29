@@ -1,5 +1,14 @@
 # Spec: pilot9's dash
 
+> **2026-09-28: THE VANISH IS RETIRED.** He now stays visible for the whole dash, running the
+> ground sprint cycle at speed, and leaves a Sandevistan trail of flat cyan-to-green afterimages
+> (the Cyberpunk: Edgerunners look). The manga speed lines are removed; the last build with them
+> is commit `c36e25e`. Grilled and decided the same day, ten decisions, all recorded in
+> *The afterimages* below, which replaces *The ink streak*. Wherever older text below says he is
+> invisible, hidden, or that there is no clip or state for the dash, it is history: there is now
+> a `dash` state, and nothing is hidden. The movement (speed, time, steering, exit, camera lag,
+> FOV kick) is unchanged.
+>
 > **Status:** specified 2026-09-17, built and played the same day. **The ink streak was
 > replaced on 2026-09-19** - the single 0.35 m ribbon became a bundle of 5-7 thin manga speed
 > lines sized in pen-weight pixels. See *The ink streak*, below; that section is current and
@@ -54,6 +63,10 @@ and waiting for one blocks the feature on a Blender session.
 **The idea this spec is built on (the user's, 2026-09-17): don't animate the dash. Hide him.**
 
 ## The rule
+
+**Current (2026-09-28): pilot9 sprints 10 m in a quarter second, fully visible, and every
+~1.6 m he leaves a frozen afterimage of the pose he was in.** See *The afterimages*. The
+original rule, kept for the record:
 
 **pilot9 vanishes, travels 9 m dead flat in a quarter second, and reappears.** A black ink
 streak is drawn where he went, and his shadow keeps running along the floor the whole time.
@@ -384,143 +397,138 @@ notice the dash is sometimes ready early and never learn why.
 
 ## The look
 
-Originally two cues, chosen because they **cover each other's blind spots**, at no cost in
-assets. **The shadow cue was cut on the 2026-09-17 retune** - see the subsection below for what
-it was and why it went. The ink streak is now the only cue.
+**Current since 2026-09-28: the afterimages.** He stays visible and the trail is made of him.
+History: the dash shipped with two cues, a shadow running along the floor while he was hidden
+and a black ink streak. The shadow cue was cut on 2026-09-17. The streak became a bundle of
+manga speed lines on 2026-09-19 (commit `c36e25e` is the last build with it) and was removed
+on 2026-09-28. The full reasoning for both lives in git history; this section only describes
+what exists now.
 
-### He goes shadows-only, not invisible (cut 2026-09-17)
+### The afterimages
 
-> **This cue no longer exists.** `_hide_for_dash()` now sets `visible = false` on every mesh
-> instead of `cast_shadow = SHADOWS_ONLY`, so the dash is a clean vanish with no shadow running
-> along the floor. Kept below for the record of what was tried and why it was cut - a plain "we
-> removed it" note would lose the reasoning if the shadow cue is ever reconsidered.
+The Sandevistan trail from Cyberpunk: Edgerunners: a row of copies of him, each frozen in the
+pose he had at that spot, in a flat colour, while he runs on in full colour. Decided in a
+grilling session on 2026-09-28; each numbered point below is one of those decisions.
 
-Every `MeshInstance3D` under `character/` was set to `cast_shadow = SHADOWS_ONLY` for the
-window, reached through the existing static `apply_stylized.collect_meshes()`. Body gone, cel
-outline gone (it is a `next_pass`, so it goes with the colour pass) - but his shadow kept
-tearing across the floor at dash speed.
+1. **He stays visible.** `_hide_for_dash()` / `_restore_from_dash()` and the per-mesh
+   visibility cache are gone. The copies need a real pose to freeze, and a hidden pilot9 has
+   none.
+2. **Pose: the ground sprint cycle, forced, sped up.** A new `dash` state in the
+   AnimationTree plays `sprint_forward` (the same clip the wall-run uses) through a TimeSeek
+   and a TimeScale. The scale is `dash_anim_speed` (**2.5x**), so the 0.25 s window runs about
+   one full stride and every ghost has different legs. It runs in the air as well: an air dash
+   is him running on nothing, which is exactly what the reference shows. Each dash starts from
+   the same clip time, `dash_anim_phase`, so the leg pattern of the trail is the same every
+   time and can be tuned.
+3. **Ghost look: a flat, unlit single-colour fill, with the ink outline kept but tinted
+   a darker shade of the fill.** *(2026-09-28: now 50% see-through - see the note after 5.)* No lighting bands, no rim light, no shadow, and not
+   see-through while alive. Two shaders: `shaders/cel/vfx/afterimage.gdshader` (fill) with
+   `afterimage_outline.gdshader` as its `next_pass` (the same inverted-hull push as
+   `outline.gdshader`, same global `outline_width`). The colour is an `instance uniform`, so all
+   ghosts share one material.
+   **Colour runs cyan at his heels to green at the tail:** the newest ghost is
+   `afterimage_head_color`, the oldest one `afterimage_max_count - 1` steps back is
+   `afterimage_tail_color`. The colour goes by rank from the newest, recomputed as ghosts spawn,
+   so a dash cut short at 2 ghosts still has cyan next to him rather than two green ones. The
+   ink is the fill times `afterimage_line_darken` (0.45).
+4. **Count: by distance, one every `afterimage_spacing` (1.6 m), at most
+   `afterimage_max_count` (6).** The first is dropped at the launch point; a full 10 m dash
+   leaves ghosts at 0, 1.6 ... 8.0 m, and he reappears at 10 m. Distance, not time, so a dash
+   stopped by a wall leaves only the ghosts it actually earned. At 40 m/s he moves 0.67 m per
+   physics tick, so a ghost is placed at the exact crossing distance along that tick's segment
+   rather than at the tick's end, or the gaps would alternate between 1.33 and 2.0 m.
+5. **Lifetime: hold, then clear tail to head.** Every ghost stays fully solid until the dash
+   ends. Then the oldest starts to go first and each one after it follows, the whole trail
+   gone `afterimage_clear_time` (0.35 s) after he reappears. Each ghost's own fade lasts
+   `afterimage_fade_time` (0.12 s); the gap between one ghost's start and the next is whatever
+   is left, `(clear - fade) / (count - 1)`. **The fade is a dissolve, not alpha**: a screen-space
+   hash throws away more and more pixels, so the ghost stays opaque, writes depth and never
+   needs sorting against its neighbours. A transparent fade would have the overlapping copies
+   show through each other, which is the translucent option that was turned down.
 
-`docs/cel-look-rollout.md` puts the sun at a low sunset angle, so that shadow was long and
-raking. It was the most legible "something fast just went through here" signal available, it
-was drawn by the renderer already running, and it was unmistakably him - his real silhouette in
-his real pose, which carries more character than any trail can.
+   **2026-09-28, 50% opacity (user request):** fill and ink are now drawn at
+   `afterimage_opacity` (0.2 since 2026-09-28 - 0.5 still blocked the camera; instance uniform `ghost_opacity`). The "no show-through" rule
+   survives: two depth-only passes (`afterimage_depth.gdshader`, `afterimage_outline_depth.gdshader`,
+   render priority -1) lay down every ghost's depth before any ghost's colour, so a ghost blends
+   only its front surface over the world - never its own limbs, and never the ghost behind it.
+   Known cost: transparent things (particles) directly behind a ghost are hidden, not tinted.
+6. **The speed lines are removed** - the exports, `_streak_bundle()`, `dash_streak.gdshader` and
+   their tests. The ghosts are the trail now, and black lines through the cyan would muddy both.
+7. **Camera lag and FOV kick are unchanged.** Known limit: the camera sits behind him and most
+   dashes go away from it, so a dead-straight dash shows the ghosts stacked in depth, mostly
+   covering each other. Sideways and diagonal dashes look like the reference. A small camera
+   rise during the dash to look down the trail was offered and held back until the play session
+   says straight dashes read as a blob.
+8. **What is copied: body plus staff, nothing else.** Every visible `MeshInstance3D` under
+   `character` - that includes the held item, which rides under his skeleton. Skinned meshes are
+   frozen by giving each ghost **its own skeleton with his pose copied onto it** (see *Frozen
+   skeletons, not baked meshes*, below - the original bake lagged every dash); a non-skinned one
+   (the staff) just shares its mesh. Materials, the rim-light overlay and the movement VFX
+   (which are not under `character`) are not copied.
+9. **Setting: MOVEMENT EFFECTS.** Off, no ghosts - the dash is him sprinting very fast, with
+   the FOV kick and camera lag still there. The streak ignored the setting because it was the
+   only sign of where an invisible pilot9 went; that reason is gone.
+10. **Switch in: hard cut. Switch out: ~0.1 s blend.** `_start_dash()` calls
+    `playback.start(&"dash")`, seeks to `dash_anim_phase` and `advance(0)`s the tree, the same
+    hard-cut pattern the mantle uses - so the first ghost, dropped the same tick, is already
+    the sprint pose and not half of whatever he was doing. The exits are 0.1 s transitions to
+    `jump` / `fall` / `Locomotion`, all gated on `not is_dashing`.
 
-**Its limitation was honest: over a gap there is no floor to catch it.** Mid-air dashes across
-open space fell back to the streak alone, which is exactly where the dash is most dramatic -
-and that inconsistency (a cue that only sometimes shows up, depending on what's underfoot) is
-the likeliest reason it read as unwanted noise on the play session rather than as a second cue
-reinforcing the first.
+**Also changed by "he is visible now":** the heading is still welded to `_dash_direction`
+every frame, so a hard keyboard turn mid-dash is an instant yaw snap on a visible body. Kept on
+purpose - player control beats clip fidelity on pilot9 - but it is on the risk list.
 
-**Restore now returns each mesh to its *original* `visible` value, captured on the way
-in - not blanket-set to `true`.** Same rule the cast_shadow version followed, carried over so a
-mesh authored hidden is not permanently changed by its first dash.
-
-**The `AnimationTree` keeps running** on the hidden skeleton. It is a quarter second of wasted
-work; switching it off leaves the state machine stale and pops him back in the wrong pose,
-which is the one visual artifact this design cannot absorb.
-
-### The ink streak
-
-**A bundle of 5-7 thin manga speed lines, camera-facing, growing behind him.**
-
-> **Replaced the single ribbon on 2026-09-19.** The dash shipped with one black stroke 0.35 m
-> wide, tapering to a point at the tail. The user liked it and wanted it pushed: thinner lines,
-> more of them, reading as manga speed lines rather than as one slab. The old ribbon's
-> behaviour - world-space, path-following, camera-facing, growing, lingering - is kept whole;
-> what changed is that there are now several strokes instead of one and they are sized like pen
-> marks instead of like objects. The single-ribbon build is at commit `a3a4723`.
-
-- An `ImmediateMesh` rebuilt each physics frame from his sampled positions over the window,
-  **one surface per line** - the strokes carry different alphas on the same frame (see the
-  staggered fade below) and a triangle strip cannot break between them without degenerate
-  stitching, which at these widths would be visible.
-- Unlit, **pure black** - `outline_color` is `Color(0,0,0,1)` and every object in this game is
-  inked in it. Black strokes drawn in the same pigment as the rest of the frame read as part of
-  the drawing. White would read against more backgrounds but would introduce a value that
-  exists nowhere else in the palette and would look borrowed.
-- **World-space, not screen-space.** A screen-space overlay is the literal manga device and it
-  was considered and rejected: it ignores occlusion, and it would fire identically whether he
-  dashes the full 10 m or slams a wall at 2 m. This is still the first VFX in the project and
-  still the pattern-setter for wall-run, rail grind and every boss after it, and that pattern
-  should be one that knows about the world.
-- **The lines converge on him.** Offsets are full at the tail and shrink to `streak_converge`
-  (0.25) of themselves at the head, so the bundle splays open behind him and pinches where it
-  meets his body - which is "coming out of him" stated as geometry. Not all the way to a point:
-  at zero the strokes merge into a blob exactly where the eye is looking.
-- **Centred on his chest**, `streak_anchor_height` (1.1 m) above the sampled path. `_dash_points`
-  samples `global_position`, which is his **feet** - the collision capsule sits 0.978 m above
-  it - so the original ribbon was in fact a stripe at ankle height. Without the anchor the
-  bundle converges on his ankles.
-- **Offsets sit on an ellipse** around the path, `streak_spread_side` (0.30 m) across and
-  `streak_spread_vert` (0.70 m) tall, so the lines go up and down as well as left and right.
-  A flat row is a comb the moment the camera is above it. Sized against his collision capsule
-  (radius 0.34) so the whole bundle stays inside his silhouette: the user's call, 2026-09-19 -
-  the lines are supposed to come out of him, not pass him.
-- **Each line is a spindle**: thin, swells, thin, fattest at `streak_swell_bias` (0.65) along
-  its own length. That is the shape a pen leaves when it lands, presses and lifts, and it is
-  the single cheapest thing that makes a row of quad strips read as drawn rather than extruded.
-  Past 0.5 puts the mass near him, where the flick leaves it.
-- **Pen weight is in pixels, not metres** - roughly 1 px to 3 px, against the 4 px
-  `outline_width` and the 2 px `crease.gdshader` line. This is the one thing about the original
-  ribbon that was simply wrong: every other ink in this game is pixel-constant and says so
-  (`crease.gdshader`: *"constant in pixels, not in metres, at any resolution and any
-  distance"*), and the streak alone was measured in metres. It is also the one that could not
-  survive thinning - a 2.5 cm hairline goes sub-pixel as soon as the camera pulls back, and
-  seven of them shimmering in and out for 0.4 s is a rendering fault, not an effect. **Clamped**
-  by `streak_max_width` (0.12 m), because a pen weight is a fixed *angular* size and a camera
-  on top of the bundle would otherwise resolve 3 px into a slab.
-- **Weights and lengths are spread and then shuffled**, by two independent permutations. Lines
-  get weights spaced evenly across `[streak_weight_min_px, streak_weight_max_px]` and lengths
-  spaced across `[streak_length_min, 1.0]`, so the bundle always contains both light and heavy
-  strokes and always ends ragged. Sampling either at random would let a dash come up with seven
-  near-identical lines - a comb - which is the one outcome the bundle cannot have. Two
-  permutations rather than one, or thickness would be tied to length forever.
-- **Reseeded on every launch**, so no two dashes draw the same bundle and the effect does not
-  go stale over a play session.
-- **Grows as he travels**, rather than being drawn full-length at launch. A dash cut short by a
-  wall must produce short lines, not 10 m ones hanging through the geometry he hit.
-- Lingers **~0.15 s** after he reappears, then fades **staggered** - thinnest strokes wink out
-  first, heaviest last, by `streak_fade_stagger` (0.5) of the curve. Seven lines dimming in
-  unison look like a texture fading; dropping away one at a time looks like ink, and it keeps
-  the silhouette strong right to the end instead of dissolving into mush. This matters more
-  than it sounds: he is *invisible* for the whole 0.25 s travel, so the linger is the only part
-  of the effect where there is a character on screen at all. The money frame is pilot9
-  reappearing with seven strokes converging into his chest.
-- **Camera-facing is not optional.** A flat strip seen edge-on is one pixel wide, and dashing
-  toward or away from the camera is precisely when it would be edge-on.
-
-#### The boil, built and shipped off
-
-`streak_boil` re-randomises the offsets on a `streak_boil_hz` (12 Hz) clock while the streak is
-alive, the way cel animation on 2s wobbles. It is **off by default and that is the
-recommendation**, not an oversight.
-
-The streak lives `dash_time + DASH_STREAK_LINGER` = 0.4 s, which is five frames at 12 Hz. Boil
-reads as *hand-drawn* when there are a couple of seconds of it; at five frames the eye has no
-time to build the pattern and it reads as flicker or as a rendering fault - the worst failure
-available to a cue whose entire job is to be read instantly. It is the one place in this effect
-where "fancy" and "reads as speed" pull against each other.
-
-Built anyway, behind the toggle, because boil is the project's whole art direction and that is
-worth seeing in play rather than arguing about in a document. The user's call, 2026-09-19:
-build it, ship it off, judge it in play.
+**Where it lives:** `scripts/pilot9_afterimage.gd` (`Pilot9Afterimage`) owns the ghosts - how
+they are made, coloured and faded. `pilot9.gd` only says *when* (launch, each tick of the dash,
+the end, boarding), the same split as `pilot9_vfx.gd`. The ghosts are `top_level` children of
+it, so they stay put in the world while he runs on.
 
 #### Every number is exported
 
-`streak_line_count`, the two spreads, the anchor, the converge fraction, the two pen weights and
-their clamp, the swell bias, the minimum length, the fade stagger and the three boil knobs are
-all `@export`, in a `Dash Streak` group. Same reasoning as `dash_speed` and `dash_time` before
-them: a bundle's look is found by tuning it while playing, not by picking values in a file. This
-is the knob set, and finding the good values on it is the play session's job.
+`dash_anim_speed`, `dash_anim_phase`, `afterimage_spacing`, `afterimage_max_count`, the head /
+tail colours, `afterimage_line_darken`, `afterimage_clear_time` and `afterimage_fade_time`, in
+an `Afterimage` group. Same reasoning as every other dash number: found by tuning in play.
 
-### Why the two cues paired (historical - the shadow cue is cut)
+#### Built (2026-09-28) - where the build differs from the points above
 
-Black reads strongly against the bright sunset sky and lit ground and weakly against dark
-shadowed ground - which was exactly where his own raking shadow was most visible. Bright
-background, the streak carried it. Dark background, the shadow carried it. With the shadow cue
-gone, the streak's weak case (a dash over dark ground) has no second cue backing it up - worth
-watching for if streak legibility becomes a complaint now that it is carrying the whole look
-alone.
+- ~~The launch ghost is one drawn frame late~~ and ~~the bake cannot run headless~~ - both were
+  properties of the bake, and went with it (see below).
+- `pilot9.tscn` was rebuilt with `scripts/pilot9_build_scene.gd` to add the `dash` state.
+
+#### Frozen skeletons, not baked meshes (2026-09-28)
+
+**Why:** the first build froze each ghost with `bake_mesh_from_current_skeleton_pose()`, and
+the dash lagged on every use. Measured windowed (`tests/_probe_dash_lag.gd`): pilot9 is 12
+skinned meshes, about 58k vertices, and the bake reads each one back from the GPU, skins it on
+the CPU and uploads a new mesh - about **27 ms per ghost**, six ghosts in a quarter second. Dash
+frames averaged 12.5 ms with a 42 ms worst against 5.5 / 6.1 ms with the ghosts off.
+
+**What replaces it:** each ghost is a `Skeleton3D` of its own, carrying a copy of every skinned
+`MeshInstance3D` that **shares his mesh and skin** and points at that skeleton instead of his.
+Freezing a ghost is copying his bone poses onto its skeleton; the GPU skins it exactly as it
+skins him, and a skeleton nobody changes is not re-skinned. Prototyped in
+`tests/_probe_frozen_skeleton.gd`: 0.03 ms to pose and show a ghost, no frame spikes with six on
+screen, 1.9 ms to build six.
+
+1. **A pool, built once.** `afterimage_max_count` ghosts are built when the pilot is set up and
+   hidden. A dash takes them in order, a clear hides them and hands them back - nothing is
+   created or freed while he dashes. The pool is rebuilt (at the next launch, not mid-dash) if
+   the set of meshes under `character` changed - a different held item - or
+   `afterimage_max_count` was retuned.
+2. **The pose is read from `skeleton_updated`.** His final pose, with the staff-hold and
+   wall-hand modifiers applied, is snapshotted on his skeleton's `skeleton_updated` signal, and
+   only while a dash is live. A ghost dropped on a physics tick gets the latest snapshot: the
+   pose last drawn, the same one-frame staleness the bake had.
+3. **The launch ghost waits for the first snapshot after the hard cut**, not for a drawn frame.
+   The cut's `advance(0)` has set the sprint pose on the tree but his skeleton has not
+   re-emitted yet, so a launch-tick snapshot would still be whatever he was doing. It is placed
+   back at the launch point, as before.
+4. **The staff and anything else non-skinned** is still a plain copy sharing its mesh, placed
+   at its own world transform, and has its mesh re-pointed on each drop so a swapped item shows.
+5. **Headless now gets real poses.** A snapshot is plain scene-side bone data, so the tests can
+   check that a ghost's skeleton carries his pose - which the bake could never show them.
+
+The look, spacing, colour, clear and dissolve are unchanged.
 
 ### There is no HUD
 
@@ -585,23 +593,26 @@ recomputes arithmetic it just performed.
   charge, `is_on_floor()`, `is_climbing` and `frozen` - this is where the both-limiters rule and
   all four blocked states are actually pinned.
 - The air charge: spent at launch only when airborne, refreshed on floor.
-- **The hide/restore round-trip**: every mesh reaches `SHADOWS_ONLY`, and restore returns each
-  one to the value it had *before*, not a blanket ON.
-- **The streak bundle's geometry**, which is the bulk of it: one line per configured count,
-  every line a spindle thin at both ends, pen weight constant in pixels (twice the camera
-  distance is twice the width in metres) and clamped in close, the bundle wider at the tail
-  than at the head, nothing drawn down at his feet, a spread of weights and a spread of
-  lengths, fade floors running thinnest-first, the same seed rebuilding the same bundle and a
-  different seed a different one, the boil moving nothing while it is off and something while
-  it is on. Plus the degenerate cases: zero points, one point (a dash blocked on its first
-  frame), a dash that never moved, and a one-line bundle.
+- ~~The hide/restore round-trip~~ - gone with the vanish, 2026-09-28.
+- **The afterimages (2026-09-28):** the spacing crossings (a ghost at 0 and at every multiple of
+  `afterimage_spacing`, placed at the exact crossing along a tick's segment, capped at the max
+  count), the colour by rank (newest = head colour, `max_count - 1` back = tail colour), the
+  tail-to-head clear (the oldest starts first, all fully solid at the moment the dash ends, all
+  gone at `afterimage_clear_time`), the `dash` state and its TimeScale / TimeSeek parameter
+  paths existing in `pilot9.tscn` (the same silent-rename seam as `CROUCH_SCALE`), and a ghost
+  from the real scene carrying the afterimage material and no shadow. Since the frozen-skeleton
+  rebuild: the launch ghost waits for a snapshot, a dropped ghost's skeleton carries his bone
+  poses, its skinned copies share his mesh and skin, and a clear returns ghosts to the pool
+  rather than freeing them.
+- ~~The streak bundle's geometry~~ - removed with the streak, 2026-09-28.
 - **Steering**: a held stick moves `_dash_direction` (and the welded mesh) onto it with no lag
   and no lerp, a centred stick holds whatever heading was already running, and the vertical
   component stays exactly zero regardless of what the stick asks for.
 
 ### What cannot be checked headlessly, and will not be claimed
 
-The feel. Whether the vanish reads as a dash or as a dropped frame. The streak's appearance.
+The feel. Whether the afterimages read as Sandevistan, and how the stacked trail looks on a
+straight dash. (Historical: whether the vanish read as a dash, the streak's appearance.)
 The shadow cue. The blocked-dash cut, which needs real collision. The input press itself, which
 needs a running frame and a body resting on a collider - the same wall
 `test_pilot9_double_jump.gd` and `test_pilot9_jump_slide.gd` both hit. The camera catch-up's
@@ -620,21 +631,22 @@ broken; they say nothing about whether the dash is any good.
    for crossing floors, and the optimal way over any surface may become dash on cooldown.
 3. **9.0 m landing exactly on the 9.0 m sprint gap lip.** Harmless on the flat test platform,
    dicey the moment gaps are built to measurement. See *The 9.0 m collision*.
-4. **Ink streak legibility against dark ground, now sharper.** No longer backstopped by the
-   shadow cue, which was cut on the 2026-09-17 retune - the streak is the only visual cue the
-   dash has. The 2026-09-19 bundle makes this *worse before it is judged*: seven hairlines are
-   a weaker silhouette than one 0.35 m slab was, and keeping a reduced centre stroke as
-   insurance was offered and declined - the user's call, and the right one for the look, since
-   a bundle with a dominant member is not a bundle. If the dash goes illegible over dark
-   ground, the first knobs to reach for are `streak_weight_max_px` and `streak_line_count`.
+4. **Straight-ahead dashes stack the ghosts in depth** (2026-09-28). The camera is behind him,
+   so a trail going straight away from it is mostly one cyan shape. First fix to reach for: a
+   small camera rise during the dash (held back, see *The afterimages* point 7).
 5. **Carrying `dash_speed` forever with the stick held the way he was already dashing.** The
    exit-ease that fixed this was built and reverted the same day, 2026-09-18 - see *The exit*.
    Un-fixed on purpose; watch for it on the play session.
+6. **Yaw snaps are now visible** (2026-09-28). The heading still welds to the stick each frame;
+   a keyboard 90 degree turn mid-dash pops his body round. Kept for control.
+7. **The bake cost.** `bake_mesh_from_current_skeleton_pose()` skins on the CPU; six of them per
+   dash spread over 0.25 s. If a dash hitches, this is the first suspect.
 
 ## Deliberately not built
 
-- **No dash clip, no state machine entry, no TimeScale.** The whole point.
-- **No dash VFX beyond the line bundle** - no particles, no camera shake, no FOV punch. A sprint FOV
+- ~~No dash clip, no state machine entry, no TimeScale.~~ Reversed 2026-09-28: there is a `dash`
+  state playing the sprint cycle, because the afterimages need a pose. Still no authored dash clip.
+- **No dash VFX beyond the afterimages** (was: the line bundle) - no particles, no camera shake, no FOV punch. A sprint FOV
   boost already exists (`sprint_fov_boost`); whether the dash wants its own is a question for
   after the first play, not before.
 - **No sound.** The project has none yet.

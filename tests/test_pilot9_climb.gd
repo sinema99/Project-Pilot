@@ -20,10 +20,12 @@ const BUILDER := preload("res://scripts/pilot9_build_scene.gd")
 # From the 2026-09-06 17:58 PILOT9.glb export. The Blender action "P.climbing" runs 1.150 s
 # and its Hips walk +1.890 m up / +0.514 m forward once motion_scale is applied. What the
 # controller is actually driven by is measured between the clip's own contact poses instead
-# (see _ensure_climb_motion): 1.324 m up, 1.104 m forward. Asserted loosely - the user
-# re-authors these clips, and a changed distance is correct rather than broken.
+# (see _ensure_climb_motion): 1.583 m up, 1.104 m forward (1.324 m up until the stand-up
+# settle of 2026-09-26 moved the end pose's soles onto his origin - see
+# _settle_climb_stand_up()). Asserted loosely - the user re-authors these clips, and a changed
+# distance is correct rather than broken.
 const CLIMB_CLIP_LENGTH := 1.150
-const CLIMB_RISE := 1.324
+const CLIMB_RISE := 1.583
 const CLIMB_REACH := 1.104
 const CLIMB_INSET := 0.514
 
@@ -168,10 +170,24 @@ func test_the_climb_pose_is_locked_in_place_on_both_axes() -> void:
 		% BUILDER.SLIDE_MOTION_TRACK)
 	if y.is_empty():
 		return
-	check(_span(y) < 0.01,
-		("climb_up's hips still rise %.3f m. _ensure_climb_motion() did not lock the clip, " +
-		"so the body would be driven by the curve AND the mesh by the clip - double the " +
-		"rise, and a mesh that snaps back over the exit cross-fade.") % _span(y))
+	# Locked through the pull, then only ever lowered: the stand-up settle eases the hips down
+	# onto his origin (see _settle_climb_stand_up()). The pull ends at ~58% of the clip, so
+	# the first half of the keys is pull on any sensible re-export.
+	var pull := y.slice(0, y.size() / 2)
+	check(_span(pull) < 0.01,
+		("climb_up's hips still rise %.3f m through the pull. _ensure_climb_motion() did " +
+		"not lock the clip, so the body would be driven by the curve AND the mesh by the " +
+		"clip - double the rise.") % _span(pull))
+	var rises := false
+	for i in range(1, y.size()):
+		rises = rises or y[i] > y[i - 1] + 0.0001
+	check(not rises,
+		"climb_up's hips rise somewhere after the lock. The only thing allowed to move them " +
+		"is the stand-up settle, and it only ever lowers them")
+	check(_span(y) < 0.4,
+		("climb_up's hips move %.3f m in all. The settle is a standing correction of about " +
+		"a quarter metre; anything much bigger is authored rise that escaped the lock.")
+		% _span(y))
 	check(_span(z) < 0.01,
 		"climb_up's hips still travel %.3f m forward - the Z half of the lock did not happen"
 		% _span(z))
@@ -263,7 +279,9 @@ func test_the_rise_curve_only_settles_after_its_peak() -> void:
 		var v := cy.sample(float(i) / 128.0)
 		high = maxf(high, v)
 		worst = maxf(worst, high - v)
-	check(worst < 0.15,
+	# 0.25, not the 0.15 of the Hips-shaped bake: since 2026-09-26 the pull holds his hands on
+	# the lip (see _climb_path() in the builder), which lifts him ~0.23 m over the settle.
+	check(worst < 0.25,
 		("climb_motion_y drops %.3f below its running peak. A mantle rises and then settles " +
 		"onto the ledge; a bigger fall than that is a bake that read the clip wrong.") % worst)
 
@@ -299,10 +317,13 @@ func test_the_contact_offsets_were_measured_off_the_clip() -> void:
 	check(hand.z > 0.2,
 		"climb_hand_offset is %.3f m in front of him - his hands have to be reaching out " % hand.z +
 		"at the wall, or the entry snap plants him inside it")
-	check(absf(foot.y) < 0.6,
+	# The exit pop of 2026-09-26: at 0.26 m the exit snap parked his origin - and his capsule
+	# - that far inside the platform, and the physics shoved him out in a single frame.
+	check(absf(foot.y) < 0.03,
 		("climb_foot_offset puts his soles %.3f m off his own origin on the last frame. " +
-		"That is a rest-pose correction away from zero; a large value means the toe bones " +
-		"were read without it.") % foot.y)
+		"The exit snap subtracts it, so his capsule comes back that far inside (or over) " +
+		"the platform and the physics pops him out - _settle_climb_stand_up() should have " +
+		"stood the end pose on his origin.") % foot.y)
 
 # The two clocks. The state machine plays climb_up on its own and _climb_time runs in
 # _physics_process; this is the only thing holding them together.

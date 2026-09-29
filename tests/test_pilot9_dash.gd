@@ -2,22 +2,24 @@ extends "res://tests/test_case.gd"
 
 # Covers pilot9's dash. See docs/specs/pilot9-dash.md.
 #
-# The feel cannot be checked headlessly - the vanish, the streak's appearance, and the
-# blocked-dash cut all need real collision and a running frame, the same wall
+# The feel cannot be checked headlessly - how the afterimages look, and the blocked-dash cut,
+# which needs real collision and a running frame, the same wall
 # tests/test_pilot9_double_jump.gd and tests/test_pilot9_jump_slide.gd hit for the press
 # itself. What IS reachable: the input action, the numbers, the ability-tab seam, the
-# availability rule and the air charge as pure functions, the hide/restore round-trip, and
-# the streak's own geometry.
+# availability rule and the air charge as pure functions, the afterimages' spacing / colour /
+# clear as pure functions, the `dash` state's wiring, and one real launch in the real scene.
 
 const CONTROLLER := preload("res://scripts/pilot9.gd")
 const TAB_ABILITIES := preload("res://scripts/ui/tabs/tab_abilities.gd")
 const APPLY_STYLIZED := preload("res://scripts/rendering/apply_stylized.gd")
 const PILOT_TSCN := "res://scenes/pilot9.tscn"
+const AFTERIMAGE := preload("res://scripts/pilot9_afterimage.gd")
+const ANIMATION := preload("res://scripts/pilot9_animation.gd")
 
-# One shared, in-tree instance for the hide/restore test only - see
+# One shared, in-tree instance for the real-launch tests only - see
 # tests/test_pilot9_climb.gd's note on why: a fresh in-tree pilot9 per test leaks
 # physics/render-server RIDs that a --script run never cleans up, and this file needs the
-# tree for exactly one thing (the `character` subtree onready populates from).
+# tree for the `character` subtree and the AnimationTree onready populates from.
 var _pilot: Node = null
 
 func _scene() -> Node:
@@ -31,7 +33,8 @@ func _scene() -> Node:
 			loop.root.add_child(_pilot)
 	_pilot.is_dashing = false
 	_pilot.frozen = false
-	_pilot._dash_shadow_cache.clear()
+	if _pilot._afterimage != null:
+		_pilot._afterimage.clear()
 	return _pilot
 
 # --- the input action ----------------------------------------------------------
@@ -130,34 +133,151 @@ func test_air_charge_is_spent_only_by_an_airborne_launch() -> void:
 	check(not CONTROLLER._dash_air_charge_after_launch(false, true),
 		"a ground dash must not hand back a charge that was already spent")
 
-# --- the hide/restore round-trip ---------------------------------------------------
+# --- the afterimages: a real launch ------------------------------------------------
+#
+# Replaced the hide/restore round-trip on 2026-09-28, when the vanish was retired - see
+# docs/specs/pilot9-dash.md, "The afterimages".
 
-func test_hide_reaches_invisible_and_restore_undoes_it_exactly() -> void:
+func test_dash_state_parameters_exist_in_the_scene() -> void:
+	var root := _scene()
+	if root == null:
+		fail("scenes/pilot9.tscn did not load")
+		return
+	check(root.anim_tree.get(CONTROLLER.DASH_SCALE_PARAM) != null,
+		"no %s - rebuild pilot9.tscn with scripts/pilot9_build_scene.gd" % CONTROLLER.DASH_SCALE_PARAM)
+	check(root.anim_tree.get(CONTROLLER.DASH_SEEK_PARAM) != null,
+		"no %s - the launch would start the cycle wherever it was" % CONTROLLER.DASH_SEEK_PARAM)
+	eq(ANIMATION.DASH_SCALE, CONTROLLER.DASH_SCALE_PARAM,
+		"pilot9_animation.gd and pilot9.gd disagree on the dash TimeScale's path")
+
+func test_launch_keeps_him_visible_cuts_to_dash_and_drops_the_first_ghost() -> void:
 	var root := _scene()
 	if root == null:
 		fail("scenes/pilot9.tscn did not load")
 		return
 	var meshes: Array[MeshInstance3D] = []
 	APPLY_STYLIZED.collect_meshes(root.character, meshes)
-	check(meshes.size() > 0, "pilot9.tscn's character subtree has no mesh to hide")
-	if meshes.is_empty():
-		return
-
-	# One mesh deliberately left off-default, so restore is checked against what it actually
-	# had - not a blanket ON, which is the exact failure mode the spec calls out by name.
-	meshes[0].visible = false
-	var expected: Array[bool] = []
+	var before: Array[bool] = []
 	for mi in meshes:
-		expected.append(mi.visible)
+		before.append(mi.visible)
 
-	root._hide_for_dash()
-	for mi in meshes:
-		eq(mi.visible, false, "%s did not go invisible" % mi.name)
-
-	root._restore_from_dash()
+	root._start_dash(Vector3.FORWARD)
 	for i in meshes.size():
-		eq(meshes[i].visible, expected[i],
-			"%s was not restored to its own original visibility" % meshes[i].name)
+		eq(meshes[i].visible, before[i], "%s changed visibility on a dash" % meshes[i].name)
+	var playback: AnimationNodeStateMachinePlayback = root.anim_tree.get("parameters/playback")
+	eq(playback.get_current_node(), CONTROLLER.DASH_STATE, "the launch did not hard-cut to `dash`")
+	# The launch ghost is owed until his skeleton re-emits after the hard cut - see
+	# Pilot9Afterimage.begin().
+	root._afterimage.advance(root.character, root.global_position, root.global_position)
+	eq(root._afterimage.ghost_count(), 0, "the launch ghost must wait for a fresh snapshot")
+	root._afterimage._on_skeleton_updated()   # stand in for the skeleton update a --script run skips
+	root._afterimage.advance(root.character, root.global_position, root.global_position)
+	eq(root._afterimage.ghost_count(), 1, "the first tick after a snapshot drops the launch ghost")
+
+	var ghost: Node3D = root._afterimage.get_child(0)
+	check(ghost.visible, "the launch ghost was not shown")
+	var shown := 0
+	for copy in ghost.get_children():
+		var mi := copy as MeshInstance3D
+		if not mi.visible:
+			continue
+		shown += 1
+		check(mi.mesh != null, "a shown ghost mesh is empty")
+		eq(mi.cast_shadow, GeometryInstance3D.SHADOW_CASTING_SETTING_OFF, "ghosts cast no shadow")
+		var mat := mi.material_override as ShaderMaterial
+		check(mat != null and mat.shader == AFTERIMAGE.FILL_SHADER,
+			"a ghost is not drawn in the afterimage fill")
+		check(mi.material_overlay == null, "the rim light must not ride onto a ghost")
+	check(shown > 0, "the launch ghost showed no meshes")
+	root._end_dash()
+	root._afterimage.clear()
+
+# --- the afterimages: frozen skeletons ---------------------------------------------
+#
+# Since 2026-09-28 a ghost is a Skeleton3D posed like him, not a baked mesh - the bake cost
+# ~27 ms a ghost. See docs/specs/pilot9-dash.md, "Frozen skeletons, not baked meshes".
+
+func test_a_ghost_carries_his_pose_on_his_own_mesh_and_skin() -> void:
+	var root := _scene()
+	if root == null:
+		fail("scenes/pilot9.tscn did not load")
+		return
+	root._start_dash(Vector3.FORWARD)
+	var ai: Pilot9Afterimage = root._afterimage
+	var skel: Skeleton3D = ai._skeleton
+	if skel == null:
+		fail("the afterimages found no skeleton under character")
+		return
+	# A pose nothing else would give him, so a ghost left at rest cannot pass by accident.
+	var bone := skel.get_bone_count() - 1
+	skel.set_bone_pose_rotation(bone, Quaternion(Vector3.UP, 1.1))
+	ai._on_skeleton_updated()
+	ai.advance(root.character, root.global_position, root.global_position)
+	eq(ai.ghost_count(), 1, "no launch ghost to check")
+	var ghost: Skeleton3D = ai._ghosts[0]
+	eq(ghost.get_bone_count(), skel.get_bone_count(), "the ghost's skeleton has different bones")
+	var worst := 0.0
+	for b in skel.get_bone_count():
+		worst = maxf(worst, ghost.get_bone_global_pose(b).origin.distance_to(
+			skel.get_bone_global_pose(b).origin))
+	approx(worst, 0.0, 0.0001, "the ghost's bones are not where his are")
+	check(ghost.get_bone_global_pose(bone).basis.is_equal_approx(skel.get_bone_global_pose(bone).basis),
+		"the ghost did not take his pose - a ghost at rest would look like a T-pose")
+	var skinned := 0
+	for k in ai._sources.size():
+		var src: MeshInstance3D = ai._sources[k]
+		var copy: MeshInstance3D = ai._copies[0][k]
+		if ai._skinned(src):
+			skinned += 1
+			check(copy.mesh == src.mesh, "%s was copied, not shared - that is the bake back" % src.name)
+			check(copy.skin == src.skin, "%s does not share his skin" % src.name)
+			check(copy.get_node_or_null(copy.skeleton) == ghost,
+				"%s is not skinned off the ghost's own skeleton" % src.name)
+	check(skinned > 0, "no skinned mesh was found to freeze")
+	root._end_dash()
+	ai.clear()
+
+func test_a_clear_hands_the_ghosts_back_to_the_pool() -> void:
+	var root := _scene()
+	if root == null:
+		fail("scenes/pilot9.tscn did not load")
+		return
+	var ai: Pilot9Afterimage = root._afterimage
+	root._start_dash(Vector3.FORWARD)
+	eq(ai._pool.size(), root.afterimage_max_count, "the pool is not afterimage_max_count ghosts")
+	var first: Node = ai._pool[0]
+	var children := ai.get_child_count()
+	ai._on_skeleton_updated()
+	ai.advance(root.character, root.global_position, root.global_position)
+	root._end_dash()
+	ai.clear()
+	eq(ai.ghost_count(), 0, "a clear left live ghosts")
+	check(not first.visible, "a cleared ghost is still showing")
+	root._start_dash(Vector3.FORWARD)
+	check(ai._pool[0] == first, "a second dash rebuilt the pool instead of reusing it")
+	eq(ai.get_child_count(), children, "a dash created or freed ghost nodes")
+	root._end_dash()
+	ai.clear()
+
+func test_advance_places_a_ghost_at_the_exact_crossing() -> void:
+	var root := _scene()
+	if root == null:
+		fail("scenes/pilot9.tscn did not load")
+		return
+	root._start_dash(Vector3.FORWARD)
+	root._afterimage._launch_owed = false   # this test is about the crossing, not the launch ghost
+	var mesh_origin: Vector3 = root.character.global_position
+	var here: Vector3 = root.global_position
+	# One 2 m tick from the launch: the 1.6 m crossing is 0.4 m back from where the tick ended.
+	root._afterimage.advance(root.character, here - Vector3(0, 0, 2.0), here)
+	eq(root._afterimage.ghost_count(), 1, "a 2 m tick past a 1.6 m spacing drops one ghost")
+	var placed: Node3D = root._afterimage.get_child(0).get_child(0)
+	var source := root.character.find_child(placed.name, true, false) as Node3D
+	var expected: Vector3 = (source.global_position if source != null else mesh_origin) 		+ Vector3(0, 0, -0.4)
+	approx(placed.global_position.distance_to(expected), 0.0, 0.001,
+		"the ghost was not pulled back to the exact crossing")
+	root._end_dash()
+	root._afterimage.clear()
 
 # --- steering ----------------------------------------------------------------------
 #
@@ -204,239 +324,65 @@ func test_steer_dash_holds_its_heading_when_the_stick_is_centred() -> void:
 		"a centred stick must leave the dash heading alone - the same rule _steer_slide() " +
 		"follows for the slide")
 
-# _travel_direction() always zeroes y, so _dash_direction should never carry a vertical
-# component in practice - but _apply_dash_velocity()'s hardcoded velocity.y = 0.0 is the one
-# line this entire retune was not allowed to touch, so it gets its own seam rather than trusting
-# an upstream guarantee silently.
-func test_dash_velocity_never_gains_a_vertical_component() -> void:
+# The dash is horizontal only: the camera's pitch never tilts it.
+func test_dash_stays_flat_whatever_the_camera_pitch() -> void:
 	var root := _scene()
 	if root == null:
 		fail("scenes/pilot9.tscn did not load")
 		return
-	root.set("_dash_direction", Vector3(0.0, 1.0, 0.0))
-	root.velocity = Vector3(0.0, -5.0, 0.0)
-	root._apply_dash_velocity()
-	eq(root.velocity.y, 0.0,
-		"the dash must never change vertical velocity, however _dash_direction got steered")
+	_set_stick(root, Vector2(0, -1))
+	for deg in [40.0, -40.0]:
+		root.camera_pivot.rotation.x = deg_to_rad(deg)
+		root._steer_dash()
+		root._apply_dash_velocity()
+		approx(root.velocity.y, 0.0, 0.0001, "a pitched camera must not tilt the dash")
+		approx(root.velocity.length(), root.dash_speed, 0.001, "the flat dash runs at dash_speed")
 
-# --- the ink streak's geometry -----------------------------------------------------
-#
-# The bundle of manga speed lines that replaced the single tapering ribbon on 2026-09-19 -
-# see docs/specs/pilot9-dash.md, "The ink streak". _streak_bundle() is static and pure for
-# exactly this: no tree, no camera, no renderer, same arguments in means same bundle out.
+# --- the afterimages: spacing, colour, clear ------------------------------------------
 
-const STREAK_CFG := {
-	"count": 7,
-	"spread_side": 0.30,
-	"spread_vert": 0.70,
-	"anchor_height": 1.1,
-	"converge": 0.25,
-	"weight_min_px": 1.0,
-	"weight_max_px": 3.0,
-	"max_width": 0.12,
-	"swell_bias": 0.65,
-	"length_min": 0.4,
-	"fade_stagger": 0.5,
-	"boil_amount": 0.0,
-}
+func test_afterimage_knobs_have_the_spec_defaults() -> void:
+	var body: CharacterBody3D = CONTROLLER.new()
+	approx(body.afterimage_spacing, 1.6, 0.0001, "spacing drifted from the six-ghost 1.6 m")
+	eq(body.afterimage_max_count, 6, "max count drifted from the agreed six")
+	approx(body.dash_anim_speed, 2.5, 0.0001, "the sprint cycle's dash rate drifted")
+	approx(body.afterimage_clear_time, 0.35, 0.0001, "the tail-to-head clear drifted from 0.35 s")
+	body.free()
 
-# A straight run down +Z, long enough that even the shortest line (length_min 0.4) keeps
-# several samples of its own.
-func _streak_path(count: int = 20) -> PackedVector3Array:
-	var points := PackedVector3Array()
-	for i in range(count):
-		points.append(Vector3(0, 0, float(i) * 0.5))
-	return points
+func test_crossings_land_on_every_multiple_of_the_spacing() -> void:
+	eq(AFTERIMAGE.crossings(0.0, 0.67, 1.6).size(), 0, "no crossing inside the first 0.67 m")
+	var one: PackedFloat32Array = AFTERIMAGE.crossings(1.34, 0.67, 1.6)
+	eq(one.size(), 1, "1.34 -> 2.01 m crosses 1.6 once")
+	approx(one[0], 0.26, 0.0001, "the crossing is measured from the segment's start")
+	var two: PackedFloat32Array = AFTERIMAGE.crossings(0.0, 3.3, 1.6)
+	eq(two.size(), 2, "a 3.3 m segment from 0 crosses 1.6 and 3.2")
+	approx(two[1], 3.2, 0.0001, "the second crossing")
+	eq(AFTERIMAGE.crossings(1.6, 1.0, 1.6).size(), 0,
+		"a segment starting ON a crossing must not drop it twice")
+	eq(AFTERIMAGE.crossings(0.0, 5.0, 0.0).size(), 0, "zero spacing must not loop forever")
+	eq(AFTERIMAGE.crossings(0.0, 0.0, 1.6).size(), 0, "a tick that never moved crosses nothing")
 
-func _bundle(points: PackedVector3Array, cfg: Dictionary = STREAK_CFG,
-		seed_value: int = 12345, boil_frame: int = 0) -> Array:
-	return CONTROLLER._streak_bundle(points, Vector3(6, 2, -4), 75.0, 1080.0, cfg,
-		seed_value, boil_frame)
+func test_colour_runs_head_at_the_newest_to_tail_at_the_oldest() -> void:
+	var head := Color(0.3, 0.9, 1.0)
+	var tail := Color(0.35, 1.0, 0.45)
+	eq(AFTERIMAGE.rank_color(0, 6, head, tail), head, "the newest ghost is the head colour")
+	eq(AFTERIMAGE.rank_color(5, 6, head, tail), tail, "max_count - 1 back is the tail colour")
+	eq(AFTERIMAGE.rank_color(9, 6, head, tail), tail, "past the tail clamps to the tail")
+	eq(AFTERIMAGE.rank_color(3, 1, head, tail), head, "a one-ghost trail must not divide by zero")
 
-func test_streak_bundle_does_not_crash_on_zero_or_one_point() -> void:
-	check(_bundle(PackedVector3Array()).is_empty(),
-		"zero sampled points must build nothing rather than error")
-	var one := PackedVector3Array([Vector3.ZERO])
-	check(_bundle(one).is_empty(),
-		"one sampled point - a dash blocked on its first frame - must build nothing " +
-		"rather than error")
-
-func test_streak_bundle_draws_one_line_per_configured_count() -> void:
-	var bundle := _bundle(_streak_path())
-	eq(bundle.size(), 7, "expected one entry per configured line")
-	for line in bundle:
-		var verts: PackedVector3Array = line["verts"]
-		check(verts.size() % 2 == 0, "a strip must be whole left/right pairs")
-		check(verts.size() >= 4, "a line too short to draw must be dropped, not emitted short")
-
-func test_streak_lines_are_spindles_thin_at_both_ends() -> void:
-	# The pen profile is what makes a strip read as drawn rather than extruded: a line lands
-	# thin, swells, and lifts thin. Both ENDS near zero and something substantial in between.
-	for line in _bundle(_streak_path()):
-		var verts: PackedVector3Array = line["verts"]
-		var n := verts.size()
-		approx(verts[0].distance_to(verts[1]), 0.0, 0.0001,
-			"a line must taper to nothing at its own tail")
-		approx(verts[n - 2].distance_to(verts[n - 1]), 0.0, 0.0001,
-			"a line must taper to nothing at the head, where it meets him")
-		var widest := 0.0
-		for i in range(0, n, 2):
-			widest = maxf(widest, verts[i].distance_to(verts[i + 1]))
-		check(widest > 0.0, "a line that is zero width along its whole length is not a line")
-
-func test_streak_pen_weight_is_constant_in_pixels_not_metres() -> void:
-	# The reason the bundle is sized in pixels at all: every other ink in this game is
-	# (outline_width is 4 px, crease.gdshader's line_width_px is 2 px), and a hairline sized
-	# in metres goes sub-pixel and shimmers the moment the camera pulls back. Doubling the
-	# camera distance must therefore roughly double the drawn width in metres.
-	var points := _streak_path()
-	var near := CONTROLLER._streak_bundle(points, Vector3(0, 0, -10), 75.0, 1080.0,
-		STREAK_CFG, 12345, 0)
-	var far := CONTROLLER._streak_bundle(points, Vector3(0, 0, -20), 75.0, 1080.0,
-		STREAK_CFG, 12345, 0)
-	eq(near.size(), far.size(), "the same seed must build the same number of lines")
-	check(_widest(near) > 0.0, "the near bundle must draw something to compare")
-	var ratio := _widest(far) / _widest(near)
-	check(ratio > 1.5 and ratio < 2.5,
-		"twice the distance must be about twice the width in metres - a constant pen " +
-		"weight on screen. Got a ratio of %f" % ratio)
-
-func test_streak_pen_weight_is_clamped_in_close() -> void:
-	# ...but a pen weight is a fixed ANGULAR size, so without the ceiling a camera sitting on
-	# top of the bundle resolves 3 px into a slab and undoes the whole effect.
-	var points := _streak_path()
-	var close := CONTROLLER._streak_bundle(points, Vector3(0, 0.5, 0.2), 75.0, 1080.0,
-		STREAK_CFG, 12345, 0)
-	check(_widest(close) <= STREAK_CFG["max_width"] + 0.0001,
-		"no line may draw wider than streak_max_width however close the camera gets")
-
-func _widest(bundle: Array) -> float:
-	var widest := 0.0
-	for line in bundle:
-		var verts: PackedVector3Array = line["verts"]
-		for i in range(0, verts.size(), 2):
-			widest = maxf(widest, verts[i].distance_to(verts[i + 1]))
-	return widest
-
-func test_streak_lines_converge_toward_the_head_and_splay_at_the_tail() -> void:
-	# "Coming out of him", stated as geometry: the bundle is wide where it is oldest and
-	# pinched where it meets his chest. Measured as the spread of the lines' centrelines.
-	var bundle := _bundle(_streak_path())
-	check(_spread_at(bundle, true) > _spread_at(bundle, false) * 1.5,
-		"the bundle must be markedly wider at the tail than where it meets him")
-	check(_spread_at(bundle, false) > 0.0,
-		"converge is 0.25, not 0 - the lines must stay a short segment apart at the head " +
-		"rather than merging to a point")
-
-# Greatest distance between any two lines' centres, at the tail end or the head end.
-func _spread_at(bundle: Array, at_tail: bool) -> float:
-	var centres: Array[Vector3] = []
-	for line in bundle:
-		var verts: PackedVector3Array = line["verts"]
-		var i := 0 if at_tail else verts.size() - 2
-		centres.append((verts[i] + verts[i + 1]) * 0.5)
-	var widest := 0.0
-	for a in centres:
-		for b in centres:
-			widest = maxf(widest, a.distance_to(b))
-	return widest
-
-func test_streak_bundle_is_centred_on_his_chest_not_his_feet() -> void:
-	# _dash_points samples global_position, which is his FEET - the collision capsule sits
-	# 0.978 m above it. Without streak_anchor_height the lines converge at his ankles.
-	var bundle := _bundle(_streak_path())
-	var lowest := INF
-	for line in bundle:
-		var verts: PackedVector3Array = line["verts"]
-		for v in verts:
-			lowest = minf(lowest, v.y)
-	check(lowest > 0.1,
-		"the path runs along y=0, his feet - no part of the bundle should be down there")
-
-func test_streak_lines_end_ragged_rather_than_all_on_one_line() -> void:
-	var lengths := {}
-	for line in _bundle(_streak_path()):
-		lengths[line["verts"].size()] = true
-	check(lengths.size() > 1,
-		"lines are handed lengths spread across [length_min, 1.0] - if they all came out " +
-		"the same the bundle's tail is square and it reads as a comb")
-
-func test_streak_lines_carry_a_spread_of_pen_weights() -> void:
-	var widths: Array[float] = []
-	for line in _bundle(_streak_path()):
-		var verts: PackedVector3Array = line["verts"]
-		var widest := 0.0
-		for i in range(0, verts.size(), 2):
-			widest = maxf(widest, verts[i].distance_to(verts[i + 1]))
-		widths.append(widest)
-	widths.sort()
-	check(widths[widths.size() - 1] > widths[0] * 1.5,
-		"weights are spread across [weight_min_px, weight_max_px] - seven identical " +
-		"strokes is the comb this replaced")
-
-func test_streak_fade_floors_run_thinnest_first() -> void:
-	# The staggered fade: light strokes give up the most of the fade and wink out first, so
-	# the last things on screen are the heaviest lines and the silhouette holds to the end.
-	var floors_by_width := {}
-	for line in _bundle(_streak_path()):
-		var verts: PackedVector3Array = line["verts"]
-		var widest := 0.0
-		for i in range(0, verts.size(), 2):
-			widest = maxf(widest, verts[i].distance_to(verts[i + 1]))
-		floors_by_width[widest] = line["fade_floor"]
-		check(line["fade_floor"] >= 0.0 and line["fade_floor"] < 1.0,
-			"a fade floor at or past 1.0 would make a line invisible from the first frame")
-	var widths := floors_by_width.keys()
-	widths.sort()
-	check(floors_by_width[widths[0]] > floors_by_width[widths[widths.size() - 1]],
-		"the thinnest line must give up more of the fade than the heaviest")
-
-func test_streak_bundle_is_stable_for_a_seed_and_differs_between_seeds() -> void:
-	# Both halves matter. Stable, or the bundle boils on every physics frame whether the boil
-	# is on or not; different, or every dash in a session draws the identical seven strokes.
-	var points := _streak_path()
-	var a := _bundle(points, STREAK_CFG, 111)
-	var b := _bundle(points, STREAK_CFG, 111)
-	for i in range(a.size()):
-		check(a[i]["verts"] == b[i]["verts"], "the same seed must rebuild the same bundle")
-	var c := _bundle(points, STREAK_CFG, 222)
-	var differs := false
-	for i in range(a.size()):
-		if a[i]["verts"] != c[i]["verts"]:
-			differs = true
-	check(differs, "a different dash must draw a different bundle")
-
-func test_streak_boil_moves_the_lines_only_when_it_is_on() -> void:
-	var points := _streak_path()
-	var off_0 := _bundle(points, STREAK_CFG, 111, 0)
-	var off_3 := _bundle(points, STREAK_CFG, 111, 3)
-	for i in range(off_0.size()):
-		check(off_0[i]["verts"] == off_3[i]["verts"],
-			"with boil_amount 0 the boil frame must have no effect at all")
-	var boiling: Dictionary = STREAK_CFG.duplicate()
-	boiling["boil_amount"] = 0.08
-	var on_0 := _bundle(points, boiling, 111, 0)
-	var on_3 := _bundle(points, boiling, 111, 3)
-	var differs := false
-	for i in range(on_0.size()):
-		if on_0[i]["verts"] != on_3[i]["verts"]:
-			differs = true
-	check(differs, "with the boil on, a new boil frame must move the offsets")
-
-func test_streak_survives_a_dash_that_never_moved() -> void:
-	# A dash blocked on frame two: two samples, both at the same place, so every tangent is
-	# degenerate. Must build something or nothing, but must not error.
-	var stuck := PackedVector3Array([Vector3.ZERO, Vector3.ZERO, Vector3.ZERO])
-	var bundle := _bundle(stuck)
-	check(bundle is Array, "a dash that never moved must not error the geometry")
-
-func test_streak_single_line_bundle_is_legal() -> void:
-	# streak_line_count is exported down to 1, which is the old single ribbon back, near
-	# enough - it has to build rather than divide by a zero span.
-	var one: Dictionary = STREAK_CFG.duplicate()
-	one["count"] = 1
-	var bundle := _bundle(_streak_path(), one)
-	eq(bundle.size(), 1, "a one-line bundle must build exactly one line")
+func test_clear_holds_then_goes_tail_to_head() -> void:
+	var n := 6
+	for i in n:
+		approx(AFTERIMAGE.fade_at(i, n, 0.0, 0.35, 0.12), 1.0, 0.0001,
+			"every ghost is fully solid the moment the dash ends")
+		approx(AFTERIMAGE.fade_at(i, n, 0.35, 0.35, 0.12), 0.0, 0.0001,
+			"every ghost is gone at afterimage_clear_time")
+	var mid := 0.15
+	check(AFTERIMAGE.fade_at(0, n, mid, 0.35, 0.12) < AFTERIMAGE.fade_at(n - 1, n, mid, 0.35, 0.12),
+		"the oldest ghost must be further gone than the newest - tail to head")
+	check(AFTERIMAGE.fade_at(n - 1, n, 0.34, 0.35, 0.12) > 0.0,
+		"the newest must last until the clear time, not vanish early")
+	approx(AFTERIMAGE.fade_at(0, 1, 0.12, 0.35, 0.12), 0.0, 0.0001,
+		"a lone ghost fades over one fade_time")
 
 # --- the camera catch-up -----------------------------------------------------------
 #
@@ -444,8 +390,7 @@ func test_streak_single_line_bundle_is_legal() -> void:
 # a dash and gliding back on by the time `camera_dash_lag_delay + camera_dash_lag_time` is up -
 # see docs/specs/pilot9-dash.md, Camera. The flag that turns it on and off
 # (_camera_dash_lag_active), the elapsed-time clock, and the weld itself all live in _process(),
-# a drawn-frame callback a --script run never ticks - same wall the vanish and the streak's
-# appearance hit. This is the one piece of it that is a pure function, so it is the one piece
+# a drawn-frame callback a --script run never ticks - same wall the afterimages' look hits. This is the one piece of it that is a pure function, so it is the one piece
 # asserted.
 #
 # The property that actually matters is the one 5d65b07-style feedback loop would silently
