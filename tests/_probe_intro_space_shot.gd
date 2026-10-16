@@ -27,9 +27,10 @@ func _process(_delta: float) -> bool:
 	var ap: AnimationPlayer = current_scene.get_node("AnimationPlayer")
 	if _i >= _times.size():
 		return true
-	if _wait == 0:
-		ap.pause()
-		ap.seek(_times[_i], true)
+	# Re-seek every waiting frame: negative times are inside the opening pan, whose clock runs on
+	# in the shot's _process rather than on the (paused) animation.
+	current_scene.call(&"seek_shot", _times[_i])
+	ap.pause()
 	_wait += 1
 	if _wait < 4:
 		return false

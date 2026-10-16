@@ -1,9 +1,10 @@
 class_name FlyoverShot
 extends Node3D
 
-# Cutscene shot 4: the ship flying over Ichi about 1000 ft up in the blizzard, seen from a chase
-# camera tight behind its main engine. The building crawls left and down below; near the end the
-# ship starts to bank left and the shot cuts mid-bank. See docs/specs/cutscene-flyover.md.
+# Cutscene shot 4: the ship flying about 1500 ft up over the dead city in the storm, under the
+# cloud deck it just broke out of, seen from a chase camera tight behind its main engine. A gutted
+# skeleton high-rise crawls left and down below, lightning rims it once; near the end the ship
+# starts to bank left and the shot cuts mid-bank. See docs/specs/cutscene-flyover.md.
 #
 # Everything is a function of the shot time (flight line, float, bank, camera sway, trails), so
 # seeking shows the same frame. Plays once on load and holds the last frame. R restarts, Esc quits.
@@ -12,11 +13,13 @@ extends Node3D
 signal finished
 
 const SHOT := &"shot"
-const LIP_COLUMNS := 128
-const SOLID_CELL := 4.0
-const EDGE_SORT_DEPTH := 100.0
-const EDGE_SHADER := preload("res://shaders/cutscene/flyover_edge.gdshader")
 const SHIMMER_SHADER := preload("res://shaders/cutscene/heat_shimmer.gdshader")
+const MIST_SHADER := preload("res://shaders/cutscene/ground_mist.gdshader")
+const HALO_SHADER := preload("res://shaders/cutscene/nozzle_halo.gdshader")
+const DOT_SHADER := preload("res://shaders/cutscene/dot_sparks.gdshader")
+## The mist pass is kept this far ahead of the camera, so within priority 0 it sorts after the
+## crease ink (sorted at the city's far-off centre) and covers it.
+const MIST_SORT_DEPTH := 100.0
 const SHIMMER_SIDES := 20
 const SHIMMER_RINGS := 10
 
@@ -67,6 +70,12 @@ const SHIMMER_RINGS := 10
 ## Glow disc size (m across) for the main engine and the pods.
 @export var main_glow_size := 1.7
 @export var pod_glow_size := 1.1
+## Bloom halo on the main engine (docs/specs/cutscene-flyover.md, "Nozzle propulsion"): size
+## (m across), centre brightness (HDR) and flicker (fraction of size + brightness). The dot
+## sparks' own knobs are on the DotSparks node (FlyoverDotSparks).
+@export var halo_size := 5.0
+@export var halo_energy := 1.2
+@export_range(0.0, 0.5, 0.01) var halo_flicker := 0.08
 ## Heat shimmer cone behind each nozzle (docs/specs/cutscene-flyover.md, "Speed lines + engine
 ## heat"): length (m) behind the main engine and the pods, how much wider than the nozzle it ends,
 ## and its peak nudge as a fraction of the screen (the pods get `pod_shimmer` of it). Off since
@@ -79,19 +88,54 @@ const SHIMMER_RINGS := 10
 @export_range(0.0, 1.0, 0.05) var pod_shimmer := 0.5
 
 @export_group("Ground")
-## OP_1 ends ~270 m out; from this high its edges would show. Past them the ground is painted, not
-## built: the sky draws a flat snow plane at `ground_y` below the horizon (shaders/cutscene/
-## flyover_sky.gdshader), and the map's outer `edge_band` metres fade into the same paint, fully
-## within `edge_solid` metres of its edge (deeper than the ragged edge's notches), so no edge is
-## ever seen. The edge is the outer rectangle on west, east and south; on the north it is the
-## canyon's lip (the canyon falls away out of sight), found from the mesh at load. `ground_color` is the snow before fog; `mottle` lightens/darkens soft
-## patches about `mottle_size` metres across.
+## The ground is painted, not built: the sky draws a flat snow plane at `ground_y` below the horizon
+## (shaders/cutscene/flyover_sky.gdshader), with the city's buried streets on the hero's grid.
+## `ground_color` is the snow before fog; `mottle` lightens/darkens soft patches about
+## `mottle_size` metres across. Streets (block size and width are the city's, FlyoverCity): how
+## much darker, and the radius they die out by (the packed city's).
 @export var ground_y := 0.0
-@export var ground_color := Color(0.325, 0.35, 0.415)
+@export var ground_color := Color(0.3, 0.31, 0.37)
 @export_range(0.0, 0.3, 0.005) var mottle := 0.04
 @export var mottle_size := 120.0
-@export var edge_band := 80.0
-@export var edge_solid := 25.0
+@export_range(0.0, 1.0, 0.01) var street_dark := 0.12
+@export var street_radius := 1500.0
+
+@export_group("Lightning")
+## The main strike: a double flicker starting at `flash_time`, the second hit `flash_gap` later at
+## `flash_second` of the first, each dying with time constant `flash_decay`. Then a faint far
+## flicker at `far_flash_time`, `far_flash` strong.
+@export var flash_time := 1.2
+@export var flash_gap := 0.12
+@export_range(0.0, 1.0, 0.05) var flash_second := 0.8
+@export var flash_decay := 0.09
+@export var far_flash_time := 2.6
+@export_range(0.0, 1.0, 0.05) var far_flash := 0.25
+## FlashLight energy at a full flash, and how far the fog lifts toward `flash_color`.
+## Which way the flash light travels (world): from the far side of the hero toward the camera, so
+## it catches the edges of the slabs.
+@export var flash_direction := Vector3(-0.45, -0.45, -0.77)
+@export var flash_light_energy := 1.2
+@export_range(0.0, 1.0, 0.05) var flash_fog := 0.12
+@export var flash_color := Color(0.55, 0.9, 1.0)
+
+@export_group("Hull rim")
+## The ship's cool-teal fresnel rim (alpha = strength), and its strength at a full flash.
+@export var rim_color := Color(0.42, 0.66, 0.7, 0.3)
+@export_range(0.0, 1.0, 0.05) var rim_flash_strength := 0.6
+
+@export_group("Ground mist")
+## A low layer on the snow hiding where the ruins meet the ground (shaders/cutscene/
+## ground_mist.gdshader): `mist_density` at the snow, gone by `mist_height` m (its top wobbling
+## `mist_top_wobble` m), in patches `mist_patch_size` m across that thin it by `mist_breakup`,
+## drifting `mist_drift` m/s (world xz, downwind).
+@export var mist_on := true
+@export var mist_height := 25.0
+@export_range(0.0, 1.0, 0.05) var mist_density := 0.6
+@export var mist_color := Color(0.5, 0.54, 0.6)
+@export var mist_patch_size := 180.0
+@export_range(0.0, 1.0, 0.05) var mist_breakup := 0.5
+@export var mist_top_wobble := 15.0
+@export var mist_drift := Vector2(0.0, -6.0)
 
 @onready var animation_player: AnimationPlayer = $AnimationPlayer
 @onready var camera: Camera3D = $Camera3D
@@ -99,10 +143,19 @@ const SHIMMER_RINGS := 10
 @onready var trail: IntroSpaceTrail = $EngineTrails
 @onready var storm: Storm = $Storm
 @onready var embers: FlyoverEmbers = $EngineEmbers
+@onready var city: FlyoverCity = $City
+@onready var flash_light: DirectionalLight3D = $FlashLight
 
 var _done := false
-var _edge: MeshInstance3D
 var _shimmers: Array[ShaderMaterial] = []
+var _sky: ShaderMaterial
+## The ship's cel materials (the applier's per-slot copies), for the rim.
+var _hull: Array[ShaderMaterial] = []
+var _mist: MeshInstance3D
+var _mist_material: ShaderMaterial
+var _halo_material: ShaderMaterial
+## Dot sparks around the engines, built in _ready.
+var dots: FlyoverDotSparks
 
 
 func _ready() -> void:
@@ -112,7 +165,11 @@ func _ready() -> void:
 	_build_shimmer()
 	embers.nozzles = trail.nozzles
 	embers.air = Vector3(storm.wind_direction.x, 0.0, storm.wind_direction.y).normalized() * storm.wind_speed
+	_build_dots()
 	_build_ground()
+	_collect_hull()
+	_build_mist()
+	flash_light.basis = Basis.looking_at(flash_direction)
 	animation_player.animation_finished.connect(_on_animation_finished)
 	if autoplay:
 		restart()
@@ -137,18 +194,53 @@ func _process(_delta: float) -> void:
 	apply(t)
 
 
-## Shows shot time `t`: ship, camera, trails, embers, shimmer.
+## Shows shot time `t`: ship, camera, trails, embers, dot sparks, halo flicker, shimmer.
 func apply(t: float) -> void:
 	ship.global_transform = ship_at(t)
 	camera.global_transform = camera_at(t)
-	if _edge != null:
-		_edge.global_position = camera.global_position - camera.global_basis.z * EDGE_SORT_DEPTH
+	if _mist != null:
+		_mist.global_position = camera.global_position - camera.global_basis.z * MIST_SORT_DEPTH
+		_mist_material.set_shader_parameter(&"shot_time", t)
+	_apply_flash(flash_at(t))
 	# From a full trail life before the shot: it opens with the trails already streaming.
 	trail.update_trail(t, t - trail.life, ship_at, func(_tau: float) -> float: return 0.0,
 			camera.global_position)
 	embers.update_embers(t, ship_at, camera.global_position, flight_at(t).basis.z * speed)
+	dots.update_dots(t, ship.global_transform, camera.global_basis)
+	_halo_material.set_shader_parameter(&"shot_time", t)
 	for m in _shimmers:
 		m.set_shader_parameter(&"shot_time", t)
+
+
+## Lightning at shot time `t`, 0..1: the main double flicker, then the far one.
+func flash_at(t: float) -> float:
+	var f := _pulse(t, flash_time, 1.0)
+	f = maxf(f, _pulse(t, flash_time + flash_gap, flash_second))
+	return maxf(f, _pulse(t, far_flash_time, far_flash))
+
+
+# A hit at `at`: up in 0.02 s, then dying away.
+func _pulse(t: float, at: float, peak: float) -> float:
+	var u := t - at
+	if u < 0.0:
+		return 0.0
+	return peak * minf(u / 0.02, 1.0) * exp(-maxf(u - 0.02, 0.0) / flash_decay)
+
+
+func _apply_flash(f: float) -> void:
+	flash_light.visible = f > 0.001
+	flash_light.light_energy = flash_light_energy * f
+	if _sky != null:
+		_sky.set_shader_parameter(&"flash", f)
+	if _mist_material != null:
+		_mist_material.set_shader_parameter(&"flash", f)
+	# The storm fog is globals (Storm.apply): lift them toward the flash colour, and back.
+	RenderingServer.global_shader_parameter_set(&"storm_near_color", storm.near_color.lerp(flash_color, flash_fog * f))
+	RenderingServer.global_shader_parameter_set(&"storm_far_color", storm.far_color.lerp(flash_color, flash_fog * f))
+	var rim := rim_color.lerp(flash_color, f)
+	rim.a = lerpf(rim_color.a, rim_flash_strength, f)
+	for m in _hull:
+		m.set_shader_parameter(&"fresnel", rim)
 
 
 ## The straight, level flight line at shot time `t` (negative t too). +Z is the nose.
@@ -214,6 +306,31 @@ func _place_glows() -> void:
 		# QuadMesh faces +Z; turn it to face -Z (out of the nozzle, toward the camera).
 		g.transform = Transform3D(Basis(Vector3.UP, PI).scaled(Vector3.ONE * size), trail.nozzles[i])
 	($Ship/EngineLight as Node3D).position = trail.nozzles[0] + Vector3(0.0, 0.0, -1.5)
+	# The halo: a unit quad scaled to its size; the shader turns it to the camera and flickers it.
+	_halo_material = ShaderMaterial.new()
+	_halo_material.shader = HALO_SHADER
+	_halo_material.render_priority = 3
+	_halo_material.set_shader_parameter(&"energy", halo_energy)
+	_halo_material.set_shader_parameter(&"flicker", halo_flicker)
+	var halo := MeshInstance3D.new()
+	halo.name = "MainHalo"
+	halo.mesh = QuadMesh.new()
+	halo.material_override = _halo_material
+	halo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	halo.transform = Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * halo_size), trail.nozzles[0])
+	ship.add_child(halo)
+
+
+# The dot sparks: world-space mesh rebuilt each frame (FlyoverDotSparks), drawn last.
+func _build_dots() -> void:
+	dots = FlyoverDotSparks.new()
+	dots.name = "DotSparks"
+	var mat := ShaderMaterial.new()
+	mat.shader = DOT_SHADER
+	mat.render_priority = 6
+	dots.material_override = mat
+	dots.nozzles = trail.nozzles
+	add_child(dots)
 
 
 # A heat shimmer cone behind each nozzle, on the ship so it banks and floats with it. Main first.
@@ -271,115 +388,65 @@ func _shimmer_cone(r0: float, r1: float, length: float) -> ArrayMesh:
 	return m
 
 
-# The painted ground past the map: the sky's ground plane and the edge fade quad. See the Ground
+# The painted ground: the sky's snow plane, with the streets on the hero's grid. See the Ground
 # exports.
 func _build_ground() -> void:
-	var terrain: MeshInstance3D = $OP_1.find_children("Plane", "MeshInstance3D", true, false)[0]
-	var box := terrain.global_transform * terrain.get_aabb()
-	var sky_mat := ($WorldEnvironment as WorldEnvironment).environment.sky.sky_material as ShaderMaterial
-	var edge_mat := ShaderMaterial.new()
-	edge_mat.shader = EDGE_SHADER
-	edge_mat.set_shader_parameter(&"map_rect", Vector4(box.position.x, box.position.z, box.end.x, box.end.z))
-	edge_mat.set_shader_parameter(&"lip_tex", _lip_texture(terrain, box))
-	edge_mat.set_shader_parameter(&"building_tex", _building_texture(box))
-	edge_mat.set_shader_parameter(&"edge_solid", edge_solid)
-	edge_mat.set_shader_parameter(&"edge_band", edge_band)
-	for m: ShaderMaterial in [sky_mat, edge_mat]:
-		m.set_shader_parameter(&"ground_y", ground_y)
-		m.set_shader_parameter(&"ground_color", ground_color)
-		m.set_shader_parameter(&"mottle", mottle)
-		m.set_shader_parameter(&"mottle_size", mottle_size)
-	var quad := QuadMesh.new()
-	quad.size = Vector2(2.0, 2.0)
-	# Full-screen quad: never culled wherever the camera is.
-	quad.custom_aabb = AABB(Vector3.ONE * -1e6, Vector3.ONE * 2e6)
-	var mi := MeshInstance3D.new()
-	mi.name = "GroundEdge"
-	mi.mesh = quad
-	mi.material_override = edge_mat
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	# Draw order (transparent): heat shimmer (-101), storm fog (-100), crease ink and this quad (0),
-	# snow (1), trails (2), nozzle glows (3), embers (4; those three set in the scene). Within 0 it sorts by its origin, which
-	# apply() keeps EDGE_SORT_DEPTH ahead of the camera: after the map's crease ink (sorted at the
-	# map's far-off centre), so it covers it.
-	mi.sorting_use_aabb_center = false
-	add_child(mi)
-	_edge = mi
+	_sky = ($WorldEnvironment as WorldEnvironment).environment.sky.sky_material as ShaderMaterial
+	_sky.set_shader_parameter(&"ground_y", ground_y)
+	_sky.set_shader_parameter(&"ground_color", ground_color)
+	_sky.set_shader_parameter(&"mottle", mottle)
+	_sky.set_shader_parameter(&"mottle_size", mottle_size)
+	_sky.set_shader_parameter(&"street_origin", Vector2(city.hero_at.x, city.hero_at.z))
+	_sky.set_shader_parameter(&"street_angle", deg_to_rad(city.grid_degrees))
+	_sky.set_shader_parameter(&"street_block", city.street_block)
+	_sky.set_shader_parameter(&"street_width", city.street_width)
+	_sky.set_shader_parameter(&"street_dark", street_dark)
+	_sky.set_shader_parameter(&"street_radius", street_radius)
+	_sky.set_shader_parameter(&"flash_color", flash_color)
+	# Draw order (transparent): heat shimmer (-101), storm fog (-100), crease ink then ground mist
+	# (0), snow (1), trails (2), main halo (3), nozzle glows (4), embers (5; trails, glows and
+	# embers set in the scene), dot sparks (6).
 	for n in storm.get_children():
 		var snow := n as GeometryInstance3D
 		if snow != null and snow.material_override != storm.fog_material:
 			snow.material_override.render_priority = 1
 
 
-# The canyon lip's world z across the map's x range, one texel per `LIP_COLUMNS`th: the furthest
-# north the terrain stays within 4 m of `ground_y` in each column. An empty column takes its
-# neighbour's.
-func _lip_texture(terrain: MeshInstance3D, box: AABB) -> ImageTexture:
-	var lip := PackedFloat32Array()
-	lip.resize(LIP_COLUMNS)
-	lip.fill(-INF)
-	var xf := terrain.global_transform
-	for si in terrain.mesh.get_surface_count():
-		for v: Vector3 in terrain.mesh.surface_get_arrays(si)[Mesh.ARRAY_VERTEX]:
-			var p := xf * v
-			if p.y < ground_y - 4.0:
-				continue
-			var c := clampi(int((p.x - box.position.x) / box.size.x * LIP_COLUMNS), 0, LIP_COLUMNS - 1)
-			lip[c] = maxf(lip[c], p.z)
-	for c in range(1, LIP_COLUMNS):
-		if lip[c] == -INF:
-			lip[c] = lip[c - 1]
-	for c in range(LIP_COLUMNS - 2, -1, -1):
-		if lip[c] == -INF:
-			lip[c] = lip[c + 1]
-	var img := Image.create(LIP_COLUMNS, 1, false, Image.FORMAT_RF)
-	for c in LIP_COLUMNS:
-		img.set_pixel(c, 0, Color(lip[c], 0.0, 0.0))
-	return ImageTexture.create_from_image(img)
+# The ground mist: a full-screen pass. See the Ground mist exports.
+func _build_mist() -> void:
+	if not mist_on:
+		return
+	_mist_material = ShaderMaterial.new()
+	_mist_material.shader = MIST_SHADER
+	_mist_material.set_shader_parameter(&"ground_y", ground_y)
+	_mist_material.set_shader_parameter(&"height", mist_height)
+	_mist_material.set_shader_parameter(&"density", mist_density)
+	_mist_material.set_shader_parameter(&"color", mist_color)
+	_mist_material.set_shader_parameter(&"patch_size", mist_patch_size)
+	_mist_material.set_shader_parameter(&"breakup", mist_breakup)
+	_mist_material.set_shader_parameter(&"top_wobble", mist_top_wobble)
+	_mist_material.set_shader_parameter(&"drift", mist_drift)
+	_mist_material.set_shader_parameter(&"flash_color", flash_color)
+	var quad := QuadMesh.new()
+	quad.size = Vector2(2.0, 2.0)
+	# Full-screen quad: never culled wherever the camera is.
+	quad.custom_aabb = AABB(Vector3.ONE * -1e6, Vector3.ONE * 2e6)
+	_mist = MeshInstance3D.new()
+	_mist.name = "GroundMist"
+	_mist.mesh = quad
+	_mist.material_override = _mist_material
+	_mist.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_mist.sorting_use_aabb_center = false
+	add_child(_mist)
 
 
-# The building's height span per SOLID_CELL-metre cell over the map's box (r = lowest, g = highest
-# point of any of its triangles whose x/z bounds touch the cell, grown one cell each way), so the
-# edge pass leaves it alone. Cells it does not touch hold an empty span.
-func _building_texture(box: AABB) -> ImageTexture:
-	var w := int(ceil(box.size.x / SOLID_CELL))
-	var h := int(ceil(box.size.z / SOLID_CELL))
-	var lo := PackedFloat32Array()
-	var hi := PackedFloat32Array()
-	lo.resize(w * h)
-	hi.resize(w * h)
-	lo.fill(INF)
-	hi.fill(-INF)
-	var cell := func(v: float, origin: float, n: int) -> int:
-		return clampi(int((v - origin) / SOLID_CELL), 0, n - 1)
-	for mi: MeshInstance3D in $OP_1.find_children("*", "MeshInstance3D", true, false):
-		if mi.name == "Plane":
-			continue
-		var xf := mi.global_transform
-		for si in mi.mesh.get_surface_count():
-			var arrays := mi.mesh.surface_get_arrays(si)
-			var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-			var idx: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
-			if idx.is_empty():
-				idx = PackedInt32Array(range(verts.size()))
-			for t in range(0, idx.size(), 3):
-				var a := xf * verts[idx[t]]
-				var b := xf * verts[idx[t + 1]]
-				var c := xf * verts[idx[t + 2]]
-				var x0: int = cell.call(minf(a.x, minf(b.x, c.x)), box.position.x, w) - 1
-				var x1: int = cell.call(maxf(a.x, maxf(b.x, c.x)), box.position.x, w) + 1
-				var z0: int = cell.call(minf(a.z, minf(b.z, c.z)), box.position.z, h) - 1
-				var z1: int = cell.call(maxf(a.z, maxf(b.z, c.z)), box.position.z, h) + 1
-				for cz in range(maxi(z0, 0), mini(z1, h - 1) + 1):
-					for cx in range(maxi(x0, 0), mini(x1, w - 1) + 1):
-						var i := cz * w + cx
-						lo[i] = minf(lo[i], minf(a.y, minf(b.y, c.y)))
-						hi[i] = maxf(hi[i], maxf(a.y, maxf(b.y, c.y)))
-	var img := Image.create(w, h, false, Image.FORMAT_RGF)
-	for i in w * h:
-		@warning_ignore("integer_division")
-		img.set_pixel(i % w, i / w, Color(1e9, -1e9, 0.0) if lo[i] == INF else Color(lo[i], hi[i], 0.0))
-	return ImageTexture.create_from_image(img)
+# The ship's cel materials as ApplyCelShip left them (it is ready first: an earlier child).
+func _collect_hull() -> void:
+	for mi: MeshInstance3D in $Ship/Model.find_children("*", "MeshInstance3D", true, false):
+		for i in mi.get_surface_override_material_count():
+			var m := mi.get_surface_override_material(i) as ShaderMaterial
+			if m != null and not _hull.has(m):
+				_hull.append(m)
 
 
 func _on_animation_finished(anim: StringName) -> void:

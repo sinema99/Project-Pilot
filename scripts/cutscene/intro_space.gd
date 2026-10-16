@@ -8,6 +8,10 @@ extends Node3D
 # Effects pass (spec "Effects pass"): engine trails, storm turn + lightning, re-entry heat, hull
 # glint. Every one is a function of the shot time too, so seeking shows the same frame.
 #
+# Opening pan (spec "Opening pan"): before the animation plays, the camera fades up from black on
+# empty space and tilts down onto Earth. The shot time is negative through it; the animation waits
+# at 0, the ambient motion carries on, and every timed beat starts at 0 as before.
+#
 # Plays once on load and holds the last frame. R restarts, Esc quits.
 
 ## Emitted when the shot reaches its last frame. Later shots chain off this.
@@ -16,6 +20,22 @@ signal finished
 const SHOT := &"shot"
 
 @export var autoplay := true
+
+@export_group("Opening pan")
+## Off: the shot starts straight on its old frame 0.
+@export var pan_on := true
+## Seconds held on stars (while fading up from black) before the tilt starts.
+@export var pan_hold := 1.0
+## Seconds the tilt down onto Earth takes, eased in and out. 4 -> 12 s 2026-10-16 (user: way slower).
+@export var pan_tilt := 12.0
+## How far up the camera starts, degrees. ~59 is the first angle with no Earth or halo in frame.
+@export var pan_start_degrees := 65.0
+## Seconds the fade up from black takes, from the very first frame.
+@export var pan_fade := 1.0
+## Seconds of the shot that run under the end of the tilt: the shot starts this long before the
+## pan settles, so the title and flyby keep their rhythm after the slower pan (2026-10-16, user:
+## "the ship fly in is way too delayed"). The pan lands at shot time pan_overlap.
+@export var pan_overlap := 2.5
 
 @export_group("Flyby rumble")
 ## Peak camera shake, degrees of rotation (pitch / yaw; roll gets half).
@@ -87,11 +107,15 @@ const SHOT := &"shot"
 @onready var _glint_star: MeshInstance3D = $GlintStar
 @onready var _heat_glow: MeshInstance3D = $CameraRig/ShipPath/ShipFollow/HeatGlow
 @onready var _title_card: IntroTitleCard = $TitleCard
+@onready var _sky: ShaderMaterial = ($WorldEnvironment as WorldEnvironment).environment.sky.sky_material
 
 var lightning := IntroSpaceLightning.new()
 # A second follower on the ship path, moved to past times to find where the nozzles were.
 var _probe_follow := PathFollow3D.new()
 var _ship_start := 7.0
+# The shot clock while the opening pan runs (negative, up to 0); the animation takes over at 0.
+var _pan_clock := 0.0
+var _fade := ColorRect.new()
 
 
 func _ready() -> void:
@@ -111,6 +135,14 @@ func _ready() -> void:
 			lightning_ramp_end, lightning_last, storm_radius_degrees,
 			lightning_chain_chance, band_spin_rate)
 	lightning.add_sting(sting_time, Vector2.ZERO, sting_radius_degrees, sting_brightness)
+	var fade_layer := CanvasLayer.new()
+	fade_layer.layer = 11  # over the title card
+	add_child(fade_layer)
+	_fade.color = Color.BLACK
+	_fade.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fade_layer.add_child(_fade)
+	_fade.visible = false
 	if ship_fx_material:
 		for mi in _ship.find_children("*", "MeshInstance3D", true, false):
 			(mi as MeshInstance3D).material_overlay = ship_fx_material
@@ -118,38 +150,86 @@ func _ready() -> void:
 		restart()
 
 
-## Plays the shot from its first frame.
+## Plays the shot from its first frame: the opening pan, if it is on.
 func restart() -> void:
+	seek_shot(-pan_length() if pan_on else 0.0)
+
+
+## Seconds of opening pan before the animation's frame 0 (hold + tilt, less the overlap).
+func pan_length() -> float:
+	return pan_hold + pan_tilt - pan_overlap
+
+
+## Jumps to shot time `t` and plays on from there. Negative `t` is inside the opening pan: the
+## animation waits on its frame 0 until the clock reaches it.
+func seek_shot(t: float) -> void:
+	_pan_clock = minf(t, 0.0)
 	animation_player.stop()
 	animation_player.play(SHOT)
-	animation_player.seek(0.0, true)
+	animation_player.seek(maxf(t, 0.0), true)
+	if t < 0.0:
+		animation_player.pause()
 
 
-func _process(_delta: float) -> void:
-	var t := animation_player.current_animation_position
-	camera.rotation = shake_at(t)
-	_title_card.update_card(t, shake_on_screen(camera.rotation))
+## The shot time now: negative during the opening pan, else the animation's playhead.
+func shot_time() -> float:
+	return _pan_clock if _pan_clock < 0.0 else animation_player.current_animation_position
+
+
+## Camera pitch (radians, up) from the opening pan at shot time `t`: held at the start angle,
+## then eased down to 0, which it reaches exactly at t = pan_overlap.
+func pan_pitch_at(t: float) -> float:
+	if not pan_on or t >= pan_overlap:
+		return 0.0
+	return deg_to_rad(pan_start_degrees) * (1.0 - smoothstep(pan_overlap - pan_tilt, pan_overlap, t))
+
+
+## Black cover opacity at shot time `t`: 1 on the first frame, gone after pan_fade.
+func fade_at(t: float) -> float:
+	if pan_fade <= 0.0:
+		return 0.0
+	return 1.0 - smoothstep(-pan_length(), -pan_length() + pan_fade, t)
+
+
+func _process(delta: float) -> void:
+	if _pan_clock < 0.0:
+		_pan_clock += delta
+		if _pan_clock >= 0.0:
+			# Hand off to the animation, carrying the overshoot so no time is lost.
+			var over := _pan_clock
+			_pan_clock = 0.0
+			animation_player.play(SHOT)
+			animation_player.seek(over, true)
+	var t := shot_time()
+	var shake := shake_at(t)
+	camera.rotation = Vector3(pan_pitch_at(t), 0.0, 0.0) + shake
+	var fade := fade_at(t)
+	_fade.visible = fade > 0.0
+	_fade.color.a = fade
+	_title_card.update_card(t, shake_on_screen(shake))
 	var drift := cloud_drift_at(t)
 	var spin := storm_spin_at(t)
 	for m: ShaderMaterial in [_surface, _clouds]:
 		m.set_shader_parameter(&"cloud_drift", drift)
 		m.set_shader_parameter(&"storm_spin_wall", spin.x)
 		m.set_shader_parameter(&"storm_spin_band", spin.y)
+	_sky.set_shader_parameter(&"twinkle_time", t)
 	_update_lightning(t)
 	_trail.update_trail(t, _ship_start, ship_model_at, heat_at, camera.global_position)
 	_update_ship_fx(t)
 
 
 ## Cloud drift (degrees east) at shot time `t`: steady over the shot, so seeking shows the same sky.
+## Runs on back into the opening pan (negative `t`), so the clouds are already moving.
 func cloud_drift_at(t: float) -> float:
 	var length := animation_player.get_animation(SHOT).length
-	return cloud_drift_degrees * clampf(t / length, 0.0, 1.0)
+	return cloud_drift_degrees * minf(t / length, 1.0)
 
 
 ## Storm turn (degrees, counter-clockwise from above) at shot time `t`: x = eyewall, y = inner
-## rain bands. Steady, so seeking shows the same storm.
+## rain bands. Steady, so seeking shows the same storm; turning through the opening pan too.
 func storm_spin_at(t: float) -> Vector2:
-	return Vector2(wall_spin_rate, band_spin_rate) * maxf(t, 0.0)
+	return Vector2(wall_spin_rate, band_spin_rate) * t
 
 
 ## Re-entry heat 0..1 at shot time `t`.

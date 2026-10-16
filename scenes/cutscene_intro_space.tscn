@@ -15,18 +15,21 @@
 [ext_resource type="Shader" path="res://shaders/space/bow_shock.gdshader" id="13_bow_shock"]
 [ext_resource type="Shader" path="res://shaders/space/glint_star.gdshader" id="14_glint_star"]
 [ext_resource type="Script" path="res://scripts/cutscene/intro_title_card.gd" id="15_title"]
+[ext_resource type="Script" path="res://scripts/rendering/cinema_post.gd" id="16_post"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_sky"]
 shader = ExtResource("2_sky")
 
 [sub_resource type="Sky" id="Sky_space"]
 sky_material = SubResource("ShaderMaterial_sky")
+radiance_size = 0
 
 [sub_resource type="Environment" id="Environment_space"]
 background_mode = 2
 sky = SubResource("Sky_space")
 ambient_light_source = 2
 ambient_light_color = Color(0.12, 0.16, 0.24, 1)
+reflected_light_source = 1
 tonemap_mode = 2
 glow_enabled = true
 glow_levels/1 = 1.0
@@ -37,7 +40,13 @@ glow_levels/5 = 0.3
 glow_intensity = 0.5
 glow_strength = 1.0
 glow_blend_mode = 0
-glow_hdr_threshold = 1.0
+glow_hdr_threshold = 0.75
+
+[sub_resource type="CompositorEffect" id="CompositorEffect_cinema"]
+script = ExtResource("16_post")
+
+[sub_resource type="Compositor" id="Compositor_cinema"]
+compositor_effects = Array[CompositorEffect]([SubResource("CompositorEffect_cinema")])
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_planet"]
 render_priority = 0
@@ -178,6 +187,7 @@ ship_fx_material = SubResource("ShaderMaterial_ship_fx")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_space")
+compositor = SubResource("Compositor_cinema")
 
 [node name="Sun" type="DirectionalLight3D" parent="."]
 transform = Transform3D(0.68045104, 0.21956378, -0.69912666, 0, 0.95405674, 0.29962572, 0.7327935, -0.20388064, 0.649189, 0, 0, 0)

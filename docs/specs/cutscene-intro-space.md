@@ -518,3 +518,49 @@ Built:
   Pacific off Baja, clear of the snow and the clouds, from fade-in to wipe (checked at 4.0 and 6.95 s).
 - Tests: `test_title_card_fades_in_staggered_and_is_wiped_by_the_flyby`,
   `test_title_card_text_and_corner`, `test_title_card_shakes_with_the_camera`.
+
+## Opening pan (2026-10-16)
+
+Grilled with the user, built the same day. The shot now opens on empty space and tilts down onto
+Earth; everything that was there before starts, unchanged, once the pan lands.
+
+| # | Decision |
+|---|---|
+| 1 | **Prepended**: the old 12.3 s shot is untouched and starts when the pan lands. Shot ~17.3 s |
+| 2 | **Path**: tilt straight down from above, so Earth rises in from the bottom edge (clear of the ship's left-side entry) |
+| 3 | **Timing**: 1 s hold on stars + 4 s tilt |
+| 4 | **Start angle**: ~65 deg up, pure space. Earth + halo reach ~39 deg above the view centre and the frame only 20 deg, so this is the first angle that shows no Earth at all |
+| 5 | **Motion**: eased in and out, settles exactly on the old frame 0 (zero speed at the handoff, no bump into the push-in) |
+| 6 | **During the pan**: ambient alive (twinkle, cloud drift, storm turn run on through it). Every timed beat (lightning, title, push-in, planet turn, ship, trail, rumble, heat, glint) waits and keeps its old timing from the handoff |
+| 7 | **Open**: fades up from black over the 1 s hold |
+
+Build: the `shot` animation is not touched. `intro_space.gd` keeps a shot clock that starts at
+`-pan_length()` and runs the pan before the AnimationPlayer plays; the shot time `t` is negative
+during the pan. Ambient functions (`cloud_drift_at`, `storm_spin_at`, twinkle) carry on into
+negative time; the timed beats already read zero before their start. The tilt is a camera pitch
+added under the rumble. Exports (`Opening pan` group): `pan_on`, `pan_hold`, `pan_tilt`,
+`pan_start_degrees`, `pan_fade`. R and Intro_Movie restart from the black open.
+
+**Retime (2026-10-16):** user: "WAY slower, like 3x". Tilt 4 -> 12 s (`pan_tilt`), hold and fade
+unchanged at 1 s; the pan is now 13 s and the shot ~25.3 s.
+
+### Crop widened for the pan (2026-10-16)
+
+The tilt shows the planet up to ~85 N, 179 W-37 W (Alaska, the Canadian Arctic, Hudson Bay,
+Greenland), all past the old 52 N / 142 W crop edge, so the old noise planet showed there as rust and
+blue blobs. Re-downloaded a wider ETOPO1 crop (ERDDAP `altitude[(-8):3:(86)][(-180):3:(-32)]`,
+2961 x 1881) and rebaked `planet_earth_na.png`; crop constants in planet_earth.gdshaderinc, the tool
+comment and the tests updated. No shader logic changed: the existing latitude rules (ice shelf
+north of 39 N, pack ice solid by 50 N, all land snow, relief on real ranges) cover the Arctic, and
+the clouds now run on past 52 N. `test_the_frame_only_sees_the_baked_crop` now also checks pan frames.
+
+## Title card retimed onto the pan (2026-10-16)
+
+User: a 2 s pause between the pan settling and the title appearing; "have the title card appear right as the
+camera is about to finish panning". First pass moved the title 2.5 s earlier (-1.0 s), which left the ship 7 s
+after the pan ("the ship fly in is way too delayed"). Final: **the pan overlaps the shot by 2.5 s**
+(`pan_overlap`): the shot clock starts while the camera is still tilting and the pan lands at shot time 2.5 s.
+The title and everything else keep their old shot times (title 1.5 s, flyby 7 s), so the title starts 1 s
+before the camera lands and the ship comes 4.5 s after it, the rhythm the shot had before the slower pan. The
+push-in and planet turn (both at 30%) start under the last 2.5 s of the tilt. The pan is now 10.5 s before
+frame 0 (1 s hold + 12 s tilt - 2.5 s overlap); the whole intro is 2.5 s shorter.

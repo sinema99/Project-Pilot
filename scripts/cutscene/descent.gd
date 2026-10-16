@@ -112,6 +112,35 @@ const FIELD_WRECKS := [
 	[1680.0, 1900.0, 80.0, &"snapped", 12.0, 0.30, 30.0],
 ]
 
+## Trees (docs/specs/descent-trees.md). Close lone spruces: [sketch x, distance (m), height (m)].
+## Three on the left under the storm wall, one on the right inside the pillar, the middle clear.
+const TREE_LONE := [
+	[115.0, 120.0, 19.0], [185.0, 175.0, 10.5], [385.0, 95.0, 13.0],
+	[1560.0, 140.0, 21.0],
+]
+## Mid tree lines along creeks: [from sketch x, from distance (m), to sketch x, to distance (m),
+## trees deep at the middle]. Each meanders a little and thins out at its ends.
+const TREE_RIBBONS := [
+	[40.0, 430.0, 560.0, 600.0, 3],
+	[640.0, 980.0, 1010.0, 720.0, 2],
+	[1260.0, 360.0, 1760.0, 470.0, 3],
+	[1520.0, 700.0, 1780.0, 950.0, 2],
+	[380.0, 1150.0, 760.0, 1350.0, 2],
+	[1050.0, 1250.0, 1330.0, 1080.0, 1],
+]
+## Far clump lines, 1.5-5 km: the same creek pattern as [from x, from distance, to x, to distance],
+## broken into separate mounds. The last rows are patches among the sprawl's outskirts.
+const TREE_FAR_LINES := [
+	[-120.0, 1700.0, 520.0, 2300.0],
+	[560.0, 1900.0, 1100.0, 1600.0],
+	[1150.0, 2100.0, 1900.0, 1750.0],
+	[1700.0, 2600.0, 2200.0, 3600.0],
+	[-200.0, 2900.0, 280.0, 3800.0],
+	[620.0, 2500.0, 1000.0, 2800.0],
+	[1500.0, 3200.0, 1700.0, 4400.0],
+	[180.0, 4300.0, 330.0, 4900.0],
+]
+
 @export var autoplay := true
 
 @export_group("Trail")
@@ -164,6 +193,7 @@ const FIELD_WRECKS := [
 @onready var animation_player: AnimationPlayer = $AnimationPlayer
 @onready var camera: Camera3D = $Camera3D
 @onready var land: DescentLand = $Land
+@onready var trees: DescentTrees = $Trees
 @onready var trail: IntroSpaceTrail = $Trail
 @onready var head_star: MeshInstance3D = $HeadStar
 @onready var flash_light: DirectionalLight3D = $FlashLight
@@ -228,6 +258,7 @@ func apply(t: float) -> void:
 	var live := lightning.active_at(t, 8)
 	land.deck_material.set_shader_parameter(&"flashes", PackedVector4Array(live))
 	land.deck_material.set_shader_parameter(&"cloud_time", t)
+	trees.apply(t)
 	flash_light.light_energy = flash_light_energy * flash_opacity * live[0].w
 	flash_light.visible = live[0].w > 0.0
 	bolts.apply(t)

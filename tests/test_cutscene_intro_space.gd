@@ -18,8 +18,8 @@ func _shot() -> Node3D:
 
 func _at(s: Node3D, t: float) -> void:
 	var ap: AnimationPlayer = s.get_node("AnimationPlayer")
+	s.seek_shot(t)
 	ap.pause()
-	ap.seek(t, true)
 
 
 func _cam(s: Node3D) -> Camera3D:
@@ -45,7 +45,7 @@ func test_shot_is_twelve_point_three_seconds_and_autoplays() -> void:
 	var s := _shot()
 	var ap: AnimationPlayer = s.get_node("AnimationPlayer")
 	approx(ap.get_animation(&"shot").length, 12.3, 0.001, "12.3 s shot")
-	eq(ap.current_animation, "shot", "plays on load")
+	eq(ap.assigned_animation, "shot", "plays on load (waiting on frame 0 through the opening pan)")
 	check(not ap.get_animation(&"shot").loop_mode, "plays once")
 	s.free()
 
@@ -267,22 +267,25 @@ func test_finished_fires_at_the_end_and_restart_rewinds() -> void:
 	var ap: AnimationPlayer = s.get_node("AnimationPlayer")
 	var count := [0]
 	s.finished.connect(func() -> void: count[0] += 1)
-	ap.seek(12.25, true)
+	s.seek_shot(12.25)
 	ap.advance(0.2)
 	eq(count[0], 1, "finished fires once at the end")
 	approx(ap.current_animation_position, 12.3, 0.001, "holds the last frame")
 	s.restart()
-	approx(ap.current_animation_position, 0.0, 0.001, "restart goes back to 0")
+	approx(s.shot_time(), -s.pan_length(), 0.001, "restart goes back to the start of the opening pan")
+	approx(ap.current_animation_position, 0.0, 0.001, "the animation waits on its frame 0")
 	check(not (s.get_node("CameraRig/ShipPath/ShipFollow") as Node3D).visible, "ship hidden again after restart")
-	check(ap.is_playing(), "and plays")
+	s._process(s.pan_length() + 0.1)
+	check(ap.is_playing(), "and plays once the pan lands")
+	approx(ap.current_animation_position, 0.1, 0.001, "carrying the overshoot")
 	s.free()
 
 
 # --- Planet upgrade: a desolate future Earth ---------------------------------------------------
 
 # Must match shaders/space/planet_earth.gdshaderinc and tools/gen_planet_earth.gd.
-const CROP_LAT := Vector2(-8.0, 52.0)
-const CROP_LON := Vector2(-142.0, -32.0)
+const CROP_LAT := Vector2(-8.0, 86.0)
+const CROP_LON := Vector2(-180.0, -32.0)
 const FLORIDA := Vector2(27.8, -81.7)
 
 
@@ -331,13 +334,14 @@ func test_planet_turns_east_about_north() -> void:
 	s.free()
 
 
-# Detail only where the camera looks: everything the frame sees, at both ends of the shot, is
-# inside the baked crop (outside it the old noise planet takes over).
+# Detail only where the camera looks: everything the frame sees, through the opening pan and at
+# both ends of the shot, is inside the baked crop (outside it the old noise planet takes over).
 func test_the_frame_only_sees_the_baked_crop() -> void:
 	var s := _shot()
 	var c := _planet_centre(s)
-	for t in [0.0, 12.3]:
+	for t in [-13.0, -10.0, -8.0, -7.0, -6.0, -5.0, -4.0, -3.0, -2.0, -1.0, -0.5, 0.0, 12.3]:
 		_at(s, t)
+		s._process(0.0)
 		var cam := _cam(s)
 		var tan_v := tan(deg_to_rad(cam.fov) * 0.5)
 		for yi in 21:
@@ -347,6 +351,8 @@ func test_the_frame_only_sees_the_baked_crop() -> void:
 				var hit := _hit_planet(s, cam.global_position, d)
 				if hit == Vector3.INF:
 					var p := cam.global_position + d * (c - cam.global_position).dot(d)
+					if (p - c).length() > 4200.0:
+						continue  # clear of the halo too: open space
 					hit = c + (p - c).normalized() * PLANET_RADIUS
 				var ll := _lat_lon(s, hit)
 				var inside := ll.x > CROP_LAT.x and ll.x < CROP_LAT.y and ll.y > CROP_LON.x and ll.y < CROP_LON.y
@@ -531,15 +537,55 @@ func test_glint_flashes_once_at_the_flyby() -> void:
 	s.free()
 
 
-func test_only_hdr_effects_glow() -> void:
+# docs/specs/cinema-post.md decision 6: the bloom threshold came down so the snow and the limb glow
+# softly, but not so far that the whole planet blooms.
+func test_bright_snow_glows_softly() -> void:
 	var s := _shot()
 	var env := (s.get_node("WorldEnvironment") as WorldEnvironment).environment
 	check(env.glow_enabled, "glow on")
-	check(env.glow_hdr_threshold >= 1.0, "only brighter than white glows (planet stays crisp)")
+	check(env.glow_hdr_threshold < 1.0 and env.glow_hdr_threshold >= 0.6,
+			"threshold lowered, but not into the mid tones: %.2f" % env.glow_hdr_threshold)
 	s.free()
 
 
-# Spec "Title card": EARTH 2129 + Florida coordinates, bottom left, staggered fade in, wiped away
+# docs/specs/cinema-post.md: the shot's environment carries the cinema post stack, the streak
+# threshold sits above the trail cores and below the glints, and the hero stars clear it.
+func test_cinema_post_is_on_the_shot() -> void:
+	var s := _shot()
+	var we := s.get_node("WorldEnvironment") as WorldEnvironment
+	check(we.compositor != null, "the environment has a compositor")
+	var post: CinemaPost = null
+	for e in we.compositor.compositor_effects:
+		if e is CinemaPost:
+			post = e
+	check(post != null, "with a CinemaPost on it")
+	if post:
+		check(post.enabled, "enabled")
+		check(post.streak_threshold > 1.5, "trail cores (1.5) do not streak")
+		check(post.streak_threshold < 2.2, "the heat flare (2.2) and glints (4) do")
+		var sky := we.environment.sky.sky_material as ShaderMaterial
+		# Headless shaders do not report their defaults, so read the default from the code.
+		var m := RegEx.create_from_string("hero_brightness = ([0-9.]+)").search(sky.shader.code)
+		check(m != null and float(m.get_string(1)) * 0.7 > post.streak_threshold,
+				"hero stars streak even at the bottom of their twinkle")
+		check(post.aberration < 0.003, "aberration stays subtle (it split stars at 0.004)")
+		check(post.streak_intensity == 0.0 and post.ghost_intensity == 0.0,
+				"no horizontal lens streaks or their ghosts (user cut them 2026-10-16)")
+	eq(CinemaPost.streak_size(Vector2i(2560, 1440)), Vector2i(640, 720), "streak buffer: quarter width, half height")
+	s.free()
+
+
+# Decision 7: the twinkle runs on the shot time, so seeking shows the same frame.
+func test_twinkle_follows_the_shot_time() -> void:
+	var s := _shot()
+	var sky := (s.get_node("WorldEnvironment") as WorldEnvironment).environment.sky.sky_material as ShaderMaterial
+	_at(s, 5.5)
+	s._process(0.0)
+	approx(float(sky.get_shader_parameter(&"twinkle_time")), 5.5, 0.001, "twinkle_time = shot time")
+	s.free()
+
+
+# Spec "Title card": EARTH 2329 (was 2129, changed 2026-10-16) + Florida coordinates, bottom left, staggered fade in, wiped away
 # left to right by the flyby.
 func test_title_card_fades_in_staggered_and_is_wiped_by_the_flyby() -> void:
 	var s := _shot()
@@ -547,7 +593,9 @@ func test_title_card_fades_in_staggered_and_is_wiped_by_the_flyby() -> void:
 	for t in [0.0, 1.0, 1.5]:
 		eq(card.visible_at(t), Vector2.ZERO, "nothing on screen at %.1f s" % t)
 	check(card.visible_at(2.1).x > 0.0 and card.visible_at(2.1).y == 0.0,
-			"title is coming in before the coordinates start")
+			"title is coming in, as the pan settles, before the coordinates start")
+	check(s.pan_pitch_at(1.5) > 0.0 and s.pan_pitch_at(card.title_in_start + 1.0) == 0.0,
+			"the title starts 1 s before the pan lands")
 	check(card.visible_at(2.8).x > card.visible_at(2.8).y, "coordinates lag the title")
 	for t in [3.6, 5.0, 7.0]:
 		eq(card.visible_at(t), Vector2.ONE, "both lines fully in at %.1f s" % t)
@@ -563,7 +611,7 @@ func test_title_card_fades_in_staggered_and_is_wiped_by_the_flyby() -> void:
 func test_title_card_text_and_corner() -> void:
 	var s := _shot()
 	var card: IntroTitleCard = s.get_node("TitleCard")
-	eq(card.title_text, "EARTH 2129", "title")
+	eq(card.title_text, "EARTH 2329", "title")
 	eq(card.coords_text, "27°48'14\"N  81°41'52\"W", "Florida coordinates in DMS")
 	var labels := card.find_children("*", "Label", true, false)
 	eq(labels.size(), 2, "title + coordinates")
@@ -580,4 +628,67 @@ func test_title_card_shakes_with_the_camera() -> void:
 	eq(s.shake_on_screen(Vector3.ZERO), Vector2.ZERO, "no rumble, no offset")
 	var o: Vector2 = s.shake_on_screen(s.shake_at(7.2))
 	check(o.length() > 1.0 and o.length() < 40.0, "a few pixels of shake at the peak, %.1f" % o.length())
+	s.free()
+
+
+# Spec "Opening pan": 1 s hold + 4 s tilt down from 65 deg up, eased, fading up from black over
+# the hold; the old shot starts untouched when it lands.
+func test_opening_pan_tilts_down_onto_the_old_first_frame() -> void:
+	var s := _shot()
+	approx(s.pan_length(), 10.5, 0.001, "1 s hold + 12 s tilt, the last 2.5 s under the shot")
+	approx(s.shot_time(), -10.5, 0.001, "plays on load from the start of the pan")
+	approx(rad_to_deg(s.pan_pitch_at(-10.5)), 65.0, 0.001, "starts 65 deg up")
+	approx(rad_to_deg(s.pan_pitch_at(-9.5)), 65.0, 0.001, "held until the tilt starts")
+	check(s.pan_pitch_at(-2.0) < s.pan_pitch_at(-3.0), "tilting down")
+	check(s.pan_pitch_at(0.0) > 0.0, "still tilting when the shot starts (overlap)")
+	approx(s.pan_pitch_at(2.499), 0.0, 0.0001, "settles at 2.5 s ...")
+	check(s.pan_pitch_at(2.45) - s.pan_pitch_at(2.46) < 0.0002, "... at almost no speed")
+	eq(s.pan_pitch_at(2.5), 0.0, "no pitch once it has landed")
+	approx(s.fade_at(-10.5), 1.0, 0.001, "black on the first frame")
+	check(s.fade_at(-10.0) > 0.0 and s.fade_at(-10.0) < 1.0, "fading up through the hold")
+	eq(s.fade_at(-9.5), 0.0, "clear by the tilt")
+	s.free()
+
+
+func test_opening_pan_starts_on_pure_space() -> void:
+	var s := _shot()
+	_at(s, -13.0)
+	s._process(0.0)
+	var cam := _cam(s)
+	approx(rad_to_deg(cam.rotation.x), 65.0, 0.001, "camera pitched up")
+	# Lowest point of the halo, seen from the camera: the halo's top limb must sit above the frame.
+	var c := _planet_centre(s)
+	var to_c := c - cam.global_position
+	var halo_up := asin(4200.0 / to_c.length()) + atan2(to_c.y, Vector2(to_c.x, to_c.z).length())
+	check(halo_up < cam.rotation.x - deg_to_rad(cam.fov * 0.5), "no Earth or halo in frame")
+	check(_ndc(cam, c).y < -1.0, "planet centre below the frame")
+	s.free()
+
+
+func test_opening_pan_keeps_ambient_alive_and_beats_waiting() -> void:
+	var s := _shot()
+	var ap: AnimationPlayer = s.get_node("AnimationPlayer")
+	_at(s, -2.0)
+	s._process(0.0)
+	approx(ap.current_animation_position, 0.0, 0.001, "animation waits on frame 0")
+	check(s.cloud_drift_at(-2.0) < s.cloud_drift_at(0.0), "clouds already drifting")
+	check(s.storm_spin_at(-2.0).x < 0.0, "storm already turning")
+	var sky := (s.get_node("WorldEnvironment") as WorldEnvironment).environment.sky.sky_material as ShaderMaterial
+	approx(float(sky.get_shader_parameter(&"twinkle_time")), -2.0, 0.001, "stars twinkling")
+	for f: Vector4 in s.lightning.active_at(-2.0, 8):
+		eq(f, Vector4.ZERO, "no lightning yet")
+	eq((s.get_node("TitleCard") as IntroTitleCard).visible_at(-2.0), Vector2.ZERO, "no title yet")
+	eq(s.shake_at(-2.0), Vector3.ZERO, "no rumble")
+	eq(s.heat_at(-2.0), 0.0, "no heat")
+	s.free()
+
+
+func test_opening_pan_off_starts_on_the_old_frame_0() -> void:
+	var s: Node3D = (load(SCENE) as PackedScene).instantiate()
+	s.pan_on = false
+	(Engine.get_main_loop() as SceneTree).root.add_child(s)
+	eq(s.shot_time(), 0.0, "straight onto frame 0")
+	check((s.get_node("AnimationPlayer") as AnimationPlayer).is_playing(), "playing")
+	s._process(0.0)
+	eq(_cam(s).rotation, Vector3.ZERO, "no pan pitch")
 	s.free()

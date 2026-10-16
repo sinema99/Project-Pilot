@@ -8,10 +8,12 @@
 // planet so Florida sits under the ship.
 
 // The crop tools/gen_planet_earth.gd baked: cell centres, north row first. Must match its input.
-const float EARTH_LON_WEST = -142.0;
-const float EARTH_LAT_NORTH = 52.0;
+// 8 S-86 N / 180 W-32 W: widened north and west 2026-10-16 for the opening pan, which tilts down
+// past Alaska, the Canadian Arctic and Greenland.
+const float EARTH_LON_WEST = -180.0;
+const float EARTH_LAT_NORTH = 86.0;
 const float EARTH_CELL = 0.05;
-const vec2 EARTH_TEXELS = vec2(2201.0, 1201.0);
+const vec2 EARTH_TEXELS = vec2(2961.0, 1881.0);
 const float EARTH_OCEAN_DEPTH = 6000.0;
 const float EARTH_LAND_HEIGHT = 4500.0;
 

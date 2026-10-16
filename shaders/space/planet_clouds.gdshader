@@ -11,6 +11,7 @@ render_mode cull_back, shadows_disabled, specular_disabled, depth_draw_never, bl
 
 #include "res://shaders/space/space_noise.gdshaderinc"
 #include "res://shaders/space/planet_earth.gdshaderinc"
+#include "res://shaders/space/planet_grade.gdshaderinc"
 #include "res://shaders/cel/includes/painted.gdshaderinc"
 #include "res://shaders/cel/includes/scatter.gdshaderinc"
 
@@ -209,5 +210,8 @@ void light() {
 	float mid = smoothstep(dark_edge - step_softness, dark_edge + step_softness, ndl);
 	float lit = smoothstep(lit_edge - step_softness, lit_edge + step_softness, ndl);
 	float tone = mix(mix(shadow_tone, mid_tone, mid), 1.0, lit);
-	DIFFUSE_LIGHT += ALBEDO * LIGHT_COLOR * exposure * tone;
+	float facing = clamp(dot(NORMAL, VIEW), 0.0, 1.0);
+	vec3 albedo = grade_albedo(ALBEDO, ndl, dark_edge, facing, 0.0);
+	DIFFUSE_LIGHT += grade_light(albedo * LIGHT_COLOR * exposure * tone, LIGHT_COLOR * exposure, ndl,
+			dark_edge, step_softness, facing, tone);
 }

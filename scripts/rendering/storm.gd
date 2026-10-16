@@ -55,6 +55,16 @@ const ROOF_BAKE_SHADER := preload("res://shaders/storm/storm_roof_bake.gdshader"
 ## Seconds of travel drawn as the streak.
 @export_range(0.0, 0.2, 0.005) var streak_time := 0.04
 
+## Storm character, all off by default (Ichi uses none of it): S-lane swing either way (m) and its
+## wavelength along the wind (m), the fraction of flakes that are clumps and how much wider, the
+## fraction that take `shade_color`. See storm_snow.gdshader.
+@export_range(0.0, 10.0, 0.1) var lane_amount := 0.0
+@export var lane_size := 30.0
+@export_range(0.0, 1.0, 0.01) var clump_chance := 0.0
+@export var clump_scale := 3.0
+@export_range(0.0, 1.0, 0.01) var shade_chance := 0.0
+@export var shade_color := Color(0.58, 0.6, 0.74)
+
 @export_group("Drift")
 ## Long faint streaks blowing flat along the ground (the highest static surface, from the roof
 ## map), in snaking ribbons. Needs the roof map, so none headless.
@@ -147,6 +157,13 @@ func apply() -> void:
 		mat.set_shader_parameter(&"gust_visibility", gust_visibility)
 		mat.set_shader_parameter(&"near_tint", snow_tint)
 		mat.set_shader_parameter(&"far_tint", far_color)
+	for mat in [fine_material, near_material]:
+		mat.set_shader_parameter(&"lane_amount", lane_amount)
+		mat.set_shader_parameter(&"lane_size", lane_size)
+		mat.set_shader_parameter(&"clump_chance", clump_chance)
+		mat.set_shader_parameter(&"clump_scale", clump_scale)
+		mat.set_shader_parameter(&"shade_chance", shade_chance)
+		mat.set_shader_parameter(&"shade_color", shade_color)
 	fine_material.set_shader_parameter(&"box_size", fine_box)
 	fine_material.set_shader_parameter(&"flake_width", fine_width)
 	fine_material.set_shader_parameter(&"opacity", fine_opacity)

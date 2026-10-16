@@ -8,6 +8,8 @@
 [ext_resource type="Shader" path="res://shaders/space/glint_star.gdshader" id="6_star"]
 [ext_resource type="Script" path="res://scripts/cutscene/descent_bolts.gd" id="7_bolts"]
 [ext_resource type="Script" path="res://scripts/cutscene/descent_ruin.gd" id="8_ruin"]
+[ext_resource type="Script" path="res://scripts/cutscene/descent_sky_city.gd" id="9_sky_city"]
+[ext_resource type="Script" path="res://scripts/cutscene/descent_trees.gd" id="10_trees"]
 
 [sub_resource type="ProceduralSkyMaterial" id="Sky_overcast"]
 sky_top_color = Color(0.55, 0.6, 0.7, 1)
@@ -97,6 +99,9 @@ script = ExtResource("8_ruin")
 [node name="Land" type="Node3D" parent="."]
 script = ExtResource("2_land")
 
+[node name="Trees" type="Node3D" parent="."]
+script = ExtResource("10_trees")
+
 [node name="Storm" type="Node3D" parent="."]
 script = ExtResource("3_storm")
 visibility = 14000.0
@@ -111,6 +116,9 @@ near_width = 0.045
 near_opacity = 0.5
 streak_time = 0.03
 drift_opacity = 0.0
+
+[node name="SkyCity" type="MeshInstance3D" parent="."]
+script = ExtResource("9_sky_city")
 
 [node name="Bolts" type="Node3D" parent="."]
 script = ExtResource("7_bolts")

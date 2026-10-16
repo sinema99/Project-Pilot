@@ -3,7 +3,7 @@ extends SceneTree
 # Bakes the Earth texture for the intro cutscene planet (docs/specs/cutscene-intro-space.md,
 # "Planet upgrade") from a NOAA ETOPO1 crop, so only the part of the Earth the camera sees gets
 # detail. Input: an ESRI ASCII grid from ERDDAP (public domain), e.g.
-#   https://coastwatch.pfeg.noaa.gov/erddap/griddap/etopo180.esriAscii?altitude[(-8):3:(52)][(-142):3:(-32)]
+#   https://coastwatch.pfeg.noaa.gov/erddap/griddap/etopo180.esriAscii?altitude[(-8):3:(86)][(-180):3:(-32)]
 # Run:
 #   godot --headless --path . --script tools/gen_planet_earth.gd -- <grid.asc>
 # The crop box must match EARTH_LAT / EARTH_LON in shaders/space/planet_earth.gdshaderinc; the

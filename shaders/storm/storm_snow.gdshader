@@ -30,6 +30,17 @@ uniform float gust_visibility = 25.0;
 uniform vec3 near_tint : source_color = vec3(0.92, 0.95, 1.0);
 uniform vec3 far_tint : source_color = vec3(0.80, 0.77, 0.86);
 
+// Storm character (off by default; the flyover turns it on, docs/specs/cutscene-flyover.md "Dead
+// city + storm"): flakes swing sideways in coherent S-lanes `lane_amount` metres either way over a
+// `lane_size` wavelength along the wind, and their streaks follow the bend; `clump_chance` of them
+// are clumps `clump_scale` wider with short streaks; `shade_chance` of them take `shade_color`.
+uniform float lane_amount = 0.0;
+uniform float lane_size = 30.0;
+uniform float clump_chance = 0.0;
+uniform float clump_scale = 3.0;
+uniform float shade_chance = 0.0;
+uniform vec3 shade_color : source_color = vec3(0.58, 0.6, 0.74);
+
 // Drift layer: flakes hug the surface under them, up to drift_height above it.
 uniform bool drift = false;
 uniform float drift_height = 0.5;
@@ -83,6 +94,8 @@ void vertex() {
 
 	float size = 1.0;
 	float ribbon = 1.0;
+	float lane_slope = 0.0;
+	vec3 lane_across = vec3(0.0);
 	if (drift) {
 		// Snake sideways as the flake travels, coherently, so neighbours form a stream.
 		vec3 across_wind = vec3(-wind.z, 0.0, wind.x);
@@ -100,13 +113,23 @@ void vertex() {
 		ribbon = smoothstep(0.25, 0.85, 0.5 + 0.5 * sin(q * 0.9 + 0.8 * sin(s * 0.15 - t * 0.7)));
 		rel = center - cam;
 	} else {
+		if (lane_amount > 0.0) {
+			vec3 across_wind = vec3(-wind.z, 0.0, wind.x);
+			float k = TAU / lane_size;
+			float phase = dot(center.xz, wind.xz) * k + dot(center.xz, across_wind.xz) * k * 0.45;
+			center += across_wind * lane_amount * sin(phase);
+			// Moving along the wind at `speed` through the lane: the sideways speed is the slope.
+			lane_slope = lane_amount * k * cos(phase);
+			lane_across = across_wind;
+			rel = center - cam;
+		}
 		bool found;
 		float roof_y = roof_at(center.xz, found);
 		// A sheltered flake collapses to a point: no area, nothing drawn.
 		size = found && center.y < roof_y - shelter_margin ? 0.0 : 1.0;
 	}
 
-	vec3 vel = flow * speed * per_flake;
+	vec3 vel = (flow + lane_across * lane_slope) * speed * per_flake;
 	vec3 along = normalize(vel);
 	vec3 to_cam = normalize(cam - center);
 	vec3 side = cross(along, to_cam);
@@ -114,6 +137,10 @@ void vertex() {
 	side = normalize(side);
 	float len = length(vel) * streak_time * (0.7 + 0.6 * r);
 	float width = flake_width * (0.6 + 0.8 * fract(r * 17.0));
+	if (fract(r * 53.0) < clump_chance) {
+		width *= clump_scale;
+		len *= 0.35;
+	}
 	vec3 world = center + (along * (UV.y - 0.5) * len + side * VERTEX.x * width) * size;
 	POSITION = PROJECTION_MATRIX * VIEW_MATRIX * vec4(world, 1.0);
 
@@ -129,6 +156,9 @@ void vertex() {
 	float surge = drift ? mix(drift_calm, 1.0, peak) : 1.0;
 	v_alpha = opacity * wrap_fade * near_fade * (1.0 - fog) * ribbon * surge;
 	v_tint = mix(near_tint, far_tint, smoothstep(0.05, 1.0, t_dist));
+	if (fract(r * 91.0) < shade_chance) {
+		v_tint = mix(v_tint, shade_color, 0.7);
+	}
 	// The staff light: flakes near it take its colour and brighten (storm_torch.gdshaderinc).
 	float torch = storm_torch_flake(center);
 	v_tint = mix(v_tint, storm_torch_color.rgb, torch);

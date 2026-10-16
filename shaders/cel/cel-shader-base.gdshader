@@ -73,6 +73,9 @@ uniform vec4 specular: source_color = vec4(0.3, 0.3, 0.3, 0.5);
 uniform sampler2D specular_texture: hint_default_white;
 uniform vec4 fresnel: source_color = vec4(0.2, 0.2, 0.2, 0.3);
 uniform sampler2D fresnel_texture: hint_default_white;
+// Opt-in repeating tile multiplied over the albedo on the raw UV (base_texture clamps). White
+// by default, so nothing changes unless a material sets it (the flyover city's window grid).
+uniform sampler2D tile_texture: source_color, hint_default_white, filter_linear_mipmap, repeat_enable;
 group_uniforms;
 
 varying vec3 SPECULAR_COLOR;
@@ -168,7 +171,7 @@ void fragment() {
 	BACKLIGHT = backlight_fragment(base_uv);
 #endif
 
-ALBEDO = color.rgb * texture(base_texture, base_uv).rgb;
+ALBEDO = color.rgb * texture(base_texture, base_uv).rgb * texture(tile_texture, paint_uv).rgb;
 
 	float paint_n;
 	if (paint_anchor == 1) {

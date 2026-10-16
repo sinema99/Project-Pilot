@@ -142,3 +142,192 @@ for effects on/off at fixed shot times with the snow hidden, since it runs on re
   COLOR.a to engine_trail.gdshader; empty = 1, so shot 1 is untouched), set to (1, 0.5, 0.5) here.
 - Transparent draw order now: shimmer -101, storm fog -100, crease + edge pass 0, snow 1,
   trails 2, nozzle glows 3, embers 4.
+
+## Dead city + storm (2026-10-16)
+
+Grilled with the user ("instead of the ichi scene building ... some destroyed building like in
+descent scene ... instead of the blizzard, the storm that the ship just flew into in descent and
+cockpit storm"). Story order is cockpit storm -> descent (the trail breaks out under the deck) ->
+this shot, so the ship is under the deck, over the dead city the descent showed.
+
+| # | Topic | Decision |
+|---|-------|----------|
+| 1 | Place | The descent's dead city. Ichi (`OP_1`, the canyon) is gone from this shot: generated snow ground, ruins and rubble |
+| 2 | Hero ruin | A gutted high-rise skeleton: exposed floor slabs on bare columns, facade torn away down one side, top floors snapped off, snow on every slab. Built finer than the descent's 4 km boxes, since it is seen from ~600-900 m |
+| 3 | Framing | Unchanged: 450 m, 70 m/s, same camera / sway / float / bank (20 deg left from 2.1 s). The skeleton (~60 x 60 m, ~220 m tall) takes OP_1's screen position (centre-left at 0 s, lower left at the cut, ship passing right of it); moved toward the flight line if needed to hold OP_1's screen size |
+| 4 | Surroundings | A thin slice of the city: ~8-12 shorter ruins from the descent's kinds (snapped stumps, a toppled tower, a facade, a crane), rubble mounds, faint buried street lines on a grid. All fog off with distance so the skeleton stays the subject |
+| 5 | Storm | The descent storm from inside, replacing the blizzard: dim slate-violet light, dark violet fog with a teal cast (the skeleton is a dark ghost, not a pale one), heavy snow with the cockpit-storm character (wind lanes, mixed specks / clumps) still streaming nose to tail as speed lines |
+| 6 | Lightning | One main cyan double flicker at ~1.2 s, rimming the slabs and flooding the snow, dying over ~0.4 s; a faint far flicker at ~2.6 s in the bank |
+| 7 | Ship | Engine glows + OmniLight kept. A faint cool-teal fresnel rim on the hull; the main flash pops the hull hard too |
+
+Consequences: the painted ground plane stays (it is just the snow now, no map edge to hide) and
+gains the street grid; the edge pass (`flyover_edge.gdshader`, lip + building textures) goes.
+Trails, embers and the off-by-default shimmer are unchanged. Intro_Movie plays it as shot 4 with no
+change there.
+
+### Built
+
+2026-10-16, tuned from probe shots (`tests/_probe_flyover_shot.gd`, now with a `nosnow` arg and
+10 settle frames: at 4 the heavy snow made it grab stale frames with torn-looking trails).
+
+- **City**: `FlyoverCity` (`scripts/cutscene/flyover_city.gd`, node `City`) extends `DescentLand`
+  and reuses its ruin kinds and box helpers, overriding `_ready` to build only this slice. Hero at
+  OP_1's old spot (`hero_at` (0, 0, 210), grid 12 deg), 60 m square, 220 m: a clad 20 m podium,
+  a 5 x 5 column grid, 0.8 m slabs every 5 m (`STOREY`) with 0.5 m snow, spandrel bands on three
+  sides torn at a ragged height per bay (lower toward the open -X side), slabs partial then
+  missing above 72% (`break_start`), ragged columns poking past, one slab hanging off the break.
+  Same screen size as OP_1 at the same spot, so it did not need moving. 11 neighbours from the
+  `neighbours` table (hero-relative): snapped stumps, two facades, a crane, a toppled tower, a
+  smaller skeleton, a setback; 16 rubble mounds within 420 m. `concrete_shade` 0.55 darkens the
+  descent's concrete (made for 4 km of pale fog) so the ruins sit under the dark fog.
+- **Ground**: the sky's painted plane stays, now `ground_color` (0.3, 0.31, 0.37), plus buried
+  streets (`flyover_streets()` in flyover_ground.gdshaderinc): 110 x 130 m blocks on the hero's
+  grid with the hero mid-block, 16 m troughs 12% darker, wobbly and patchy, gone by 700 m. The
+  edge pass (`flyover_edge.gdshader`, lip and building textures) is deleted.
+- **Storm**: fog `near_color` (0.07, 0.07, 0.11) / `far_color` (0.09, 0.12, 0.14), visibility
+  2000 / gusts 1200. These globals are raw linear values: the old 0.36 showed as a pale
+  near-white, so the numbers look far darker than they render. Sun (0.66, 0.66, 0.8) at 0.12,
+  ambient (0.32, 0.33, 0.42); dark sky gradient (never in frame).
+- **Snow**: Ichi counts, `fine_opacity` 0.5 so the city shows through. New opt-in Storm knobs
+  (all 0 by default, Ichi untouched): `lane_amount` 0.8 m S-lanes over `lane_size` 40 m with the
+  streaks following the bend, `clump_chance` 0.12 (3x wide, short), `shade_chance` 0.3 (flakes
+  tinted `shade_color`). A per-flake lane phase made a chaotic cross-hatch; the lanes must be one
+  coherent field.
+- **Lightning**: `flash_at(t)`: hits at 1.2 s and 1.32 s (0.8), 0.02 s rise, 0.09 s decay, then
+  0.25 at 2.6 s. Drives `FlashLight` (cyan directional travelling (-0.45, -0.45, -0.77), energy
+  1.2 at full), lifts the fog globals 12% toward cyan and the painted ground 45%. First pass
+  (energy 2.5, fog 35%) washed the whole frame out.
+- **Hull rim**: the ship's cel materials' `fresnel` set to (0.42, 0.66, 0.7) at 0.3, lerping to
+  cyan at 0.6 in the flash.
+- Tests: `tests/test_cutscene_flyover.gd` (crawl test now on the hero's mid-height; new: no OP_1,
+  city counts/kinds/heights, flash timing, dark fog + flash light, rim pop, snow knobs off by
+  default). Suite: 1254 tests, only the 2 known test_ichi_parked_ship failures.
+
+## Ground mist (2026-10-16)
+
+User, after the dead city pass ("looks really good"): add fog so the ground / building
+intersections are hidden. Built straight from that, probe-tuned.
+
+- `shaders/cutscene/ground_mist.gdshader`, a full-screen depth pass (`GroundMist`, built by
+  `FlyoverShot._build_mist()`, `mist_on`). Each pixel's world point gets mist by its height over
+  the snow: `mist_density` 0.9 at the snow, squared falloff to nothing by `mist_height` 55 m, the
+  top wobbling 15 m with the noise. Patches ~180 m across thin it by half (`mist_breakup`) and
+  drift downwind at 6 m/s on the shot clock (seeks repeat). Sky pixels are run down to the painted
+  plane, so the ground and the ruins' feet take the same mist. Colour (0.5, 0.54, 0.6), paler than
+  the ground so it reads as mist; the storm's distance fog goes over it; the flash lifts it 50%
+  toward cyan.
+- Sorted like the old edge pass: priority 0, kept 100 m ahead of the camera (`MIST_SORT_DEPTH`) so
+  it draws after the crease ink and softens the ink at the ruins' feet too. Draw order: shimmer
+  -101, storm fog -100, crease + mist 0, snow 1, trails 2, glows 3, embers 4.
+- First pass (45 m, 0.8, (0.42, 0.46, 0.52)) worked but read as softness, not mist.
+
+## City detail pass (2026-10-16)
+
+User, after the ground mist: "add another pass of details. city details ... make the city below the
+ship look better, more believable". Grilled. The read before: about a dozen buildings on an empty
+grey floor, no scale cue, one tone, nothing crossing the grid. Density and scale details in one pass.
+
+| # | Topic | Decision |
+|---|-------|----------|
+| 1 | Scope | Density and scale details together |
+| 2 | Packed city | Every block on the street grid (110 x 130 m) split into lots: ~60% gutted roofless shells and snapped stumps 15-50 m, ~25% collapsed lots (low heaps in the footprint), ~15% empty snow lots. Taller toward the hero; nothing new within ~110 m (half the hero's height) of it |
+| 3 | Extent | To the fog, ~1.5 km round the hero; past ~800 m plain boxes, no detail; the painted streets reach as far |
+| 4 | Scale details | Window holes in the material (dark rows, 4 m floors); snow-buried cars along the curbs and jammed at a few crossings; rooftop clutter (tanks, stair housings, AC boxes) on stumps with a top; snow drifts against the upwind walls burying the ground floors. No streetlights, signs or road markings (sub-pixel at ~0.6 m/px) |
+| 5 | Highway | One elevated highway, ~25 m deck on ~20 m pillars, diagonal to the grid, ~200 m right of the hero on screen, one span snapped with its two ends dropped toward each other, stalled cars on the deck |
+| 6 | Colour | Five tones within ~+-10% value (two cool concretes, warm stone, rust brick, dark weathered block), one per building; near-black windows; pale snow; the hero a touch lighter than the city |
+| 7 | Landmarks | The 11 neighbours stay where they are, with the new tones and windows, the city packed round them. The 16 rubble mounds move into the streets and crossings. The toppled tower lies ACROSS a street |
+| 8 | Mist | Lowered and thinned so the street detail shows: ~25 m, ~0.6, patches kept, tuned from probe shots |
+
+Consequences: all in `FlyoverCity` and the flyover's own shaders, the descent untouched; one seed
+keeps it the same every load; boxes merged per colour into raw arrays (thousands of boxes).
+
+### Built
+
+2026-10-16, tuned from probe shots (with and without snow).
+
+- **Packed city** (`FlyoverCity._packed_city`): every block within `city_radius` 1500 m split into
+  2-3 x 2-3 lots (jittered splits, 0.5-2 m party-wall gaps, `pavement` 3 m). ~2900 lots. Shells
+  (`shell_chance` 0.35: four 1.2 m walls in 2-4 runs of ragged height, a run missing now and then,
+  sometimes a piece of floor inside), stumps (0.25: solid, a sheared stub, rooftop clutter),
+  collapsed (0.25: 3-6 tilted heaps, sometimes one wall fragment), the rest empty. Height
+  `height_near` 50 -> `height_far` 15 by 1.2 km, x 0.55-1.1, on 4 m floors, 8-56 m. Lots skip
+  `clear_radius` 110 m, the landmarks' keep-out circles and the highway. Past `detail_radius`
+  800 m shells and stumps are one plain box and collapsed lots one heap.
+- **Windows**: a 16 px tile (one `window_bay` 3.5 m x one `window_floor` 4 m, black hole in the
+  middle half) on world-metre UVs that `_box` writes on vertical faces while `_windows` is on
+  (packed walls, and the snapped / setback / facade landmarks; not the hero, crane, skeleton or
+  toppled tower). DEPARTURE: the cel base shader's `base_texture` clamps (Godot's default), so the
+  tile could not repeat there. New opt-in `tile_texture` in `cel-shader-base.gdshader` (repeat on,
+  white by default, multiplied over the albedo on the raw UV); nothing else sets it. PixelLook does
+  not carry it onto its twins (PIXEL is off by default).
+- **Tones**: five (`TONES`), the hero `HERO_TONE` a touch lighter. DEPARTURE: `concrete_shade`
+  0.55 -> 1.8. The storm fog swamps what the walls add: at 0.55 (and at 1.0) the windows and the
+  tones did not show at all (a pure-red test proved both were there). At 1.8 the overall
+  brightness barely moved, the windows read as dot grids and the brick shows rust. The hues were
+  pushed further apart than "+-10%" for the same reason.
+- **Drifts**: DEPARTURE: the big drift is in the LEE (-Z wall, the wind blows toward -Z), not
+  upwind: snow piles up downwind of obstacles, and that is the side the camera sees. A small one
+  banks the windward wall. Prisms (`_wedge`) in snow, detail range only.
+- **Cars**: `_street_cars`, both kerbs of every street within `car_radius` 800 m, one per 6 m slot
+  at `car_chance` 0.3, never across a crossing; `jam_count` 5 crossings with 8-14 cars at random
+  yaw. Dark body + cabin + snow cap (thick on half). ~2600 in the streets.
+- **Highway**: through hero-frame (0, 330) at 45 deg, 25 m deck at 20 m on pillars every 40 m
+  with crossbeams, parapets and median, clipped to the city's circle (~3 km). ~750 stalled cars on
+  the deck (6 lanes, 35% per 7 m slot). Snapped span at `break_along` -350 m (at 0 it hid under
+  the wing pod): both halves tipped 18-28 deg toward the gap, cars slid toward the ends, heap
+  below. In frame at the cut, right side.
+- **Landmarks / rubble**: the 11 neighbours kept; the toppled tower moved to (55, 260), lying
+  across the x = 55 street. Rubble mounds snapped onto street lines (30% crossings), 10-22 m.
+- **Mist** 55 m / 0.9 -> 25 m / 0.6 (`mist_height`, `mist_density`); the ruins' feet still soften.
+  **Streets**: block size and width now the city's (`FlyoverCity.street_block` / `street_width`),
+  `street_radius` 700 -> 1500.
+- **Mesh**: `_box` overridden to append to raw packed arrays per colour (taken out of the dict
+  while appending, else every append copies), bottom faces dropped on upright boxes. ~870k verts in
+  13 meshes; the build takes ~0.4 s.
+- Tests: 4 new in `tests/test_cutscene_flyover.gd` (lot count, kinds, ~60% standing, reach, clear
+  zone, taller near the hero, highway length + snapped span in frame at the cut + cars, window
+  tile on every mesh). Suite: 1259 tests, only the 2 known test_ichi_parked_ship failures.
+
+## Nozzle propulsion (2026-10-16)
+
+Grilled with the user from a pixel-art reference (a thruster with a big soft white-blue bloom
+at the nozzle, a cyan beam, a cloud of small white and cyan dot sparks around it, dark smoke).
+The work is all at the nozzle, around the trail.
+
+| # | Topic | Decision |
+|---|-------|----------|
+| 1 | Smoke | None |
+| 2 | Trails | Unchanged: no jitter, no wobble. The existing streak embers (150/s main, 16/s per pod) and the pod glow discs also stay as they are |
+| 3 | Bloom halo | Main engine only. A soft camera-facing halo ~5 m across (about 3x the nozzle), white-hot centre fading to pale cyan, sitting behind the existing 1.7 m disc (which stays the hard core). Flickers about +-8% in size and brightness several times a second. Size + brightness are exports |
+| 4 | Dot sparks | A new layer, separate from the streaks. Small bright round dots in two sizes and two colours (white-hot, which catches the glow, and cyan). Born in a ring just outside the trail's edge near the nozzle, live ~0.15-0.3 s, wink out hard (no fade), drift back slowly relative to the ship so they hang around the engine on screen; about 1 in 6 is flung wider |
+| 5 | Pods | Get dot sparks too, about a fifth of the main engine's count, smaller dots. No halo |
+| 6 | Count | ~150/s from the main engine (~35 on screen), ~7 on screen across the pods. Rates are exports |
+| 7 | Shape | Round, hard-edged, camera-facing discs (not the reference's pixel squares) |
+
+Like the trails and streaks, both are functions of the shot time: seeking shows the same frame
+and the shot opens with the sparks already crackling. The lightning flash doesn't touch them.
+
+### Built
+
+2026-10-16, from probe shots (`tests/_probe_flyover_shot.gd`).
+
+- **Halo**: `MainHalo`, a unit QuadMesh built by `FlyoverShot._place_glows()` as a child of
+  `Ship` on the main nozzle, scaled to `halo_size` (5 m). `shaders/cutscene/nozzle_halo.gdshader`
+  turns it to the camera in the vertex shader (size from the node's scale), additive, no depth
+  test (light spilling over the hull), falloff (1 - r)^3, white to (0.7, 0.93, 1.0) by half
+  radius. Flicker = three summed sines at ~9 Hz on the shot clock, `halo_flicker` 0.08 of size
+  and brightness. `halo_energy` 1.2. In the pale storm frame it reads mostly where it crosses the
+  dark nacelle (whitening the end of it); against the sky it barely adds anything.
+- **Dot sparks**: `FlyoverDotSparks` (`scripts/cutscene/flyover_dot_sparks.gd`, node `DotSparks`
+  built by `_build_dots()`), `shaders/cutscene/dot_sparks.gdshader` (blend_mix, hard disc, white
+  HDR 3.0 or cyan (0.2, 0.85, 1.0)). Kinematics in the SHIP frame (unlike the streak embers),
+  so they hang by the engine: born on a ring 0.7-1.3 m off the nozzle's centre line (first probe
+  had 0.45-0.95, most dots sat on the glow disc and vanished) up to 1 m behind the lip, drift
+  back 5 m/s (+-30%) and out 1.2 m/s, 17% flung out at 5.4-9 m/s. Life 0.15-0.3 s, no fade.
+  150/s main, 15/s per pod with `pod_scale` 0.65 on the ring, depth and size. Sizes 0.07 / 0.12 m
+  (30% large), 50% white. ~35 alive on the main engine.
+- Draw order now: shimmer -101, storm fog -100, crease ink + ground mist 0, snow 1, trails 2,
+  halo 3, glow discs 4 (was 3), embers 5 (was 4), dot sparks 6.
+- Tests: 2 new in `tests/test_cutscene_flyover.gd` (dots alive at 0 s + same after a seek + all
+  near a nozzle in the ship frame; halo on the main nozzle at its size). Suite: 1261, only the 2
+  known test_ichi_parked_ship failures.

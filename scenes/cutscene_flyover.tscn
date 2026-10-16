@@ -1,10 +1,9 @@
 [gd_scene format=3]
 
 [ext_resource type="Script" path="res://scripts/cutscene/flyover.gd" id="1_shot"]
-[ext_resource type="PackedScene" uid="uid://csindov7y230u" path="res://assets/OP_1.glb" id="2_map"]
+[ext_resource type="Script" path="res://scripts/cutscene/flyover_city.gd" id="2_city"]
 [ext_resource type="PackedScene" path="res://assets/sinestro_1.glb" id="3_ship"]
 [ext_resource type="Script" uid="uid://he1couvcqarw" path="res://scripts/rendering/apply_stylized.gd" id="4_applier"]
-[ext_resource type="Material" uid="uid://csrta6agxh215" path="res://resources/cel_ground.tres" id="5_ground"]
 [ext_resource type="Material" uid="uid://c7etxtnthghch" path="res://resources/cel_character.tres" id="6_char"]
 [ext_resource type="Script" uid="uid://bniidcgteju6" path="res://scripts/rendering/storm.gd" id="7_storm"]
 [ext_resource type="Script" path="res://scripts/cutscene/intro_space_trail.gd" id="8_trail"]
@@ -24,7 +23,7 @@ sky_material = SubResource("Sky_overcast")
 background_mode = 2
 sky = SubResource("Sky_cel")
 ambient_light_source = 2
-ambient_light_color = Color(0.45, 0.48, 0.58, 1)
+ambient_light_color = Color(0.32, 0.33, 0.42, 1)
 tonemap_mode = 2
 glow_enabled = true
 glow_levels/1 = 1.0
@@ -46,11 +45,11 @@ shader_parameter/near_fade_full = 12.0
 [sub_resource type="QuadMesh" id="QuadMesh_glow"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_glow"]
-render_priority = 3
+render_priority = 4
 shader = ExtResource("10_glow")
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_embers"]
-render_priority = 4
+render_priority = 5
 shader = ExtResource("13_embers_shader")
 
 [sub_resource type="Animation" id="Animation_shot"]
@@ -70,8 +69,8 @@ environment = SubResource("Environment_flyover")
 
 [node name="Sun" type="DirectionalLight3D" parent="."]
 transform = Transform3D(0.033844, -0.64242, 0.765606, 0, 0.766045, 0.642788, -0.999428, -0.021754, 0.025927, 0, 400, 0)
-light_color = Color(0.78, 0.84, 0.95, 1)
-light_energy = 0.18
+light_color = Color(0.66, 0.66, 0.8, 1)
+light_energy = 0.12
 light_indirect_energy = 0.0
 shadow_enabled = true
 shadow_bias = 0.02
@@ -80,13 +79,15 @@ shadow_blur = 1.6
 directional_shadow_max_distance = 60.0
 sky_mode = 1
 
-[node name="OP_1" parent="." instance=ExtResource("2_map")]
+[node name="FlashLight" type="DirectionalLight3D" parent="."]
+visible = false
+light_color = Color(0.7, 0.92, 1, 1)
+light_energy = 0.0
+light_indirect_energy = 0.0
+sky_mode = 1
 
-[node name="ApplyCelGround" type="Node" parent="."]
-script = ExtResource("4_applier")
-material = ExtResource("5_ground")
-targets = Array[NodePath]([NodePath("../OP_1")])
-derive_from_surfaces = true
+[node name="City" type="Node3D" parent="."]
+script = ExtResource("2_city")
 
 [node name="Ship" type="Node3D" parent="."]
 
@@ -137,10 +138,18 @@ nozzle_opacities = PackedFloat32Array(1, 0.5, 0.5)
 
 [node name="Storm" type="Node3D" parent="."]
 script = ExtResource("7_storm")
-visibility = 2400.0
+visibility = 2000.0
+gust_visibility = 1200.0
+near_color = Color(0.07, 0.07, 0.11, 1)
+far_color = Color(0.09, 0.12, 0.14, 1)
 wind_direction = Vector2(0, -1)
-gust_visibility = 1300.0
+fine_opacity = 0.5
 streak_time = 0.12
+lane_amount = 0.8
+lane_size = 40.0
+clump_chance = 0.12
+shade_chance = 0.3
+shade_color = Color(0.46, 0.48, 0.6, 1)
 drift_opacity = 0.0
 
 [node name="EngineEmbers" type="MeshInstance3D" parent="."]

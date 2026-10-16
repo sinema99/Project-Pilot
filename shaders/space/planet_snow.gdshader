@@ -2,13 +2,15 @@
 // "Planet upgrade"). Inside the baked ETOPO1 crop (the only part the camera sees): real coasts
 // roughed by noise, stepped ocean shelf bands, sea ice, every continent frozen white,
 // mild shaded mountains showing through the snow, cloud shadows, a cheated sun glint, painted patches and
-// chipped terminator. Outside the crop: the old flat noise planet, which is never on camera.
+// chipped terminator, and the mega sky city over the USA (planet_city.gdshaderinc). Outside the crop: the old flat noise planet, which is never on camera.
 // Flat cel colour regions and stepped light throughout.
 shader_type spatial;
 render_mode cull_back, shadows_disabled, specular_disabled;
 
 #include "res://shaders/space/space_noise.gdshaderinc"
 #include "res://shaders/space/planet_earth.gdshaderinc"
+#include "res://shaders/space/planet_city.gdshaderinc"
+#include "res://shaders/space/planet_grade.gdshaderinc"
 #include "res://shaders/cel/includes/painted.gdshaderinc"
 #include "res://shaders/cel/includes/scatter.gdshaderinc"
 
@@ -99,6 +101,8 @@ group_uniforms;
 
 varying vec3 sphere_dir;
 varying float terminator_shift;
+// 1 on open ocean (planet_grade: the ocean gradient), 0 elsewhere.
+varying float grade_water;
 
 void vertex() {
 	sphere_dir = normalize(VERTEX);
@@ -129,6 +133,7 @@ void fragment() {
 	terminator_shift = scatter_shift_at(stroke);
 	vec3 col;
 	float glint = 0.0;
+	grade_water = 0.0;
 	if (!earth_in_crop(uv)) {
 		col = fallback_surface(d);
 	} else {
@@ -153,6 +158,7 @@ void fragment() {
 				col = floe < pack * 0.8 ? snow_color : ice_color;
 			} else {
 				painted = false;
+				grade_water = 1.0;
 				// Sun glint, stepped: core and halo, chipped by the same strokes as the terminator.
 				float ang = degrees(acos(clamp(dot(d, earth_dir(glint_lat_lon)), -1.0, 1.0)))
 						+ (stroke - 0.5) * 0.35;
@@ -162,11 +168,22 @@ void fragment() {
 			col = snow_color;
 		}
 
-		// Mild mountains: the masked height tilts a normal that only the raking relief light sees.
 		vec3 lr = normalize(transpose(mat3(MODEL_MATRIX)) * normalize(relief_light_dir));
+		vec3 toward = earth_toward(d, lr);
+		// The mega sky city covers whatever is under it; its shadow falls on what is not.
+		bool city;
+		vec3 city_col = city_surface(d, toward, city);
+		if (city) {
+			col = city_col;
+			grade_water = 0.0;
+			painted = true;
+			glint = 0.0;
+		}
+
+		// Mild mountains: the masked height tilts a normal that only the raking relief light sees.
 		// Only real ranges: low relief (plains, plateaus) and the smooth ice sheet stay flat.
 		float mask = smoothstep(0.2, 0.65, tx.b);
-		if (mask > 0.01 && !water && !sheet) {
+		if (mask > 0.01 && !water && !sheet && !city) {
 			vec2 du = vec2(1.5 / EARTH_TEXELS.x, 0.0);
 			vec2 dv = vec2(0.0, 1.5 / EARTH_TEXELS.y);
 			float cell_m = EARTH_CELL * 111320.0 * 3.0;
@@ -184,8 +201,12 @@ void fragment() {
 					paint_planet_amount);
 		}
 
+		if (!city && city_shadow_at(d, toward)) {
+			col *= city_shadow_tone;
+			glint = 0.0;
+		}
+
 		// Cloud shadows: the cloud up-light of this point casts here.
-		vec3 toward = earth_toward(d, lr);
 		float shade = cloud_field(normalize(d + toward * cloud_shadow_offset));
 		if (shade > cloud_level + terminator_shift * 0.5) {
 			col *= cloud_shadow_tone;
@@ -203,7 +224,10 @@ void light() {
 	float mid = smoothstep(dark_edge - step_softness, dark_edge + step_softness, ndl);
 	float lit = smoothstep(lit_edge - step_softness, lit_edge + step_softness, ndl);
 	float tone = mix(mix(shadow_tone, mid_tone, mid), 1.0, lit);
-	DIFFUSE_LIGHT += ALBEDO * LIGHT_COLOR * exposure * tone;
+	float facing = clamp(dot(NORMAL, VIEW), 0.0, 1.0);
+	vec3 albedo = grade_albedo(ALBEDO, ndl, dark_edge, facing, grade_water);
+	DIFFUSE_LIGHT += grade_light(albedo * LIGHT_COLOR * exposure * tone, LIGHT_COLOR * exposure, ndl,
+			dark_edge, step_softness, facing, tone);
 	// Atmosphere rim: fresnel, only where the sun reaches.
 	float fres = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), rim_power);
 	DIFFUSE_LIGHT += rim_color * LIGHT_COLOR * exposure * fres * rim_strength * mid;

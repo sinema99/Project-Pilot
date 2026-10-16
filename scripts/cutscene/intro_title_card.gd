@@ -1,17 +1,18 @@
 class_name IntroTitleCard
 extends CanvasLayer
 
-# The "EARTH 2129" title card in the intro shot's bottom-left corner (spec "Title card"). The title
+# The "EARTH 2329" title card in the intro shot's bottom-left corner (spec "Title card"). The title
 # and the coordinates fade in staggered, then the ship's flyby wipes them away left to right while
 # they shake with the camera. No backing behind the text (user). Everything is a function of the shot time, like the rest of the shot,
 # so seeking shows the same frame. intro_space.gd calls update_card() every frame.
 
-@export var title_text := "EARTH 2129"
+@export var title_text := "EARTH 2329"
 ## Under the storm eye over Florida, where the ship's dive ends.
 @export var coords_text := "27°48'14\"N  81°41'52\"W"
 
 @export_group("Timing")
-## Shot times each line starts fading in and is fully in.
+## Shot times each line starts fading in and is fully in. The opening pan settles at 2.5 s (its
+## pan_overlap), so the title starts 1 s before the camera lands (2026-10-16).
 @export var title_in_start := 1.5
 @export var title_in_end := 3.0
 @export var coords_in_start := 2.1
@@ -32,6 +33,10 @@ extends CanvasLayer
 @export var spacing := 0.35
 @export var title_opacity := 0.9
 @export var coords_opacity := 0.75
+## Film grain on the text (docs/specs/cinema-post.md): brightness swing per pixel, and grain
+## frames per second. The 3D post pass does not reach the 2D layer, so the card carries its own.
+@export var grain := 0.18
+@export var grain_fps := 24.0
 
 const _SEMIBOLD := preload("res://assets/fonts/BarlowCondensed-SemiBold.ttf")
 const _REGULAR := preload("res://assets/fonts/BarlowCondensed-Regular.ttf")
@@ -42,10 +47,22 @@ shader_type canvas_item;
 uniform vec2 block = vec2(0.0, 1.0);
 uniform float wipe = 0.0;
 uniform float soft = 0.25;
+uniform float grain = 0.0;
+uniform float grain_fps = 24.0;
+float hash(vec2 p) {
+	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+	p3 += dot(p3, p3.yzx + 33.33);
+	return fract((p3.x + p3.y) * p3.z);
+}
 void fragment() {
 	float x = (SCREEN_UV.x - block.x) / max(block.y - block.x, 0.001);
 	float edge = wipe * (1.0 + soft);
 	COLOR.a *= smoothstep(edge - soft, edge, x);
+	// Grain: same look as the 3D pass, a new pattern every grain frame.
+	vec2 q = floor(FRAGCOORD.xy) + floor(TIME * grain_fps) * vec2(37.0, 17.0);
+	float n = hash(q) + hash(q + 71.3) - 1.0;
+	COLOR.rgb *= 1.0 + n * grain;
+	COLOR.a *= 1.0 + n * grain * 0.5;
 }
 """
 
@@ -59,6 +76,8 @@ func _ready() -> void:
 	layer = 10
 	_block.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_wipe_mat.shader = _shader(_WIPE_SHADER)
+	_wipe_mat.set_shader_parameter(&"grain", grain)
+	_wipe_mat.set_shader_parameter(&"grain_fps", grain_fps)
 	_block.material = _wipe_mat
 	add_child(_block)
 	for l: Label in [_title, _coords]:
