@@ -22,3 +22,7 @@ desktop.ini
 .agents/
 .claude/
 skills-lock.json
+
+# Video captures and generated exports (too large / regenerable)
+/recordings/
+/exports/
