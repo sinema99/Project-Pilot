@@ -26,6 +26,8 @@ render_mode cull_disabled;
 #endif
 
 #include "includes/base-cel-shader.gdshaderinc"
+#include "includes/painted.gdshaderinc"
+#include "includes/scatter.gdshaderinc"
 
 #if USE_EMISSION
 #include "includes/emission.gdshaderinc"
@@ -80,12 +82,29 @@ varying float FRESNEL_STRENGTH;
 
 varying vec2 base_uv;
 
+// Painted shading - see includes/painted.gdshaderinc and docs/specs/painted-shading.md.
+// UV for skinned characters (the pattern rides the limbs), World for level geometry (no UVs
+// needed, same patch size everywhere).
+group_uniforms PaintedShading;
+uniform int paint_anchor: hint_enum("UV", "World") = 0;
+group_uniforms;
+// Set per mesh by apply_stylized.gd, so two meshes with the same unwrap do not wear the same
+// patches. World-anchored materials ignore it.
+instance uniform float paint_seed = 0.0;
+varying vec2 paint_uv;
+varying vec3 paint_world_pos;
+varying vec3 paint_world_normal;
+
 group_uniforms Tiling;
 uniform vec2 uv_scale = vec2(1,1);
 uniform vec2 uv_offset = vec2(0,0);
 group_uniforms;
 
 void vertex() {
+	// Raw UV, before the tiling below: patch size is set by paint_uv_size, not per material.
+	paint_uv = UV;
+	paint_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	paint_world_normal = normalize(mat3(MODEL_MATRIX) * NORMAL);
 	UV = UV * uv_scale.xy + uv_offset.xy;
 	#if !USE_HEIGHT_MAP
 		base_uv = UV;
@@ -150,60 +169,87 @@ void fragment() {
 #endif
 
 ALBEDO = color.rgb * texture(base_texture, base_uv).rgb;
+
+	float paint_n;
+	if (paint_anchor == 1) {
+		paint_n = paint_noise_world(paint_world_pos, paint_world_normal);
+	} else {
+		vec2 seed_offset = vec2(paint_seed * 7.13, paint_seed * 3.71);
+		paint_n = paint_noise(paint_uv / max(paint_uv_size, 1e-4) + seed_offset);
+	}
+	ALBEDO = paint_apply(ALBEDO, paint_level(paint_n));
+
+	// Chipped band edges - see includes/scatter.gdshaderinc. Same UV / World split as the paint.
+	scatter_shift = 0.0;
+	if (scatter_strength > 0.0) {
+		float scatter_c;
+		if (paint_anchor == 1) {
+			scatter_c = scatter_stroke_world(paint_world_pos / max(scatter_world_size, 1e-3),
+					paint_world_normal);
+		} else {
+			vec2 scatter_seed = vec2(paint_seed * 5.31, paint_seed * 2.17);
+			scatter_c = scatter_stroke(paint_uv / max(scatter_uv_size, 1e-4) + scatter_seed);
+		}
+		scatter_shift = scatter_shift_at(scatter_c);
+	}
 }
 
 void light() {
+	// A point light's ATTENUATION is its distance falloff, not a shadow: through the 0.5 shadow
+	// threshold it drew a hard disc on the floor under the spark lights. Fold it into the colour.
+	vec3 light_color = LIGHT_IS_DIRECTIONAL ? LIGHT_COLOR : LIGHT_COLOR * ATTENUATION;
+	float attenuation = LIGHT_IS_DIRECTIONAL ? ATTENUATION : 1.0;
 #if USE_BACKLIGHT
 	DIFFUSE_LIGHT += backlight_diffuse(
 			ALBEDO,
-			LIGHT_COLOR,
+			light_color,
 			LIGHT,
 			NORMAL,
-			ATTENUATION,
+			attenuation,
 			BACKLIGHT
 	);
 #else
 	DIFFUSE_LIGHT += diffuse_light(
 			ALBEDO,
-			LIGHT_COLOR,
+			light_color,
 			LIGHT,
 			NORMAL,
-			ATTENUATION
+			attenuation
 	);
 #endif
 
 #if USE_ANISOTROPY
 	SPECULAR_LIGHT += anisotropy_specular(
-			LIGHT_COLOR,
+			light_color,
 			SPECULAR_COLOR,
 			SPECULAR_STRENGTH,
 			NORMAL,
 			VIEW,
 			LIGHT,
-			ATTENUATION,
+			attenuation,
 			UV,
 			ANISOTROPY_DIR,
 			ANISOTROPY_RATIO
 	);
 #else
 	SPECULAR_LIGHT += specular_light(
-			LIGHT_COLOR,
+			light_color,
 			SPECULAR_COLOR,
 			SPECULAR_STRENGTH,
 			NORMAL,
 			VIEW,
 			LIGHT,
-			ATTENUATION
+			attenuation
 	);
 #endif
 
 	SPECULAR_LIGHT += fresnel_light(
-			LIGHT_COLOR,
+			light_color,
 			FRESNEL_COLOR,
 			FRESNEL_STRENGTH,
 			NORMAL,
 			VIEW,
 			LIGHT,
-			ATTENUATION
+			attenuation
 	);
 }

@@ -152,6 +152,9 @@ and nothing new is needed.
 | | SHADOW QUALITY | LOW / MEDIUM / HIGH | HIGH |
 | | ANTI-ALIASING | OFF / 2x / 4x / 8x | 4x |
 | | PIXEL FILTER | OFF / 160x90 ... 640x360 | OFF |
+| | PAINTED SHADING | OFF / ON | ON - added 2026-10-04, see painted-shading.md |
+| | LOOK | CEL / PIXEL | CEL - added 2026-10-06, see pixel-look.md (PIXEL FILTER is now OFF / 2X / 3X / 4X / 6X) |
+| | DITHER | OFF / ON | ON - added 2026-10-06, PIXEL look only |
 | CONTROLS | MOUSE SENSITIVITY | 0.25x - 2.00x, step 0.05 | 1.00x |
 | | CONTROLLER SENSITIVITY | 0.25x - 2.00x, step 0.05 | 1.00x |
 | | FOV | 60 - 110, step 5 | 75 |
@@ -502,6 +505,10 @@ stale against a player spawned later.
 with SETTINGS and needs correcting.
 
 ## The pixel filter
+
+> **Superseded 2026-10-03** by [pixel-world.md](pixel-world.md): the filter is now a real low-res
+> render (`PixelWorld`, group `pixel_world`, key `pixel_size`) plus a COLOUR DEPTH row. The text
+> below describes the old screen-space filter and is kept for history.
 
 Alone among the rows, this one does not drive a global. `PixelFilter` is a `CanvasLayer` *inside
 each scene* (`trial.tscn:208`, `test_platform.tscn:82`), shipping `visible = false`, driven by

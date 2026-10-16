@@ -1,0 +1,7 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/habitat_part.gd" id="1_omlna"]
+
+[node name="Tower" type="Node3D" unique_id=1550124610]
+script = ExtResource("1_omlna")
+kind = "tower"

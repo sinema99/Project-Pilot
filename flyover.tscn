@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://bhcr7rgnoltn"]
+
+[ext_resource type="PackedScene" path="res://scenes/cutscene_flyover.tscn" id="1_htbfh"]
+
+[node name="Node3D" type="Node3D" unique_id=73868856]
+
+[node name="Flyover" parent="." unique_id=585008544 instance=ExtResource("1_htbfh")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.16928494, 0, 2.21965)

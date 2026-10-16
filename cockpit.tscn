@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://dkgv7kayo8a03"]
+
+[ext_resource type="PackedScene" uid="uid://otuvq7f7bhqv" path="res://scenes/cockpit.tscn" id="1_bhhkq"]
+
+[node name="Node3D" type="Node3D" unique_id=639845545]
+
+[node name="Cockpit" parent="." unique_id=618155469 instance=ExtResource("1_bhhkq")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.12675726, 0, 1.8059247)

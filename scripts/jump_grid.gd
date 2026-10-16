@@ -398,6 +398,7 @@ func _build_pillars(d: Dials, heights: Array[float], pitch: float, cols: int, ne
 	var span := float(cols - 1) * pitch
 	for i in heights.size():
 		var col := i % cols
+		@warning_ignore("integer_division")
 		var row := i / cols
 		_build_pillar(d, group, heights[i],
 			-span * 0.5 + float(col) * pitch,
@@ -668,6 +669,7 @@ func _label(parent: Node, nm: String, text: String, centre: Vector3, tint: Color
 	label.text = text
 	label.font_size = LABEL_FONT_SIZE
 	label.pixel_size = LABEL_PIXEL_SIZE
+	@warning_ignore("integer_division")
 	label.outline_size = LABEL_FONT_SIZE / 4
 	label.modulate = tint
 	label.outline_modulate = Color(0.0, 0.0, 0.0, 1.0)

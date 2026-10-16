@@ -35,10 +35,10 @@ func _ready() -> void:
 	var labels: Array[String] = []
 	for tab: Dictionary in TABS:
 		labels.append(tab["label"])
-		var body := (load(tab["scene"]) as PackedScene).instantiate() as Control
-		body.visible = false
-		_window.content_root().add_child(body)
-		_bodies.append(body)
+		var tab_body := (load(tab["scene"]) as PackedScene).instantiate() as Control
+		tab_body.visible = false
+		_window.content_root().add_child(tab_body)
+		_bodies.append(tab_body)
 		_memory.append(_blank_memory())
 	_window.set_title("PAUSED")
 	_window.set_tabs(labels)
@@ -97,8 +97,8 @@ func _show_tab(index: int, direction: int, animate := true) -> void:
 	for i in _bodies.size():
 		_bodies[i].visible = i == _active
 	_window.set_active_tab(_active, animate)
-	var body := _bodies[_active]
-	_window.set_hints(body.hints() if body.has_method("hints") else DEFAULT_HINTS)
+	var tab_body := _bodies[_active]
+	_window.set_hints(tab_body.hints() if tab_body.has_method("hints") else DEFAULT_HINTS)
 	if animate and _active != previous:
 		_window.play_tab_switch(direction)
 	focus_first()
@@ -107,9 +107,9 @@ func _show_tab(index: int, direction: int, animate := true) -> void:
 func _remember_focus(node: Control) -> void:
 	if _bodies.is_empty():
 		return
-	var body := _bodies[_active]
-	if node != null and body.is_ancestor_of(node):
-		_memory[_active]["focus"] = body.get_path_to(node)
+	var tab_body := _bodies[_active]
+	if node != null and tab_body.is_ancestor_of(node):
+		_memory[_active]["focus"] = tab_body.get_path_to(node)
 	_memory[_active]["scroll"] = _window.scroll_position()
 
 # Read in _input rather than _unhandled_input: a focused Button consumes ui_left / ui_right for
@@ -134,20 +134,20 @@ func _input(event: InputEvent) -> void:
 func focus_first() -> void:
 	if _bodies.is_empty():
 		return
-	var body := _bodies[_active]
-	if body.has_method("refresh"):
-		body.refresh()
+	var tab_body := _bodies[_active]
+	if tab_body.has_method("refresh"):
+		tab_body.refresh()
 	var memory := _memory[_active]
 	# Read before grab_focus: the focus change records the scroll position, which at this moment
 	# is still the previous tab's.
 	var saved_scroll: int = memory["scroll"]
 	var target: Control = null
 	if memory["focus"] != NodePath():
-		target = body.get_node_or_null(memory["focus"]) as Control
+		target = tab_body.get_node_or_null(memory["focus"]) as Control
 	if target != null and target.is_visible_in_tree() and target.focus_mode != Control.FOCUS_NONE:
 		target.grab_focus()
-	elif body.has_method("focus_first"):
-		body.focus_first()
+	elif tab_body.has_method("focus_first"):
+		tab_body.focus_first()
 	_restore_scroll.call_deferred(_active, saved_scroll)
 
 # Deferred so the body has been laid out and the scroll range exists.

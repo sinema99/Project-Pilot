@@ -5,9 +5,7 @@
 [ext_resource type="Material" uid="uid://bv5gy3lf6e5w8" path="res://resources/cel_sky.tres" id="3_sky"]
 [ext_resource type="Material" uid="uid://csrta6agxh215" path="res://resources/cel_ground.tres" id="4_ground"]
 [ext_resource type="Material" uid="uid://c7etxtnthghch" path="res://resources/cel_character.tres" id="5_char"]
-[ext_resource type="Shader" uid="uid://dcg01gsjj5mpj" path="res://shaders/pixelate.gdshader" id="6_pixelate"]
 [ext_resource type="Script" uid="uid://yxw7w7viuhmd" path="res://scripts/blockout_box.gd" id="7_o74lt"]
-[ext_resource type="Script" uid="uid://csg3i1yfc2wog" path="res://scripts/rendering/pixelate.gd" id="7_pixctl"]
 [ext_resource type="Script" uid="uid://dqu60v1m6onbs" path="res://scripts/sliding_door.gd" id="8_4iqja"]
 [ext_resource type="Script" uid="uid://dxyqtg1yajynr" path="res://scripts/interact_button.gd" id="9_6vp88"]
 [ext_resource type="PackedScene" uid="uid://b745modfj23k4" path="res://assets/TrainingV.glb" id="9_training"]
@@ -17,6 +15,16 @@
 [ext_resource type="Script" uid="uid://pjqf4vy1ochn" path="res://scripts/bounce_pad.gd" id="14_bouncepad"]
 [ext_resource type="Script" uid="uid://dtsjxh4kqige2" path="res://scripts/rail.gd" id="15_rail"]
 [ext_resource type="Material" path="res://resources/pilot_cel_character.tres" id="16_pilotchar"]
+[ext_resource type="Script" uid="uid://ckfev1euksn1e" path="res://scripts/reflect/reflect_test_emitter.gd" id="17_reflectemitter"]
+[ext_resource type="PackedScene" path="res://scenes/pipe_hall.tscn" id="18_pipehall"]
+[ext_resource type="PackedScene" uid="uid://8wpgfx11baee" path="res://scenes/habitat.tscn" id="19_habitat"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts.tscn" id="20_habitatparts"]
+[ext_resource type="PackedScene" path="res://scenes/firing_range.tscn" id="21_firingrange"]
+[ext_resource type="Script" uid="uid://bo4aoofkxdqs4" path="res://scripts/rendering/pixel_world.gd" id="30_pixelworld"]
+[ext_resource type="Script" uid="uid://c3xxrq8p6qwou" path="res://scripts/rendering/pixel_look.gd" id="31_pixellook"]
+[ext_resource type="PackedScene" uid="uid://ces1m5kofa4ig" path="res://assets/pilot9_decimate.glb" id="32_decimate"]
+[ext_resource type="Script" uid="uid://ctoduvbsbv7t" path="res://scripts/pilot_switcher.gd" id="33_switcher"]
+[ext_resource type="PackedScene" uid="uid://qbdbdseixki0" path="res://assets/vanguard_1.glb" id="34_vanguard"]
 
 [sub_resource type="Sky" id="Sky_cel"]
 sky_material = ExtResource("3_sky")
@@ -53,11 +61,6 @@ _data = {
 }
 point_count = 4
 
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_pixelate"]
-shader = ExtResource("6_pixelate")
-shader_parameter/pixel_grid = Vector2(640, 360)
-shader_parameter/color_steps = 0
-
 [node name="Trial" type="Node3D" unique_id=289008]
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1918944987]
@@ -82,8 +85,28 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.08662796, 0, 0.036067963)
 [node name="Pilot9" parent="." unique_id=530713254 instance=ExtResource("1_pilot")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.678, 0)
 
+[node name="Pilot9Decimate" parent="." unique_id=530713255 instance=ExtResource("1_pilot")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.5, 0.678, 0)
+body_glb = ExtResource("32_decimate")
+
+[node name="ReflectTestEmitter" type="Node3D" parent="." unique_id=604211566]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 10)
+script = ExtResource("17_reflectemitter")
+
 [node name="JumpGrid" parent="." unique_id=284119061 instance=ExtResource("12_jumpgrid")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -134, 1.5, 0)
+
+[node name="PipeHall" parent="." unique_id=1039057271 instance=ExtResource("18_pipehall")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -99, 4, 84)
+
+[node name="Habitat" parent="." unique_id=1039057272 instance=ExtResource("19_habitat")]
+transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, 288, -16, 0)
+
+[node name="HabitatParts" parent="." unique_id=1039057273 instance=ExtResource("20_habitatparts")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 200, -16, 300)
+
+[node name="FiringRange" parent="." unique_id=1039057274 instance=ExtResource("21_firingrange")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -150)
 
 [node name="Blockout" type="Node3D" parent="." unique_id=284119062]
 transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, 13, 0, 63)
@@ -263,33 +286,33 @@ script = ExtResource("15_rail")
 [node name="EXIA" parent="." unique_id=612094488 instance=ExtResource("10_mech")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6, 0.04, -12)
 
+[node name="Vanguard1" parent="." unique_id=1039057275 instance=ExtResource("34_vanguard")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -26, 0, -19)
+
 [node name="ApplyCelGround" type="Node" parent="." unique_id=997651511]
 script = ExtResource("2_applier")
 material = ExtResource("4_ground")
-targets = Array[NodePath]([NodePath("../TrainingV"), NodePath("")])
+targets = Array[NodePath]([NodePath("../TrainingV")])
 derive_from_surfaces = true
 
 [node name="ApplyCelPilot9" type="Node" parent="." unique_id=1729387506]
 script = ExtResource("2_applier")
 material = ExtResource("16_pilotchar")
-targets = Array[NodePath]([NodePath("../Pilot9")])
+targets = Array[NodePath]([NodePath("../Pilot9"), NodePath("../Pilot9Decimate")])
 derive_from_surfaces = true
 
 [node name="ApplyCelMech" type="Node" parent="." unique_id=612094489]
 script = ExtResource("2_applier")
 material = ExtResource("5_char")
-targets = Array[NodePath]([NodePath("../EXIA/Model")])
+targets = Array[NodePath]([NodePath("../EXIA/Model"), NodePath("../Vanguard1")])
 derive_from_surfaces = true
 
-[node name="PixelFilter" type="CanvasLayer" parent="." unique_id=164024207 groups=["pixel_filter"]]
-visible = false
-script = ExtResource("7_pixctl")
+[node name="PilotSwitcher" type="Node" parent="." unique_id=530713256]
+script = ExtResource("33_switcher")
+pilots = Array[NodePath]([NodePath("../Pilot9"), NodePath("../Pilot9Decimate")])
 
-[node name="Screen" type="ColorRect" parent="PixelFilter" unique_id=1781553296]
-material = SubResource("ShaderMaterial_pixelate")
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
+[node name="PixelWorld" type="CanvasLayer" parent="." unique_id=2041384124]
+script = ExtResource("30_pixelworld")
+
+[node name="PixelLook" type="Node" parent="." unique_id=562500381]
+script = ExtResource("31_pixellook")

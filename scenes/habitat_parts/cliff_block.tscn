@@ -1,0 +1,7 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/habitat_part.gd" id="1_f1qkd"]
+
+[node name="CliffBlock" type="Node3D" unique_id=1191322416]
+script = ExtResource("1_f1qkd")
+kind = "cliff_block"

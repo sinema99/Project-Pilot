@@ -284,5 +284,6 @@ func test_trial_carries_exia_and_its_cel_pass() -> void:
 	check(applier != null, "trial.tscn has no ApplyCelMech")
 	if applier:
 		check(applier.material != null, "ApplyCelMech has no material assigned")
-		check(applier.targets.size() == 1 and str(applier.targets[0]) == "../EXIA/Model",
+		# The Vanguard ship rides the same pass (docs: vanguard-ship), so EXIA need only be one target.
+		check(applier.targets.has(NodePath("../EXIA/Model")),
 			"ApplyCelMech no longer targets ../EXIA/Model")

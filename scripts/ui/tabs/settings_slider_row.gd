@@ -13,6 +13,7 @@ extends "res://scripts/ui/menu_row.gd"
 
 signal dragged
 
+const SettingsScript := preload("res://scripts/settings.gd")
 const CONTROL_WIDTH := 300.0
 const VALUE_WIDTH := 64.0
 const RIGHT_MARGIN := 16.0
@@ -64,7 +65,7 @@ func _gui_input(event: InputEvent) -> void:
 	super._gui_input(event)
 
 func _set_from_x(x: float) -> void:
-	var values := Settings.values_of(key)
+	var values := SettingsScript.values_of(key)
 	var span := track_span()
 	if values.is_empty() or span.y <= span.x:
 		return
@@ -85,15 +86,15 @@ func _draw_content() -> void:
 	_draw_track(span)
 
 func _draw_track(span: Vector2) -> void:
-	var values := Settings.values_of(key)
+	var values := SettingsScript.values_of(key)
 	if values.is_empty():
 		return
 	var ratio := float(Settings.index_for(key)) / float(maxi(values.size() - 1, 1))
 	var y := size.y * 0.5 - TRACK_HEIGHT * 0.5
 	var accent := accent_color()
-	var scale := press_scale()
-	var track := Color(accent, lerpf(TRACK_IDLE_ALPHA, 0.35, selected_amount) * scale)
-	var fill := Color(accent, lerpf(FILL_IDLE_ALPHA, 1.0, selected_amount) * scale)
+	var pressed_scale := press_scale()
+	var track := Color(accent, lerpf(TRACK_IDLE_ALPHA, 0.35, selected_amount) * pressed_scale)
+	var fill := Color(accent, lerpf(FILL_IDLE_ALPHA, 1.0, selected_amount) * pressed_scale)
 	var width := span.y - span.x
 	draw_rect(Rect2(span.x, y, width, TRACK_HEIGHT), track)
 	draw_rect(Rect2(span.x, y, width * ratio, TRACK_HEIGHT), fill)

@@ -33,4 +33,4 @@ func _on_settings_pressed() -> void:
 	UI.open(&"settings")
 
 func _on_quit_pressed() -> void:
-	UI.confirm("QUIT TO DESKTOP", "Close the game.", get_tree().quit)
+	UI.confirm("QUIT TO DESKTOP", "Close the game.", get_tree().quit, true)

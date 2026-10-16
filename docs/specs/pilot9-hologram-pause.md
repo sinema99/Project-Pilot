@@ -329,3 +329,16 @@ come back exactly. Departures:
   viewport's alpha.
 - Tunables live as exports on the rig (`shot_*`, `panel_*`, `ring_*`). The ring sits on the `Head`
   bone at `ring_offset` (0, 0.08, 0.02); it read as a seam line at eye level in the probe.
+- **The beam stays up (2026-09-29).** Reversed "beam only during the open": it still flares 0.15-0.35 s,
+  but from 0.55-0.85 s it eases down to `beam_rest` (export on the rig, 0.10) and holds there for the
+  whole pause; the close plays it back. The shader also fades the cone toward the panel end so it
+  stays faint over the menu's edges. Curve is `beam_strength()`, tested. Not yet played.
+
+## Pilot in front of the panel under PixelWorld (fixed 2026-10-06)
+
+Since the panel moved to PixelWorld's sharp layer (2026-10-03) it is drawn by SharpView, which
+renders only layer 20, so pilot's stencil pass never ran there and the panel's bottom-left corner
+covered him. While the menu is up, `_set_pilot_stencil` now also adds a `HologramSharpMask` sibling
+per pilot mesh: same mesh, skin and skeleton, stencil material only, layer 20 only. They are freed
+on close. Known limit: in SharpView there is no world depth, so a wall between the camera and pilot
+would still cut a pilot-shaped hole in the panel; the camera sweep keeps walls out of that line.

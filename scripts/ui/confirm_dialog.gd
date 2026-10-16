@@ -33,10 +33,14 @@ func _ready() -> void:
 ##
 ## The confirm button is destructive-tinted unless there is a countdown: every plain use of this
 ## dialog throws away a run, while the countdown one asks whether to KEEP something.
-func setup(title: String, message: String, countdown: float = 0.0) -> void:
+##
+## `confirm_first` puts CONFIRM on the left and CANCEL on the right. The dialog instance is reused,
+## so the order is set on every call rather than only when it is true.
+func setup(title: String, message: String, countdown: float = 0.0, confirm_first := false) -> void:
 	# Called before the push, so the labels may not be @onready yet on the very first open.
 	if not is_node_ready():
 		await ready
+	_confirm.get_parent().move_child(_confirm if confirm_first else _cancel, 0)
 	_title.text = title
 	_base_message = message
 	_countdown_left = countdown

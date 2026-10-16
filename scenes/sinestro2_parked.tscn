@@ -1,0 +1,63 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/parked_ship.gd" id="1_ship"]
+[ext_resource type="PackedScene" path="res://assets/sinestro2.glb" id="2_glb"]
+
+[sub_resource type="BoxShape3D" id="Box_body"]
+size = Vector3(2.5, 3.1, 5.2)
+
+[sub_resource type="BoxShape3D" id="Box_fin"]
+size = Vector3(0.6, 2.5, 1.5)
+
+[sub_resource type="BoxShape3D" id="Box_wing"]
+size = Vector3(12, 0.3, 1)
+
+[sub_resource type="BoxShape3D" id="Box_pod"]
+size = Vector3(1.7, 1.2, 3.8)
+
+[sub_resource type="BoxShape3D" id="Box_keel"]
+size = Vector3(0.6, 1, 7.5)
+
+[sub_resource type="BoxShape3D" id="Box_nose"]
+size = Vector3(2, 2, 4.9)
+
+[sub_resource type="BoxShape3D" id="Box_skid"]
+size = Vector3(0.25, 1, 3.9)
+
+[node name="Sinestro2" type="StaticBody3D" node_paths=PackedStringArray("model")]
+script = ExtResource("1_ship")
+model = NodePath("Model")
+
+[node name="Model" parent="." instance=ExtResource("2_glb")]
+
+[node name="Body" type="CollisionShape3D" parent="." groups=["storm_roof"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.25, -1.1)
+shape = SubResource("Box_body")
+
+[node name="Fin" type="CollisionShape3D" parent="." groups=["storm_roof"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4.05, -0.45)
+shape = SubResource("Box_fin")
+
+[node name="Wing" type="CollisionShape3D" parent="." groups=["storm_roof"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, -0.1)
+shape = SubResource("Box_wing")
+
+[node name="PodL" type="CollisionShape3D" parent="." groups=["storm_roof"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.75, 1.5, -0.2)
+shape = SubResource("Box_pod")
+
+[node name="PodR" type="CollisionShape3D" parent="." groups=["storm_roof"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.75, 1.5, -0.2)
+shape = SubResource("Box_pod")
+
+[node name="Keel" type="CollisionShape3D" parent="." groups=["storm_roof"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 5.25)
+shape = SubResource("Box_keel")
+
+[node name="Nose" type="CollisionShape3D" parent="." groups=["storm_roof"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 5.25)
+shape = SubResource("Box_nose")
+
+[node name="Skid" type="CollisionShape3D" parent="." groups=["storm_roof"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.85, 5.35)
+shape = SubResource("Box_skid")

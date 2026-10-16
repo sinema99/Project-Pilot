@@ -45,7 +45,7 @@ func test_defaults() -> void:
 	if p == null:
 		fail("could not instance pilot9")
 		return
-	near(p.camera_shoulder_offset, 0.4, 0.0001, "offset is 0.4 m")
+	near(p.camera_shoulder_offset, 0.8, 0.0001, "offset is 0.8 m")
 	near(p.camera_shoulder_swap_time, 0.25, 0.0001, "swap takes 0.25 s")
 	eq(p._shoulder_target_side(), 1.0, "starts on the right shoulder")
 
@@ -82,11 +82,11 @@ func test_arm_sits_at_the_offset_after_settling() -> void:
 	p._camera_mode_length = p.camera_distance
 	for i in 60:
 		p._handle_camera_shoulder(1.0 / 60.0)
-	near(p.spring_arm.position.x, 0.4, 0.02, "right shoulder: arm 0.4 m to the camera's right")
+	near(p.spring_arm.position.x, 0.8, 0.02, "right shoulder: arm 0.8 m to the camera's right")
 	p.swap_shoulder()
 	for i in 60:
 		p._handle_camera_shoulder(1.0 / 60.0)
-	near(p.spring_arm.position.x, -0.4, 0.02, "left shoulder: arm 0.4 m to the left")
+	near(p.spring_arm.position.x, -0.8, 0.02, "left shoulder: arm 0.8 m to the left")
 
 func test_first_person_has_no_offset() -> void:
 	var p := _scene()

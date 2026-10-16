@@ -1,0 +1,153 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/cutscene/flyover.gd" id="1_shot"]
+[ext_resource type="PackedScene" uid="uid://csindov7y230u" path="res://assets/OP_1.glb" id="2_map"]
+[ext_resource type="PackedScene" path="res://assets/sinestro_1.glb" id="3_ship"]
+[ext_resource type="Script" uid="uid://he1couvcqarw" path="res://scripts/rendering/apply_stylized.gd" id="4_applier"]
+[ext_resource type="Material" uid="uid://csrta6agxh215" path="res://resources/cel_ground.tres" id="5_ground"]
+[ext_resource type="Material" uid="uid://c7etxtnthghch" path="res://resources/cel_character.tres" id="6_char"]
+[ext_resource type="Script" uid="uid://bniidcgteju6" path="res://scripts/rendering/storm.gd" id="7_storm"]
+[ext_resource type="Script" path="res://scripts/cutscene/intro_space_trail.gd" id="8_trail"]
+[ext_resource type="Shader" path="res://shaders/space/engine_trail.gdshader" id="9_trail_shader"]
+[ext_resource type="Shader" path="res://shaders/space/nozzle_glow.gdshader" id="10_glow"]
+[ext_resource type="Shader" path="res://shaders/cutscene/flyover_sky.gdshader" id="11_sky"]
+[ext_resource type="Script" path="res://scripts/cutscene/flyover_embers.gd" id="12_embers"]
+[ext_resource type="Shader" path="res://shaders/cutscene/engine_embers.gdshader" id="13_embers_shader"]
+
+[sub_resource type="ShaderMaterial" id="Sky_overcast"]
+shader = ExtResource("11_sky")
+
+[sub_resource type="Sky" id="Sky_cel"]
+sky_material = SubResource("Sky_overcast")
+
+[sub_resource type="Environment" id="Environment_flyover"]
+background_mode = 2
+sky = SubResource("Sky_cel")
+ambient_light_source = 2
+ambient_light_color = Color(0.45, 0.48, 0.58, 1)
+tonemap_mode = 2
+glow_enabled = true
+glow_levels/1 = 1.0
+glow_levels/2 = 1.0
+glow_levels/3 = 1.0
+glow_levels/4 = 0.6
+glow_levels/5 = 0.3
+glow_intensity = 0.5
+glow_strength = 1.0
+glow_blend_mode = 0
+glow_hdr_threshold = 1.0
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_trail"]
+render_priority = 2
+shader = ExtResource("9_trail_shader")
+shader_parameter/near_fade_gone = 4.0
+shader_parameter/near_fade_full = 12.0
+
+[sub_resource type="QuadMesh" id="QuadMesh_glow"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_glow"]
+render_priority = 3
+shader = ExtResource("10_glow")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_embers"]
+render_priority = 4
+shader = ExtResource("13_embers_shader")
+
+[sub_resource type="Animation" id="Animation_shot"]
+resource_name = "shot"
+length = 3.0
+
+[sub_resource type="AnimationLibrary" id="AnimationLibrary_shot"]
+_data = {
+&"shot": SubResource("Animation_shot")
+}
+
+[node name="Flyover" type="Node3D"]
+script = ExtResource("1_shot")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_flyover")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.033844, -0.64242, 0.765606, 0, 0.766045, 0.642788, -0.999428, -0.021754, 0.025927, 0, 400, 0)
+light_color = Color(0.78, 0.84, 0.95, 1)
+light_energy = 0.18
+light_indirect_energy = 0.0
+shadow_enabled = true
+shadow_bias = 0.02
+shadow_normal_bias = 0.5
+shadow_blur = 1.6
+directional_shadow_max_distance = 60.0
+sky_mode = 1
+
+[node name="OP_1" parent="." instance=ExtResource("2_map")]
+
+[node name="ApplyCelGround" type="Node" parent="."]
+script = ExtResource("4_applier")
+material = ExtResource("5_ground")
+targets = Array[NodePath]([NodePath("../OP_1")])
+derive_from_surfaces = true
+
+[node name="Ship" type="Node3D" parent="."]
+
+[node name="Model" parent="Ship" instance=ExtResource("3_ship")]
+
+[node name="MainGlow" type="MeshInstance3D" parent="Ship"]
+cast_shadow = 0
+mesh = SubResource("QuadMesh_glow")
+material_override = SubResource("ShaderMaterial_glow")
+
+[node name="PodGlowL" type="MeshInstance3D" parent="Ship"]
+cast_shadow = 0
+mesh = SubResource("QuadMesh_glow")
+material_override = SubResource("ShaderMaterial_glow")
+
+[node name="PodGlowR" type="MeshInstance3D" parent="Ship"]
+cast_shadow = 0
+mesh = SubResource("QuadMesh_glow")
+material_override = SubResource("ShaderMaterial_glow")
+
+[node name="EngineLight" type="OmniLight3D" parent="Ship"]
+light_color = Color(0.55, 0.88, 1, 1)
+light_energy = 3.0
+light_indirect_energy = 0.0
+omni_range = 9.0
+
+[node name="ApplyCelShip" type="Node" parent="."]
+script = ExtResource("4_applier")
+material = ExtResource("6_char")
+targets = Array[NodePath]([NodePath("../Ship/Model")])
+derive_from_surfaces = true
+
+[node name="Camera3D" type="Camera3D" parent="."]
+current = true
+fov = 50.0
+near = 0.1
+far = 8000.0
+
+[node name="EngineTrails" type="MeshInstance3D" parent="."]
+material_override = SubResource("ShaderMaterial_trail")
+script = ExtResource("8_trail")
+life = 2.0
+width_start = 0.5
+width_end = 1.6
+wind = Vector3(-13.2, 0, 4.6)
+nozzle_widths = PackedFloat32Array(1.4, 0.7, 0.7)
+nozzle_opacities = PackedFloat32Array(1, 0.5, 0.5)
+
+[node name="Storm" type="Node3D" parent="."]
+script = ExtResource("7_storm")
+visibility = 2400.0
+wind_direction = Vector2(0, -1)
+gust_visibility = 1300.0
+streak_time = 0.12
+drift_opacity = 0.0
+
+[node name="EngineEmbers" type="MeshInstance3D" parent="."]
+material_override = SubResource("ShaderMaterial_embers")
+script = ExtResource("12_embers")
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="."]
+libraries = {
+&"": SubResource("AnimationLibrary_shot")
+}

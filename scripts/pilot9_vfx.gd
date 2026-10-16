@@ -157,10 +157,10 @@ func grind_light() -> OmniLight3D:
 
 ## Every physics frame. The speed lasers: bolts fired backward out of a ring round his `chest`,
 ## flaring outward. `backward` is his travel reversed, `strength` 0 at the lasers' on-speed and
-## 1 at full, `ease` the 0..1 ease-in (it thins the rate), `travel` his velocity and `eye` the
+## 1 at full, `ease_in` the 0..1 ease-in (it thins the rate), `travel` his velocity and `eye` the
 ## camera, so no bolt is fired down the lens. The pilot has already applied the on/off
 ## hysteresis and the dash exception. Inactive, nothing new fires; live bolts run out.
-func lasers(active: bool, chest: Vector3, backward: Vector3, strength: float, ease: float,
+func lasers(active: bool, chest: Vector3, backward: Vector3, strength: float, ease_in: float,
 		travel: Vector3, eye: Vector3, delta: float) -> void:
 	if _lasers == null:
 		return
@@ -170,7 +170,7 @@ func lasers(active: bool, chest: Vector3, backward: Vector3, strength: float, ea
 		return
 	strength = clampf(strength, 0.0, 1.0)
 	var rate: float = lerpf(pilot.vfx_laser_rate_min, pilot.vfx_laser_rate_max, strength)
-	_laser_owed += rate * clampf(ease, 0.0, 1.0) * delta
+	_laser_owed += rate * clampf(ease_in, 0.0, 1.0) * delta
 	while _laser_owed >= 1.0:
 		_laser_owed -= 1.0
 		_fire_bolt(chest, backward.normalized(), strength, travel, eye)
@@ -179,7 +179,7 @@ func lasers(active: bool, chest: Vector3, backward: Vector3, strength: float, ea
 ## vfx_laser_camera_clear of the lens, and skipped if every roll does.
 func _fire_bolt(chest: Vector3, back: Vector3, strength: float, travel: Vector3,
 		eye: Vector3) -> void:
-	var basis := _basis_facing(back)
+	var facing := _basis_facing(back)
 	var flare := deg_to_rad(lerpf(pilot.vfx_laser_flare_min, pilot.vfx_laser_flare_max, strength))
 	var centre: Vector3 = chest + back * pilot.vfx_laser_behind
 	var life: float = pilot.vfx_laser_lifetime * _rng.randf_range(0.85, 1.15)
@@ -188,7 +188,7 @@ func _fire_bolt(chest: Vector3, back: Vector3, strength: float, travel: Vector3,
 	var speed: float = pilot.vfx_laser_speed * _rng.randf_range(0.85, 1.15)
 	for _try in LASER_TRIES:
 		var a := _rng.randf() * TAU
-		var out: Vector3 = basis * Vector3(cos(a), sin(a) * LASER_SQUASH, 0.0)
+		var out: Vector3 = facing * Vector3(cos(a), sin(a) * LASER_SQUASH, 0.0)
 		var bolt := {
 			from = centre + out * pilot.vfx_laser_ring_radius,
 			dir = (back + out * tan(flare)).normalized(),
@@ -364,9 +364,36 @@ func wall_jump(foot: Vector3, normal: Vector3) -> void:
 	var ring := _dust_burst("WallKickDust", count, pilot.vfx_dust_speed,
 		pilot.vfx_dust_lifetime, Vector3.ZERO, 0.0, Vector3.ZERO, normal)
 	_fire(ring, Transform3D(Basis.IDENTITY, foot + normal * 0.05))
+	@warning_ignore("integer_division")
 	var out := _dust_burst("WallKickDust", maxi(count / 2, 1), pilot.vfx_dust_speed * 1.2,
 		pilot.vfx_dust_lifetime, normal, 25.0)
 	_fire(out, Transform3D(Basis.IDENTITY, foot + normal * 0.05))
+
+## A reflected projectile: a white spark burst thrown along `direction` from where it touched.
+## The perfect reflect just passes more and faster.
+func reflect_burst(point: Vector3, direction: Vector3, count: int, speed: float) -> void:
+	var p := _spark_particles("ReflectSparks", maxi(count, 1), pilot.vfx_spark_lifetime, 1.0)
+	var mat := _spark_process(speed)
+	mat.direction = Vector3(0.0, 0.0, 1.0)
+	mat.spread = 70.0
+	mat.gravity = Vector3(0.0, -4.0, 0.0)
+	mat.color = Color(1, 1, 1, 1)
+	mat.color_ramp = _fade([Color(1.6, 1.6, 1.6, 1.0), Color(1, 1, 1, 1), Color(1, 1, 1, 0.0)])
+	p.process_material = mat
+	_fire(p, Transform3D(_basis_facing(direction), point))
+
+## A coloured spark burst thrown along `direction` from `point`: the firing range's hit effects
+## (red on pilot, white on the dummy). reflect_burst's twin with a tint.
+func impact_burst(point: Vector3, direction: Vector3, count: int, speed: float, tint: Color) -> void:
+	var p := _spark_particles("ImpactSparks", maxi(count, 1), pilot.vfx_spark_lifetime, 1.0)
+	var mat := _spark_process(speed)
+	mat.direction = Vector3(0.0, 0.0, 1.0)
+	mat.spread = 80.0
+	mat.gravity = Vector3(0.0, -4.0, 0.0)
+	mat.color = tint
+	mat.color_ramp = _fade([tint * 1.6, tint, Color(tint.r, tint.g, tint.b, 0.0)])
+	p.process_material = mat
+	_fire(p, Transform3D(_basis_facing(direction), point))
 
 ## Hands going down on a lip or a top: one tiny tap under each point.
 func hand_taps(points: Array) -> void:
@@ -513,6 +540,14 @@ func _spark_process(speed: float) -> ParticleProcessMaterial:
 func _dust_burst(name_: String, count: int, speed: float, life: float, dir: Vector3,
 		spread: float, skew: Vector3 = Vector3.ZERO, axis: Vector3 = Vector3.UP,
 		size: float = 0.45) -> GPUParticles3D:
+	return dust_burst(name_, count, speed, life, dir, spread, skew, axis, size,
+		pilot.vfx_dust_color, _puff_tex)
+
+## The burst itself, with the colour and puff texture passed in so anything with its own dust
+## (EXIA's footfalls) builds the same puffs. Static: it reads nothing off the pilot.
+static func dust_burst(name_: String, count: int, speed: float, life: float, dir: Vector3,
+		spread: float, skew: Vector3, axis: Vector3, size: float, color: Color,
+		puff_tex: Texture2D) -> GPUParticles3D:
 	var p := _particles(name_, maxi(count, 1), life, 1.0)
 	var m := ParticleProcessMaterial.new()
 	m.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_RING
@@ -545,10 +580,10 @@ func _dust_burst(name_: String, count: int, speed: float, life: float, dir: Vect
 	m.scale_min = 0.8
 	m.scale_max = 1.2
 	m.scale_curve = _curve([Vector2(0.0, 0.4), Vector2(0.3, 1.0), Vector2(1.0, 1.4)])
-	m.color = pilot.vfx_dust_color
+	m.color = color
 	m.color_ramp = _fade([Color(1, 1, 1, 1), Color(1, 1, 1, 0.7), Color(1, 1, 1, 0)])
 	p.process_material = m
-	p.draw_pass_1 = _quad(Vector2(size, size), _material(_puff_tex, false,
+	p.draw_pass_1 = _quad(Vector2(size, size), _material(puff_tex, false,
 		BaseMaterial3D.BILLBOARD_PARTICLES))
 	return p
 
@@ -601,7 +636,7 @@ func _air_streaks() -> GPUParticles3D:
 	return p
 
 ## The bones of every system here. `explosiveness` 1 is a burst, 0 a stream.
-func _particles(name_: String, amount: int, life: float, explosiveness: float) -> GPUParticles3D:
+static func _particles(name_: String, amount: int, life: float, explosiveness: float) -> GPUParticles3D:
 	var p := GPUParticles3D.new()
 	p.name = name_
 	p.amount = amount
@@ -683,7 +718,7 @@ static func _quad(size: Vector2, mat: Material) -> QuadMesh:
 
 ## Unlit, textured, tinted by the particle colour. Additive is the glow - sparks and air;
 ## dust is plain alpha so it can darken what is behind it.
-static func _material(tex: Texture2D, additive: bool, billboard: int) -> StandardMaterial3D:
+static func _material(tex: Texture2D, additive: bool, billboard: BaseMaterial3D.BillboardMode) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA

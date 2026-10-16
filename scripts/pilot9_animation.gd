@@ -18,6 +18,10 @@
 ##    docs/specs/pilot9-vault.md.
 ## 7. The dash's TimeScale, the sprint cycle sped up - see _drive_dash(). RC has no dash;
 ##    docs/specs/pilot9-dash.md, "The afterimages".
+## 8. The wall climb's TimeScale, following his climb speed - see _drive_wall_climb(). RC has no
+##    wall climb; docs/specs/pilot9-wall-climb.md.
+## 9. The tredge's idle/move blend and cycle rate - see _drive_tredge(). RC has no tredge;
+##    docs/specs/pilot9-tredge.md.
 extends Node
 
 ## The scale on the `crouch` state's TimeScale node, built by
@@ -64,6 +68,17 @@ const VAULT_SCALE := "parameters/vault/VaultScale/scale"
 ## DASH_SCALE_NODE. Same silent-rename hazard as CROUCH_SCALE - a stale path and every ghost in
 ## the trail has the same legs.
 const DASH_SCALE := "parameters/dash/DashScale/scale"
+
+## The `wall_climb` state's TimeScale, built by
+## scripts/pilot9_build_scene.gd::_ensure_wall_climb_state() as WALL_CLIMB_SCALE_NODE. Same
+## silent-rename hazard as CROUCH_SCALE - a stale path and the clip loops at authored speed, a
+## lazy pull under a body flying up the wall.
+const WALL_CLIMB_SCALE := "parameters/wall_climb/WallClimbScale/scale"
+
+## The `tredge` state's Blend2 (idle 0, the cycle 1) and the cycle's TimeScale, built by
+## scripts/pilot9_build_scene.gd::_ensure_tredge(). Same silent-rename hazard as CROUCH_SCALE.
+const TREDGE_BLEND := "parameters/tredge/TredgeMove/blend_amount"
+const TREDGE_SCALE := "parameters/tredge/TredgeScale/scale"
 
 @onready var animation_tree: AnimationTree = $"../AnimationTree"
 @onready var playback = animation_tree.get("parameters/playback")
@@ -129,6 +144,8 @@ func _process(delta: float) -> void:
 	_drive_rail(delta)
 	_drive_vault()
 	_drive_dash()
+	_drive_wall_climb()
+	_drive_tredge(delta)
 
 ## The blend position for all three locomotion blend spaces: where he is travelling,
 ## expressed in his own frame. Forward sits at (0, 1) in every one of them.
@@ -166,6 +183,18 @@ func _travel_blend() -> Vector2:
 	# diagonal lands on the unit circle where the clips are instead of sqrt(2) past it.
 	return Vector2(-player.direction.dot(b.x), player.direction.dot(b.z)) * player.input_strength
 
+
+## The braced idle standing still, the cycle moving: blended on his speed against half the
+## tredge speed, and the cycle run at the controller's rate so the feet keep up with the gust dips.
+func _drive_tredge(delta: float) -> void:
+	var current: Variant = animation_tree.get(TREDGE_BLEND)
+	if current == null:
+		return   # tredge state absent - a pilot9.tscn built before _ensure_tredge
+	var h := Vector2(player.velocity.x, player.velocity.z).length()
+	var moving: bool = player.input_dir != Vector2.ZERO and h > 0.05
+	var target: float = clampf(h / maxf(player.tredge_speed * 0.5, 0.01), 0.0, 1.0) if moving else 0.0
+	animation_tree.set(TREDGE_BLEND, lerpf(float(current), target, minf(delta * 8.0, 1.0)))
+	animation_tree.set(TREDGE_SCALE, player.tredge_clip_rate())
 
 ## Added on top of RC. pilot9 has a crouch WALK clip and no crouch IDLE, so the state plays
 ## the one cycle through a TimeScale and this eases the scale to 0 when he is not actually
@@ -268,6 +297,13 @@ func _drive_vault() -> void:
 	if animation_tree.get(VAULT_SCALE) == null:
 		return   # vault state absent - a pilot9.tscn built before _ensure_vault_state
 	animation_tree.set(VAULT_SCALE, 0.0)
+
+## The climb loop's rate: wall_climb_anim_speed through the rise, down to a freeze across the
+## stall - the controller's own speed fraction, so the pulls slow exactly as he does.
+func _drive_wall_climb() -> void:
+	if animation_tree.get(WALL_CLIMB_SCALE) == null:
+		return   # wall_climb state absent - a pilot9.tscn built before _ensure_wall_climb_state
+	animation_tree.set(WALL_CLIMB_SCALE, player.wall_climb_clip_rate())
 
 ## The forced sprint cycle's rate for the dash. Written every frame, so the Inspector tunes it live.
 func _drive_dash() -> void:

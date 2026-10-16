@@ -42,6 +42,10 @@ const STENCIL_SHADER := preload("res://shaders/ui/hologram_stencil.gdshader")
 ## Gap kept between the panel and the window edge, as a fraction of half the screen.
 @export var panel_margin := 0.08
 
+@export_group("Beam")
+## How lit the projection cone stays for the whole pause, after the open flare settles (0..1).
+@export var beam_rest := 0.10
+
 @export_group("Visor ring")
 ## Off: the glowing seam read badly on his head. Only the beam's origin still uses `ring_offset`.
 @export var ring_enabled := false
@@ -82,6 +86,10 @@ var _start_global := Transform3D.IDENTITY
 var _target_global := Transform3D.IDENTITY
 var _head_pos := Vector3.ZERO
 var _stenciled: Dictionary = {}
+# Stencil-only stand-ins for pilot's meshes on the sharp layer. The panel is drawn by PixelWorld's
+# SharpView, which renders only that layer, so his real meshes never write the stencil there and
+# the panel would cover him. These do. See docs/specs/pilot9-hologram-pause.md.
+var _sharp_masks: Array[MeshInstance3D] = []
 var _chained: Array[Material] = []
 
 # --- pure rules (static, so the tests need no tree) ---------------------------
@@ -124,6 +132,12 @@ static func ease_out(x: float) -> float:
 ## Seconds into the open timeline for a given t.
 static func timeline_time(t_value: float) -> float:
 	return t_value * OPEN_TIME
+
+## The beam's strength `tt` seconds into the timeline: flares to 1, eases down to `rest` and holds
+## there until the close plays the timeline back.
+static func beam_strength(tt: float, rest: float) -> float:
+	var flare := smoothstep(BEAM_IN.x, BEAM_IN.y, tt)
+	return flare * lerpf(1.0, rest, smoothstep(BEAM_OUT.x, BEAM_OUT.y, tt))
 
 ## Input only lands on a panel that has settled, and never while closing.
 static func input_live(t_value: float, opening: bool) -> bool:
@@ -180,6 +194,8 @@ func _build() -> void:
 	_panel.mesh = QuadMesh.new()
 	_panel.material_override = _panel_mat
 	_panel.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# Drawn sharp over a pixelated world - see docs/specs/pixel-world.md.
+	_panel.layers = PixelWorld.SHARP_MASK
 	_panel.visible = false
 	add_child(_panel)
 
@@ -278,6 +294,7 @@ func _begin() -> void:
 	_build_beam()
 
 	_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	_set_sharp_needed(true)
 	_panel.visible = true
 	_beam.visible = true
 	_dim.visible = true
@@ -298,6 +315,7 @@ func _finish() -> void:
 		_ring.visible = false
 	_set_pilot_stencil(false)
 	_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	_set_sharp_needed(false)
 	_active = false
 	_opening = false
 	set_process(false)
@@ -306,6 +324,12 @@ func _finish() -> void:
 func _exit_tree() -> void:
 	if _active:
 		_set_pilot_stencil(false)
+		_set_sharp_needed(false)
+
+## Asks the scene's PixelWorld, if there is one, to draw the sharp layer the panel is on.
+func _set_sharp_needed(needed: bool) -> void:
+	if is_inside_tree():
+		get_tree().call_group(&"pixel_world", &"set_sharp_needed", self, needed)
 
 func _process(delta: float) -> void:
 	delta = minf(delta, 0.1)
@@ -328,8 +352,7 @@ func _apply_t() -> void:
 	_dim_mat.set_shader_parameter(&"amount", ease_out(tt / CAMERA_TIME))
 	_panel_mat.set_shader_parameter(&"reveal",
 		smoothstep(PANEL_IN.x, PANEL_IN.y, tt))
-	var flare := smoothstep(BEAM_IN.x, BEAM_IN.y, tt) * (1.0 - smoothstep(BEAM_OUT.x, BEAM_OUT.y, tt))
-	_beam_mat.set_shader_parameter(&"strength", flare)
+	_beam_mat.set_shader_parameter(&"strength", beam_strength(tt, beam_rest))
 	if _ring_mat != null:
 		var lit := smoothstep(RING_ON, RING_ON + 0.08, tt)
 		_ring_mat.albedo_color.a = lit
@@ -466,7 +489,8 @@ func _build_beam() -> void:
 # --- the world dim -----------------------------------------------------------
 
 ## Chains a stencil-writing pass onto every pilot mesh (rim overlay's next_pass, or the overlay
-## itself when the rim is off) so the dim quad skips him. Off again on close.
+## itself when the rim is off) so the dim quad and the panel skip him, and gives each mesh a
+## stencil-only twin on the sharp layer so the panel skips him in SharpView too. Off again on close.
 func _set_pilot_stencil(on: bool) -> void:
 	if _character == null:
 		return
@@ -483,7 +507,12 @@ func _set_pilot_stencil(on: bool) -> void:
 				if overlay.next_pass == null:
 					overlay.next_pass = _stencil_mat
 					_chained.append(overlay)
+			_add_sharp_mask(mi)
 	else:
+		for mask in _sharp_masks:
+			if is_instance_valid(mask):
+				mask.queue_free()
+		_sharp_masks.clear()
 		for overlay in _chained:
 			if is_instance_valid(overlay) and overlay.next_pass == _stencil_mat:
 				overlay.next_pass = null
@@ -493,7 +522,28 @@ func _set_pilot_stencil(on: bool) -> void:
 				mi.material_overlay = null
 		_stenciled.clear()
 
+## A sibling that draws `mi`'s mesh, posed by the same skeleton, with only the stencil pass, on the
+## sharp layer alone.
+func _add_sharp_mask(mi: MeshInstance3D) -> void:
+	var parent := mi.get_parent()
+	if parent == null or mi.mesh == null:
+		return
+	var mask := MeshInstance3D.new()
+	mask.name = &"HologramSharpMask"
+	mask.mesh = mi.mesh
+	mask.skin = mi.skin
+	# Relative to a sibling, so the same path reaches the same skeleton.
+	mask.skeleton = mi.skeleton
+	mask.transform = mi.transform
+	mask.material_override = _stencil_mat
+	mask.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mask.layers = PixelWorld.SHARP_MASK
+	parent.add_child(mask)
+	_sharp_masks.append(mask)
+
 func _collect_meshes(node: Node, out: Array[MeshInstance3D]) -> void:
+	if node.name == &"HologramSharpMask":
+		return
 	if node is MeshInstance3D:
 		out.append(node)
 	for child in node.get_children():

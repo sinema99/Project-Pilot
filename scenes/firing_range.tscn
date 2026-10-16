@@ -1,0 +1,6 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/range/firing_range.gd" id="1_range"]
+
+[node name="FiringRange" type="Node3D"]
+script = ExtResource("1_range")

@@ -13,6 +13,7 @@ extends Node
 
 const SAVE_PATH := "user://settings.cfg"
 const SAVE_DEBOUNCE := 0.5
+const PAINT_STRENGTH_ON := 0.5  # painted shading at half opacity; 1.0 was too noticeable
 const CONFIG_VERSION := 1
 
 ## True under `--headless`, which means the test suite and the `--quit-after` smoke boot.
@@ -55,7 +56,20 @@ const DEFS := [
 	[&"render_scale", "RENDER SCALE", "graphics", [0.5, 0.75, 1.0], 2],
 	[&"shadow_quality", "SHADOW QUALITY", "graphics", ["low", "medium", "high"], 2],
 	[&"msaa", "ANTI-ALIASING", "graphics", ["off", "2x", "4x", "8x"], 2],
-	[&"pixel_filter", "PIXEL FILTER", "graphics", [-1, 0, 1, 2, 3, 4], 0],
+	# Window pixels per block of the low-res world, 0 = OFF; and levels per colour channel, 0 =
+	# FULL. See docs/specs/pixel-world.md.
+	[&"pixel_size", "PIXEL FILTER", "graphics", [0, 2, 3, 4, 6], 0],
+	# The PIXEL look's own block size: no OFF, 4X by default. It has no row of its own - the PIXEL
+	# FILTER row edits whichever look is on (pixel_filter_key()). See docs/specs/pixel-look.md.
+	[&"pixel_look_size", "PIXEL FILTER", "graphics", [2, 3, 4, 6], 2],
+	# CEL (today's ink look) or PIXEL (stepped soft light, surface clumps, warm haze, no ink).
+	# See docs/specs/pixel-look.md.
+	[&"look", "LOOK", "graphics", ["cel", "pixel"], 0],
+	[&"colour_depth", "COLOUR DEPTH", "graphics", [0, 32, 16, 8], 0],
+	# Hand-painted patches inside each cel tone - see docs/specs/painted-shading.md.
+	[&"painted_shading", "PAINTED SHADING", "graphics", ["off", "on"], 1],
+	# Chipped, scattered band edges - see docs/specs/cel-scatter.md.
+	[&"cel_scatter", "CEL SCATTER", "graphics", ["off", "on"], 0],
 	# 0.25x .. 2.00x, step 0.05. Default index 15 = 1.00x.
 	[&"mouse_sensitivity", "MOUSE SENSITIVITY", "controls", [
 		0.25, 0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70,
@@ -72,7 +86,7 @@ const DEFS := [
 	# pilot9's run/sprint sway and landing dip - see docs/specs/pilot9-camera-sway.md.
 	[&"camera_motion", "CAMERA MOTION", "controls", ["off", "on"], 1],
 	# The pause menu as a projection from pilot9's visor - see docs/specs/pilot9-hologram-pause.md.
-	[&"hologram_menu", "HOLOGRAM MENU", "controls", ["off", "on"], 1],
+	[&"hologram_menu", "HOLOGRAM MENU", "controls", ["off", "on"], 0],
 	# pilot9's sparks, dust and air - see docs/specs/pilot9-movement-vfx.md.
 	[&"movement_effects", "MOVEMENT EFFECTS", "controls", ["off", "on"], 1],
 ]
@@ -172,11 +186,40 @@ static func window_fits(size: Vector2i, usable: Rect2i, title_bar: int) -> bool:
 ## that; in a window sized to the resolution this is 1 and RENDER SCALE is all that is left. In
 ## fullscreen it is the render-resolution half of the row. Capped at 1: a maximized window a
 ## little smaller than the resolution renders at window size rather than supersampling.
-static func scale_3d(resolution: Vector2i, window_size: Vector2i, render_scale: float) -> float:
+static func scale_3d(resolution_size: Vector2i, window_size: Vector2i, scale_factor: float) -> float:
 	var content_width := minf(window_size.x, window_size.y * BASE_SIZE.x / BASE_SIZE.y)
 	if content_width <= 0.0:
-		return render_scale
-	return minf(resolution.x / content_width, 1.0) * render_scale
+		return scale_factor
+	return minf(resolution_size.x / content_width, 1.0) * scale_factor
+
+## The key the PIXEL FILTER row (and PixelWorld's QA keys) edit: each look keeps its own block
+## size, so I jumps between CEL's and PIXEL's. See docs/specs/pixel-look.md, "Reference pass".
+static func pixel_filter_key(look_value: String) -> StringName:
+	return &"pixel_look_size" if look_value == "pixel" else &"pixel_size"
+
+## The block size PixelWorld draws at: the active look's own size. PIXEL's list has no OFF, so
+## the PIXEL look is never shown unpixelated.
+static func effective_pixel_size(pixel_size_value: int, pixel_look_size_value: int, look_value: String) -> int:
+	if look_value == "pixel":
+		return maxi(pixel_look_size_value, 1)
+	return pixel_size_value
+
+## Levels per channel the world and the screen pass band colour to; 0 is full colour. COLOUR
+## DEPTH when set; otherwise the PIXEL look bands to PIXEL_LOOK_LEVELS (soft, wide steps in the
+## sky and haze, as in the reference) and CEL is full. Never dithered.
+static func colour_levels(look_value: String, colour_depth_value: int) -> int:
+	if colour_depth_value > 0:
+		return colour_depth_value
+	return PIXEL_LOOK_LEVELS if look_value == "pixel" else 0
+
+## Rendered texels per block side PixelWorld averages. The PIXEL look renders at twice the block
+## resolution so blocks shade part-way instead of popping (the shimmer that made it rough on the
+## eyes); CEL stays one texel per block so its ink lines stay solid black.
+static func pixel_supersample(look_value: String) -> int:
+	return PIXEL_LOOK_SUPERSAMPLE if look_value == "pixel" else 1
+
+const PIXEL_LOOK_SUPERSAMPLE := 2
+const PIXEL_LOOK_LEVELS := 24
 
 static func keys() -> Array:
 	var out: Array = []
@@ -202,8 +245,18 @@ var shadow_quality: String:
 	get: return _values.get(&"shadow_quality", "high")
 var msaa: String:
 	get: return _values.get(&"msaa", "4x")
-var pixel_filter: int:
-	get: return _values.get(&"pixel_filter", -1)
+var pixel_size: int:
+	get: return _values.get(&"pixel_size", 0)
+var pixel_look_size: int:
+	get: return _values.get(&"pixel_look_size", 4)
+var colour_depth: int:
+	get: return _values.get(&"colour_depth", 0)
+var look: String:
+	get: return _values.get(&"look", "cel")
+var painted_shading: bool:
+	get: return _values.get(&"painted_shading", "on") == "on"
+var cel_scatter: bool:
+	get: return _values.get(&"cel_scatter", "off") == "on"
 var mouse_sensitivity: float:
 	get: return _values.get(&"mouse_sensitivity", 1.0)
 var controller_sensitivity: float:
@@ -213,7 +266,7 @@ var fov: float:
 var camera_motion: bool:
 	get: return _values.get(&"camera_motion", "on") == "on"
 var hologram_menu: bool:
-	get: return _values.get(&"hologram_menu", "on") == "on"
+	get: return _values.get(&"hologram_menu", "off") == "on"
 var movement_effects: bool:
 	get: return _values.get(&"movement_effects", "on") == "on"
 
@@ -236,7 +289,7 @@ func index_for(key: StringName) -> int:
 
 ## Applies, persists (debounced) and - for every row but the pixel filter -
 ## pushes straight to the engine. Called by a row stepping its value and by
-## pixelate.gd's own QA keys, so both ways of changing the filter agree.
+## pixel_world.gd's own QA keys, so both ways of changing the filter agree.
 func set_value(key: StringName, value: Variant) -> void:
 	if _values.get(key) == value:
 		return
@@ -268,7 +321,10 @@ func _load() -> void:
 		var raw: Dictionary = {"version": cfg.get_value("meta", "version")}
 		for row: Array in DEFS:
 			var key: StringName = row[0]
-			raw[key] = cfg.get_value(String(row[2]), String(key))
+			# Guarded, or a key added since the file was written logs an error on load (a null
+			# default counts as no default). Absent keys fall back in sanitise().
+			if cfg.has_section_key(String(row[2]), String(key)):
+				raw[key] = cfg.get_value(String(row[2]), String(key))
 		_values = sanitise(raw)
 	for row: Array in DEFS:
 		_apply(row[0], _values[row[0]])
@@ -322,13 +378,29 @@ func _apply(key: StringName, value: Variant) -> void:
 				"8x": Viewport.MSAA_8X,
 			}
 			get_viewport().msaa_3d = modes.get(value, Viewport.MSAA_4X)
-		&"pixel_filter":
-			# The one row that does not drive a global - it reaches into a
-			# CanvasLayer that may not exist (the main menu has none) via the
-			# group-lookup convention ui-shell.md introduced with &"player".
-			var filter := get_tree().get_first_node_in_group(&"pixel_filter")
-			if filter:
-				filter.apply_setting(value)
+		&"painted_shading":
+			RenderingServer.global_shader_parameter_set(&"paint_strength", PAINT_STRENGTH_ON if value == "on" else 0.0)
+		&"cel_scatter":
+			RenderingServer.global_shader_parameter_set(&"scatter_strength", 1.0 if value == "on" else 0.0)
+		&"pixel_size", &"pixel_look_size", &"colour_depth", &"look":
+			# The rows that do not drive a global - they reach into a PixelWorld
+			# that may not exist (the main menu has none) via the group-lookup
+			# convention ui-shell.md introduced with &"player". All at once, from
+			# the current values: one node draws them all, and LOOK changes the
+			# block size and the colour banding as well as the materials.
+			var block := effective_pixel_size(pixel_size, pixel_look_size, look)
+			var world := get_tree().get_first_node_in_group(&"pixel_world")
+			if world:
+				world.apply_settings(block, colour_levels(look, colour_depth),
+					pixel_supersample(look))
+			# The UI and menus get the PIXEL look too, from a pass over the whole screen; CEL
+			# keeps them sharp. See docs/specs/pixel-look.md, "Whole screen".
+			ScreenPixel.apply_settings(block if look == "pixel" else 0,
+				colour_levels(look, colour_depth))
+			if key == &"look":
+				var pixel_look := get_tree().get_first_node_in_group(&"pixel_look")
+				if pixel_look:
+					pixel_look.apply_look(value == "pixel")
 		&"mouse_sensitivity", &"controller_sensitivity", &"fov", &"camera_motion", &"hologram_menu", &"movement_effects":
 			# No global to push to, because every consumer reads these off this
 			# autoload at the point of use rather than caching them: both
@@ -385,6 +457,7 @@ func _settle_window(generation: int) -> void:
 			DisplayServer.window_set_size(resolution)
 			# window_set_position() places the client area, so the title bar is added back on.
 			var outer := resolution + Vector2i(0, title_bar)
+			@warning_ignore("integer_division")
 			DisplayServer.window_set_position(
 				usable.position + (usable.size - outer) / 2 + Vector2i(0, title_bar))
 		else:

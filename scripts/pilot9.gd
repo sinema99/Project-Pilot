@@ -253,6 +253,28 @@ enum CameraMode {
 ## snapping. This is also the rate he levels out on leaving the ground.
 @export_range(0.0, 40.0, 0.5) var slope_align_speed: float = 10.0
 
+## Body Lean Settings
+## -----------------------------------------------------------------------------
+## On the ground at a walk, run or sprint the mesh rolls into turns and pitches with changes
+## of speed, on top of the slope tilt and through its ease. Movement is untouched - only
+## `character` leans. See docs/specs/pilot9-body-lean.md and _body_lean_target().
+
+@export_group("Body Lean")
+## Degrees of roll into a turn at full. 0 turns the roll off.
+@export_range(0.0, 30.0, 0.5) var body_lean_roll_max: float = 8.0
+## m/s^2 of sideways acceleration (horizontal speed x mesh yaw rate) that earns the full roll.
+## 23.5 is a sprint carving at about 180 degrees a second. Lower leans harder at a walk.
+@export_range(0.1, 100.0, 0.5, "or_greater") var body_lean_roll_full_accel: float = 23.5
+## Degrees forward at the VISIBLE peak of a full speed-up. 0 turns it off.
+@export_range(0.0, 30.0, 0.5) var body_lean_pitch_forward_max: float = 6.0
+## Degrees back at the visible peak of a full stop. Smaller than forward on purpose - a big
+## rear lean reads as tripping. 0 turns it off.
+@export_range(0.0, 30.0, 0.5) var body_lean_pitch_back_max: float = 4.0
+## m/s of speed change that earns the full pitch (= sprint_speed).
+@export_range(0.1, 30.0, 0.1, "or_greater") var body_lean_pitch_full_gap: float = 7.5
+## Seconds the "felt" speed lags behind the real one - how long a pitch lingers.
+@export_range(0.01, 2.0, 0.01) var body_lean_felt_lag: float = 0.25
+
 ## Slide Settings
 ## -----------------------------------------------------------------------------
 ## The slide is `crouch` pressed at a sprint. Unlike every other move here it has no speed
@@ -639,6 +661,47 @@ enum CameraMode {
 	&"RightHand": Vector3(0, -81, 16.7),
 }
 
+## Wall-Climb Settings
+## -----------------------------------------------------------------------------
+## Running dead-on into a wall, he goes up it: a fixed 4 m burst, then a stall and a peel off
+## unless a lip, a jump or the wall's top takes him first. Automatic, on the ground or in the
+## air - the head-on cone the camera-redirected wall-run used to own. Jump kicks him straight
+## back off it, Mario style, so two facing walls are a chimney. See
+## docs/specs/pilot9-wall-climb.md.
+
+@export_group("Wall Climb")
+@export var can_wall_climb: bool = true
+## Travel within this of dead-on into the face climbs it, degrees. Past it (up to
+## wall_run_head_on_angle) the camera-redirected wall-run takes the wall instead.
+@export_range(0.0, 90.0, 1.0) var wall_climb_angle: float = 15.0
+## Metres of height one climb gains, rise and stall together. Arrival speed never changes it -
+## a walk-pace catch and an EXIA sprint both climb exactly this. See wall_climb_speed().
+@export_range(0.0, 20.0, 0.1) var wall_climb_height: float = 4.0
+## The flat-out part of the climb, seconds.
+@export_range(0.05, 5.0, 0.05) var wall_climb_rise_time: float = 0.8
+## The stall after it: his climb speed eases to zero over this, seconds, and the clip slows with
+## it. Part of wall_climb_height, not added to it.
+@export_range(0.0, 2.0, 0.01) var wall_climb_stall_time: float = 0.25
+## The push off the face when the stall runs out, m/s along the normal.
+@export_range(0.0, 10.0, 0.1) var wall_climb_peel_speed: float = 1.0
+## Seconds after a climb ends before that same face can be climbed again. Any other wall at once.
+@export_range(0.0, 5.0, 0.05) var wall_climb_same_wall_cooldown: float = 1.0
+## The clip's rate over the rise - one 2 s loop (two pulls) in the 0.8 s rise at 2.5. Scaled
+## down with his speed through the stall, to a freeze.
+@export_range(0.0, 10.0, 0.05) var wall_climb_anim_speed: float = 2.5
+## BAKED - written by scripts/pilot9_build_scene.gd::_ensure_wall_climb_motion(). The fractions
+## of the loop where a hand tops out and takes a hold - one hand tap each.
+@export var wall_climb_grab_phases: PackedFloat32Array = PackedFloat32Array()
+## BAKED - same bake. The clip's climber leans back off his face (hands far out, toes close in),
+## so the mesh is tipped back this many degrees about his feet for the climb - which puts his
+## hands and his toes on one vertical plane.
+@export var wall_climb_lean: float = 0.0
+## BAKED - same bake. That plane, metres in front of his origin once tipped. The mesh slides in
+## toward the face by however far short of the wall it is (_wall_climb_hug()).
+@export var wall_climb_hand_reach: float = 0.0
+## BAKED - same bake. The loop's authored length, seconds - the tap clock runs against it.
+@export var wall_climb_duration: float = 0.0
+
 ## Rail Grind Settings
 ## -----------------------------------------------------------------------------
 ## Falling onto a rail catches him; he rides it at one of two fixed gears in the direction he
@@ -730,7 +793,7 @@ enum CameraMode {
 ## The one-sided white edge light, after the Marvel Rivals renders. pilot9 only - it rides on
 ## his meshes as a material_overlay, so the map and the cel base shader never see it. Tune the
 ## look on the material itself. See docs/specs/pilot9-rim-light.md.
-@export var rim_light_enabled: bool = true:
+@export var rim_light_enabled: bool = false:
 	set(value):
 		rim_light_enabled = value
 		if is_node_ready():
@@ -740,11 +803,48 @@ enum CameraMode {
 		rim_light_material = value
 		if is_node_ready():
 			_apply_rim_light()
+## Set by PixelLook while LOOK is PIXEL: the rim is a cel graphic and stays off there whatever
+## rim_light_enabled says. See docs/specs/pixel-look.md.
+var rim_light_suppressed := false:
+	set(value):
+		if rim_light_suppressed == value:
+			return
+		rim_light_suppressed = value
+		if is_node_ready() and rim_light_enabled:
+			_apply_rim_light()
+
+@export_group("Body")
+## A different body on the same rig: a GLB exported from the same Blender armature (same bone
+## names). Its skinned meshes replace the ones in pilot9.tscn at _ready(); every animation, verb
+## and effect is untouched. Empty keeps the scene's own meshes. See docs/specs/pilot-switch.md.
+@export var body_glb: PackedScene = null
 
 @export_group("Held Item")
 ## What he spawns carrying, holstered on his back. Empty is the no-item case: `equip` does
 ## nothing. A pickup later calls set_item(). See docs/specs/pilot9-held-item.md.
 @export var starting_item: HeldItem = preload("res://resources/items/staff.tres")
+
+@export_group("Tredge")
+## The blizzard walk: out in a Storm's snow he can only tredge. See docs/specs/pilot9-tredge.md
+## and scripts/pilot9_tredge.gd.
+## Flat tredge speed, m/s (walk is walk_speed).
+@export_range(0.1, 5.0, 0.05) var tredge_speed: float = 1.5
+## How much of tredge_speed a gust's peak takes away: 0.4 leaves 60%.
+@export_range(0.0, 0.9, 0.01) var tredge_gust_slow: float = 0.4
+## rotation_speed is multiplied by this while tredging.
+@export_range(0.05, 1.0, 0.05) var tredge_turn_scale: float = 0.5
+## The tredge cycle's rate at tredge_speed; it follows his actual speed from there.
+@export_range(0.1, 2.0, 0.05) var tredge_clip_rate_at_speed: float = 0.7
+## Seconds the pose takes each way (the state machine's crossfade is built at 0.5 s).
+@export_range(0.0, 2.0, 0.05) var tredge_blend_time: float = 0.5
+## Seconds he has to be covered or exposed before the switch flips.
+@export_range(0.0, 2.0, 0.05) var tredge_debounce: float = 0.25
+## How fast his speed eases toward the tredge's, m/s^2 - into a gust's dip, out of it, and down
+## from a run carried out of the building. The tredge keeps no momentum.
+@export_range(0.5, 30.0, 0.5) var tredge_speed_rate: float = 6.0
+## How far the staff slides along its +Y through his fist for the torch grip, metres. Negative
+## slides it down, so he holds it higher: -0.4 puts his fist 3/4 of the way up the 1.6 m staff.
+@export_range(-0.8, 0.8, 0.01) var tredge_grip_slide: float = -0.4
 
 ## Movement effects
 ## -----------------------------------------------------------------------------
@@ -854,8 +954,20 @@ enum CameraMode {
 @export var controller_support: bool = true
 ## Controller stick sensitivity for camera rotation.
 @export_range(0.1, 10.0, 0.1) var controller_sensitivity: float = 2.0
-## Maximum vertical camera tilt angle in radians (prevents over-rotation).
-@export_range(0.0, 1.57, 0.01) var tilt_limit: float = deg_to_rad(75)
+## Furthest the camera may look UP, radians. GTA V's own limit; a steeper one swings the lens
+## round to the sky and loses him. See docs/specs/pilot9-gta-camera.md.
+@export_range(0.0, 1.57, 0.01) var tilt_up_limit: float = deg_to_rad(45)
+## Furthest the camera may look DOWN, radians. Deeper than up because a platformer looks at
+## its feet more than at the sky.
+@export_range(0.0, 1.57, 0.01) var tilt_down_limit: float = deg_to_rad(60)
+## The stick's response curve exponent: the stick's deflection (past the action's own 0.2
+## deadzone) is raised to this, so small pushes turn slowly and a full push turns fast. 1.0 is
+## linear. Mouse look is never curved.
+@export_range(1.0, 3.0, 0.1) var look_stick_curve: float = 1.6
+## Seconds a held full-deflection stick takes to reach full turn speed. 0.0 turns the ramp off.
+@export_range(0.0, 1.0, 0.05) var look_stick_ramp_time: float = 0.3
+## The fraction of full turn speed a full push starts at before the ramp lifts it.
+@export_range(0.1, 1.0, 0.05) var look_stick_ramp_start: float = 0.5
 ## Speed at which the character mesh rotates to face movement direction. With
 ## face_travel_direction on this is the pivot dial: it is what a hard 180 costs, and the
 ## window during which he is still facing the old heading while already moving on the new
@@ -878,9 +990,9 @@ enum CameraMode {
 		if is_node_ready():
 			_update_camera_mode()
 ## Camera distance (SpringArm length) for third-person mode.
-@export_range(0.0, 10.0, 0.1) var camera_distance: float = 3.5
+@export_range(0.0, 10.0, 0.1) var camera_distance: float = 2.5
 ## Closest the scroll wheel can pull the camera in, metres. Kept above 30% of
-## camera_distance (1.05 m), the line under which his body hides for first person.
+## camera_distance (0.75 m), the line under which his body hides for first person.
 ## See docs/specs/pilot9-camera-zoom.md.
 @export_range(0.5, 10.0, 0.1) var camera_zoom_min: float = 1.5
 ## Furthest the scroll wheel can push the camera out, metres.
@@ -956,7 +1068,17 @@ enum CameraMode {
 @export_range(0.05, 1.5, 0.01) var camera_dash_lag_time: float = 0.3
 ## How far the third-person camera sits to one side of him, metres, at full zoom-out from first
 ## person. See docs/specs/pilot9-camera-shoulder.md.
-@export_range(0.0, 2.0, 0.05) var camera_shoulder_offset: float = 0.4
+@export_range(0.0, 2.0, 0.05) var camera_shoulder_offset: float = 0.8
+## Metres the pivot is raised above the old chest-height anchor, so the camera orbits his head
+## the way GTA's does. Fades out into first person with the zoom lift. See
+## docs/specs/pilot9-gta-camera.md.
+@export_range(0.0, 1.0, 0.05) var camera_pivot_raise: float = 0.4
+## Metres the camera pulls back while he sprints or dashes.
+@export_range(0.0, 1.0, 0.05) var camera_sprint_pullback: float = 0.3
+## Metres the pivot drops while he crouches or slides.
+@export_range(0.0, 1.0, 0.05) var camera_crouch_drop: float = 0.4
+## Seconds for either of those to ease fully in or out - never cut.
+@export_range(0.05, 1.0, 0.01) var camera_state_ease_time: float = 0.3
 ## Seconds for the camera to slide across on a swap, and on the wall-run's own side change.
 @export_range(0.05, 1.0, 0.01) var camera_shoulder_swap_time: float = 0.25
 ## The run/sprint sway and the landing dip. See docs/specs/pilot9-camera-sway.md. Every
@@ -1051,6 +1173,9 @@ const WALL_RUN_HOLD_MARGIN := 0.05
 ## Gate 5's tolerance: travel·normal over this is "moving away from the face". Near zero on
 ## purpose - travel exactly along the face must still attach. See _wall_run_gates().
 const WALL_RUN_AWAY_EPSILON := 0.001
+## Metres from the wrist bone to the fingertips' contact - taken off the wall climb's hug so the
+## palms, not the wrists, meet the face.
+const WALL_CLIMB_PALM := 0.08
 ## Two faces are the same wall for the let-go lockout when their normals agree to within ~8
 ## degrees and their planes are within this many metres. See _same_wall().
 const WALL_SAME_FACE_DOT := 0.99
@@ -1338,6 +1463,27 @@ var _wall_jump_buffered: bool = false
 ## (and _wall_normal with it) is already cleared by the time the buffer is spent.
 var _wall_jump_normal: Vector3 = Vector3.ZERO
 
+## The wall climb - see docs/specs/pilot9-wall-climb.md.
+var is_wall_climbing: bool = false
+var _wall_climb_time: float = 0.0
+## The face he is on, refreshed every frame from the sustain ray like the wall-run's.
+var _wall_climb_normal: Vector3 = Vector3.ZERO
+var _wall_climb_point: Vector3 = Vector3.ZERO
+var _wall_climb_gap: float = 0.0
+## The face just left and how long until it can be climbed again. Any other face is open.
+var _wall_climb_lock_normal: Vector3 = Vector3.ZERO
+var _wall_climb_lock_point: Vector3 = Vector3.ZERO
+var _wall_climb_lock_left: float = 0.0
+## Set by the press in _handle_wall_climb(), spent in _handle_gravity_and_jump() - the
+## _wall_jump_buffered split, for the same reason.
+var _wall_climb_jump_buffered: bool = false
+## The face a climb jump kicks off - the buffered one, or the coyote one after a peel.
+var _wall_climb_jump_normal: Vector3 = Vector3.ZERO
+var _wall_climb_coyote_left: float = 0.0
+## The loop position, in loop fractions, where the last hand tap was checked - see
+## _emit_wall_climb_taps().
+var _wall_climb_phase: float = 0.0
+
 ## True for the length of a grind. Read by the AnimationTree's advance expressions, so the same
 ## warning as is_sliding applies. See docs/specs/pilot9-rail-grind.md.
 var is_rail_grinding: bool = false
@@ -1421,6 +1567,13 @@ var _afterimage: Pilot9Afterimage = null
 # Freeze the character. It may be useful when you want to pause the character.
 var frozen: bool = false
 
+## Body lean trackers, updated every frame whatever the state - see _body_lean_target().
+## Last frame's mesh yaw, for the turn rate the roll reads.
+var _lean_last_yaw: float = 0.0
+## His horizontal speed as he "feels" it: lags the real one by body_lean_felt_lag, and the
+## gap between them is the pitch.
+var _felt_speed: float = 0.0
+
 ## Where CameraPivot sits on him, matching its transform in scenes/pilot9.tscn (and the value
 ## scripts/pilot9_build_scene.gd writes there). The pivot is top_level now, so this is the whole
 ## of what _process() needs to place it each drawn frame.
@@ -1435,7 +1588,7 @@ const CAMERA_FRAME_HEIGHT := 1.0
 const SWAY_RUN_STRIDE := 0.600
 const SWAY_SPRINT_STRIDE := 0.533
 
-var target_camera_distance: float = 3.5
+var target_camera_distance: float = 2.5
 ## The wall-run roll's own ease, radians. camera_3d.rotation.z is this plus the sway's roll,
 ## so the ease never starts from a value the sway has moved.
 var _camera_wall_roll: float = 0.0
@@ -1445,7 +1598,7 @@ var _shoulder_side: float = 1.0
 ## The arm origin's eased sideways position, metres, signed (+ = camera's right).
 var _shoulder_pos: float = 0.0
 ## How far the world lets the offset go on its current side, damped like the arm length.
-var _shoulder_limit: float = 0.4
+var _shoulder_limit: float = 0.8
 var _shoulder_probe: PhysicsShapeQueryParameters3D = null
 ## The sway's stride clock, radians of lateral phase. Runs through the air.
 var _sway_phase: float = 0.0
@@ -1486,14 +1639,22 @@ var _wall_kick_point: Vector3 = Vector3.ZERO
 var _vault_hand_top: Vector3 = Vector3.ZERO
 ## The third-person length the scroll wheel has picked. Separate from camera_distance because
 ## that one is the body-hide reference - see docs/specs/pilot9-camera-zoom.md.
-var _zoom_distance: float = 3.5
+var _zoom_distance: float = 2.5
+## The sprint pull-back and crouch drop's eased current values, metres, both >= 0.
+var _camera_state_back: float = 0.0
+var _camera_state_drop: float = 0.0
+## Their spring velocities, m/s - see _camera_state_spring().
+var _camera_state_back_vel: float = 0.0
+var _camera_state_drop_vel: float = 0.0
+## 0..1: how long a full-deflection look stick has been held, over look_stick_ramp_time.
+var _look_ramp_t: float = 0.0
 var is_transitioning_camera: bool = false
 ## The length the camera MODE wants, with the walls not consulted - what spring_length used
 ## to be back when nothing but _update_camera_mode() ever wrote it. It is kept separately
 ## now because walls write the real spring_length, and the character mesh's visibility reads
 ## THIS one: keying visibility off the wall-aware length would blink his body out every time
 ## a wall squeezed the camera in, which is a new glitch traded for an old one.
-var _camera_mode_length: float = 3.5
+var _camera_mode_length: float = 2.5
 ## The probe cast every frame by _camera_obstruction_length(), built once in
 ## _setup_camera_collision() rather than per frame - it is the same query with a new origin.
 var _camera_probe: PhysicsShapeQueryParameters3D = null
@@ -1580,9 +1741,9 @@ static func wall_run_distance_for(horizontal_speed: float, flat_time: float) -> 
 
 ## A jump off a rail at `speed`: the ordinary jump's airtime at that speed. Static twin of
 ## rail_jump_distance() for the jump grid's editor placeholder - see jump_distance_for().
-static func rail_jump_distance_for(speed: float, time_to_apex: float,
+static func rail_jump_distance_for(launch_speed: float, time_to_apex: float,
 		fall_multiplier: float) -> float:
-	return jump_distance_for(speed, time_to_apex, fall_multiplier)
+	return jump_distance_for(launch_speed, time_to_apex, fall_multiplier)
 
 
 ## How far a rail jump clears at `speed`, metres - 18 off the grind gear, 24 off the sprint gear.
@@ -1623,6 +1784,9 @@ func _ready() -> void:
 	# Set here rather than on the scene so it cannot be lost to a rebuild of pilot9.tscn, and
 	# so the reason for it sits next to the number. See FLOOR_SNAP_LENGTH.
 	floor_snap_length = FLOOR_SNAP_LENGTH
+	# First: everything below that walks his meshes (afterimage pool, rim light, hologram
+	# masks) has to see the body he will actually wear.
+	_swap_body_meshes()
 	_zoom_distance = clampf(camera_distance, camera_zoom_min, camera_zoom_max)
 	target_camera_distance = 0.0 if camera_mode == CameraMode.FIRST_PERSON else _zoom_distance
 	_camera_mode_length = target_camera_distance
@@ -1633,10 +1797,67 @@ func _ready() -> void:
 	_sprint_fov = camera_3d.fov
 	_setup_item_holder()
 	_setup_wall_hand()
+	_setup_slide_hand()
 	_apply_rim_light()
 	_setup_hologram()
+	# Last of the skeleton modifiers: the tredge pose has the final word on both arms.
+	_setup_tredge()
 	if character:
 		character.visible = camera_mode == CameraMode.THIRD_PERSON
+		# The scene's starting yaw is not a turn.
+		_reseed_body_lean()
+
+## Replaces the skeleton's meshes with `body_glb`'s. The GLB's skins bind by bone name, and its
+## skeleton is the same armature, so each mesh is lifted out and re-pointed at ours.
+func _swap_body_meshes() -> void:
+	if body_glb == null:
+		return
+	var skel := get_node_or_null("character/Armature/GeneralSkeleton") as Skeleton3D
+	if skel == null:
+		push_error("pilot9: no skeleton to put body_glb on")
+		return
+	var source := body_glb.instantiate()
+	var incoming := source.find_children("*", "MeshInstance3D", true, false)
+	if incoming.is_empty():
+		push_error("pilot9: body_glb has no meshes - keeping the scene's body")
+		source.free()
+		return
+	for child in skel.get_children():
+		if child is MeshInstance3D:
+			skel.remove_child(child)
+			child.queue_free()
+	for node in incoming:
+		var mi := node as MeshInstance3D
+		mi.get_parent().remove_child(mi)
+		mi.owner = null
+		skel.add_child(mi)
+		mi.skeleton = NodePath("..")
+	source.free()
+
+## -- pilot switching -----------------------------------------------------------
+##
+## More than one pilot9 can stand in a scene; scripts/pilot_switcher.gd hands control between
+## them. An uncontrolled pilot is `frozen` (stands, falls, reads no input), owns no camera, and
+## leaves the groups that mean "the one being played". See docs/specs/pilot-switch.md.
+
+var controlled: bool = true
+
+func set_controlled(on: bool) -> void:
+	controlled = on
+	frozen = not on
+	# The firing range's dummies shoot the first reflect_target; the pause menu opens on the
+	# first hologram_host. Both should be the pilot being played.
+	if on:
+		add_to_group(&"reflect_target")
+	elif is_in_group(&"reflect_target"):
+		remove_from_group(&"reflect_target")
+	if hologram != null:
+		if on:
+			hologram.add_to_group(&"hologram_host")
+		elif hologram.is_in_group(&"hologram_host"):
+			hologram.remove_from_group(&"hologram_host")
+	if on:
+		camera_3d.current = true
 
 func _physics_process(delta: float) -> void:
 	# First, and above every early return below, for the reason in its own docstring: the
@@ -1646,6 +1867,8 @@ func _physics_process(delta: float) -> void:
 	# Last frame's touchdown, now that the bounce pad has had its chance to launch him - see
 	# "What counts as a landing" in docs/specs/pilot9-camera-sway.md.
 	_resolve_landing_dip()
+	if tredge != null:
+		tredge.tick(delta)
 	_update_sprint_toggle()
 	# Freezing mid-mantle ends it rather than pausing it, for the reason the slide ends
 	# itself: nothing advances _climb_time while frozen, and he would be left hanging in
@@ -1669,6 +1892,11 @@ func _physics_process(delta: float) -> void:
 	# started here leaves nothing for the wall-run to grab. After the dash, which refuses it.
 	# See "Mantle vs wall-run" in docs/specs/pilot9-wall-run.md.
 	_handle_mantle_trigger()
+	# After the mantle (a reachable lip is its, never a climb's) and ahead of the wall-run (dead-on
+	# into a face is a climb before it is a camera-redirected run). Ahead of gravity for the
+	# wall-run's reason: it suspends gravity and takes the jump press. See
+	# docs/specs/pilot9-wall-climb.md.
+	_handle_wall_climb(delta)
 	# Same reason the dash sits here: a wall-run started this frame has to be is_wall_running
 	# true before _handle_gravity_and_jump() runs, since that is the function it suspends
 	# gravity against and the function it consumes the jump press through. See
@@ -1712,6 +1940,8 @@ func _physics_process(delta: float) -> void:
 			_apply_dash_velocity()
 		elif is_wall_running:
 			_apply_wall_run_velocity(delta)
+		elif is_wall_climbing:
+			_apply_wall_climb_velocity(delta)
 		elif is_rail_grinding:
 			_apply_rail_velocity(delta)
 		elif is_rail_switching:
@@ -1768,6 +1998,10 @@ func _update_sprint_toggle() -> void:
 	if frozen:
 		_sprint_stop_armed = false
 		return
+	# Locked off out in the blizzard - see docs/specs/pilot9-tredge.md.
+	if is_tredging:
+		sprint_toggled = false
+		return
 	_update_sprint_stop(is_on_floor())
 	# The rail shares this toggle - it IS the rail's gear (see _handle_rail_grind()) - so a
 	# sprint caught onto a rail rides it as a rail sprint, a press on the rail shifts gear, and
@@ -1819,6 +2053,10 @@ func _update_sprint_stop(on_floor: bool) -> void:
 func _handle_crouch_and_slide(delta: float) -> void:
 	_slide_cooldown_left = maxf(_slide_cooldown_left - delta, 0.0)
 
+	# No crouch or slide out in the blizzard; begin_tredge() already cleared the crouch.
+	if is_tredging:
+		return
+
 	# The dash already ended any slide and cleared the crouch on its own way in - see
 	# _start_dash(). `crouch` means nothing for the rest of the window, the same "0.5 s of
 	# zero control" the jump is refused under.
@@ -1843,7 +2081,7 @@ func _handle_crouch_and_slide(delta: float) -> void:
 	# Crouch does nothing on the wall. This return is what consumes that press here: it never
 	# reaches the slide buffer or the crouch toggle below. See "Committed to the wall" in
 	# docs/specs/pilot9-wall-run.md.
-	if is_wall_running:
+	if is_wall_running or is_wall_climbing:
 		return
 
 	if is_sliding:
@@ -2196,7 +2434,7 @@ static func _downhill(floor_normal: Vector3) -> Vector3:
 ## The dot product is what makes the stick matter: a slide steered across the fall line takes
 ## a fraction of the gain, and one steered up it pays.
 static func _slope_accel(heading: Vector3, floor_normal: Vector3, gravity: float,
-		scale: float) -> float:
+		gain_scale: float) -> float:
 	if heading.length() <= 0.0001 or floor_normal.length() <= 0.0001:
 		return 0.0
 	var n := floor_normal.normalized()
@@ -2204,7 +2442,7 @@ static func _slope_accel(heading: Vector3, floor_normal: Vector3, gravity: float
 	if downhill == Vector3.ZERO:
 		return 0.0
 	var sin_t := Vector3(n.x, 0.0, n.z).length()
-	return gravity * sin_t * n.y * heading.normalized().dot(downhill) * scale
+	return gravity * sin_t * n.y * heading.normalized().dot(downhill) * gain_scale
 
 ## One frame of the bonus: gravity in, friction out.
 ##
@@ -2313,11 +2551,21 @@ static func _slope_align_angles(yaw: float, floor_normal: Vector3, pitch_weight:
 ## Levelled out the moment he is airborne or mantling, on the same ease: an airborne body has
 ## no grade to lie along, get_floor_normal() is stale once is_on_floor() goes false, and a
 ## mantle is a scripted path over an edge that already owns his pose.
+##
+## The body lean rides the floor branch's target and nothing else, so the level-snaps and the
+## other branches never see it. It is computed above the branches because its trackers have to
+## run every frame - see _body_lean_target().
 func _align_model_to_slope(delta: float) -> void:
 	var target := Vector2.ZERO
-	if is_on_floor() and not is_climbing and not is_vaulting:
+	var on_floor := is_on_floor()
+	var lean := _body_lean_target(delta, on_floor)
+	if on_floor and not is_climbing and not is_vaulting and not is_wall_climbing:
 		target = _slope_align_angles(character.rotation.y, get_floor_normal(),
-			slope_align_pitch, slope_align_roll)
+			slope_align_pitch, slope_align_roll) + lean
+	elif is_wall_climbing:
+		# Tipped back off the face by the clip's own lean - negative X is head back, away from a
+		# face he is turned into. See wall_climb_lean.
+		target = Vector2(-deg_to_rad(wall_climb_lean), 0.0)
 	elif is_wall_running:
 		# The ground sprint cycle plays on the wall (2026-09-26), so the lean off the face is
 		# this roll's job: head away from the wall, the Titanfall pose.
@@ -2333,7 +2581,83 @@ func _align_model_to_slope(delta: float) -> void:
 	var offset := Vector3.ZERO
 	if is_wall_running:
 		offset = global_basis.inverse() * (-_wall_normal * wall_run_hug)
+	elif is_wall_climbing:
+		# Slid in until the tipped clip's hands and toes meet the face.
+		offset = global_basis.inverse() * (-_wall_climb_normal * _wall_climb_hug())
 	character.position = character.position.lerp(offset, minf(step, 1.0))
+
+## Whether the body lean shows this frame: on the floor at a walk, run or sprint, third person.
+## Everything else keeps its own tilt (or none) - see "Where it applies" in
+## docs/specs/pilot9-body-lean.md. `on_floor` is a parameter so a headless test can reach it.
+func _body_lean_active(on_floor: bool) -> bool:
+	return on_floor \
+		and camera_mode == CameraMode.THIRD_PERSON \
+		and not is_crouching \
+		and not is_sliding \
+		and not is_dashing \
+		and not is_climbing \
+		and not is_vaulting \
+		and not is_wall_running \
+		and not is_wall_climbing \
+		and not is_rail_grinding \
+		and not is_rail_switching \
+		and not frozen
+
+## The lean added to the slope tilt's target: pitch in .x, roll in .y, radians.
+##
+## Called every frame whatever the state, because both trackers have to stay current - a felt
+## speed frozen at takeoff would kick on every landing, and a yaw that last moved three states
+## ago would read as a violent turn. Returns zero outside _body_lean_active().
+##
+## Roll is horizontal speed x the MESH's yaw rate: velocity snaps to the stick in one frame and
+## has no turn rate, the mesh's lerp does. Leaning into a left turn (positive yaw step) puts his
+## head toward local +X, which is negative rotation.z - same convention as the slope roll.
+##
+## Pitch is the gap between his speed and the lagging felt speed, so it is a lean into a CHANGE
+## that decays by itself. The caps are visible peaks: the target is divided by the peak the felt
+## lag and the slope ease reach together on a step - see _body_lean_peak_fraction().
+func _body_lean_target(delta: float, on_floor: bool) -> Vector2:
+	var flat_speed := _horizontal_speed()
+	var yaw := character.rotation.y
+	var yaw_step := wrapf(yaw - _lean_last_yaw, -PI, PI)
+	_lean_last_yaw = yaw
+	if delta <= 0.0:
+		return Vector2.ZERO
+	_felt_speed += (flat_speed - _felt_speed) * (1.0 - exp(-delta / maxf(body_lean_felt_lag, 0.0001)))
+	if not _body_lean_active(on_floor):
+		return Vector2.ZERO
+
+	var lateral := flat_speed * yaw_step / delta
+	var roll := -clampf(lateral / body_lean_roll_full_accel, -1.0, 1.0) \
+		* deg_to_rad(body_lean_roll_max)
+
+	var f := _body_lean_peak_fraction(body_lean_felt_lag, 1.0 / maxf(slope_align_speed, 0.0001))
+	var gap := flat_speed - _felt_speed
+	var pitch := 0.0
+	if gap > 0.0:
+		pitch = deg_to_rad(body_lean_pitch_forward_max) \
+			* clampf(gap / body_lean_pitch_full_gap, 0.0, 1.0) / f
+	elif gap < 0.0:
+		pitch = -deg_to_rad(body_lean_pitch_back_max) \
+			* clampf(-gap / body_lean_pitch_full_gap, 0.0, 1.0) / f
+	return Vector2(pitch, roll)
+
+## The peak of a unit step passed through two first-order lags of time constants t1 and t2 -
+## the felt speed and the slope ease. About 0.54 at the shipping 0.25 s and 0.1 s, 1/e when the
+## two are equal. The pitch target is divided by this so its cap is what shows on the mesh.
+static func _body_lean_peak_fraction(t1: float, t2: float) -> float:
+	if t1 <= 0.0 or t2 <= 0.0:
+		return 1.0
+	if absf(t1 - t2) < 0.000001:
+		return exp(-1.0)
+	var t_peak := log(t1 / t2) * t1 * t2 / (t1 - t2)
+	return t1 / (t1 - t2) * (exp(-t_peak / t1) - exp(-t_peak / t2))
+
+## Restarts the lean trackers from where he is now. Called where he is placed rather than
+## walked - a yaw snap would otherwise read as a turn, a speed snap as a kick.
+func _reseed_body_lean() -> void:
+	_lean_last_yaw = character.rotation.y
+	_felt_speed = _horizontal_speed()
 
 ## The automatic slide's entry test. The slide's own preconditions (it is enabled, the clip
 ## was baked) still apply - without a curve there is nothing to drive him with - but the
@@ -2367,10 +2691,10 @@ func _horizontal_speed() -> float:
 ## `apex_speed: 0.0` switches the hang off and leaves plain asymmetric gravity.
 static func _gravity_scale(vy: float, fall_mult: float, apex_speed: float,
 		apex_scale: float) -> float:
-	var scale := 1.0 if vy > 0.0 else fall_mult
+	var gravity_mult := 1.0 if vy > 0.0 else fall_mult
 	if absf(vy) < apex_speed:
-		scale *= apex_scale
-	return scale
+		gravity_mult *= apex_scale
+	return gravity_mult
 
 ## The jump cut, and the reason a tap is a hop: rising with `jump` let go clamps his upward
 ## speed to `cut_speed`. Everything below that, and everything on the way down, is left alone.
@@ -2416,6 +2740,10 @@ func _handle_gravity_and_jump(delta: float) -> void:
 				_vault_jump_buffered = true
 		return
 
+	if is_wall_climbing:
+		# Gravity and the jump press are _handle_wall_climb()'s, as they are the wall-run's.
+		return
+
 	if is_wall_running:
 		# Gravity and the jump press are both owned by _handle_wall_run() while this is true -
 		# it runs ahead of this function and already read the press, buffering it into
@@ -2451,11 +2779,13 @@ func _handle_gravity_and_jump(delta: float) -> void:
 		_jump_buffered = 0.0
 		_wall_coyote_left = 0.0
 		_rail_coyote_left = 0.0
+		_wall_climb_coyote_left = 0.0
+		_wall_climb_jump_buffered = false
 
 	if not is_on_floor():
-		var scale := _gravity_scale(velocity.y, jump_fall_multiplier, jump_apex_speed,
+		var gravity_mult := _gravity_scale(velocity.y, jump_fall_multiplier, jump_apex_speed,
 			jump_apex_scale)
-		velocity.y = maxf(velocity.y - jump_gravity * scale * delta, -max_fall_speed)
+		velocity.y = maxf(velocity.y - jump_gravity * gravity_mult * delta, -max_fall_speed)
 		# `frozen` counts as held: nothing should be cut during a pause, and the velocity is
 		# about to be zeroed by handle_frozen_movement() anyway.
 		velocity.y = _cut_rise(velocity.y, frozen or Input.is_action_pressed("jump"),
@@ -2464,6 +2794,7 @@ func _handle_gravity_and_jump(delta: float) -> void:
 		_coyote_left = maxf(_coyote_left - delta, 0.0)
 		_jump_buffered = maxf(_jump_buffered - delta, 0.0)
 		_wall_coyote_left = maxf(_wall_coyote_left - delta, 0.0)
+		_wall_climb_coyote_left = maxf(_wall_climb_coyote_left - delta, 0.0)
 		_wall_jump_push_time = maxf(_wall_jump_push_time - delta, 0.0)
 		_tick_wall_lockout(delta)
 		_rail_coyote_left = maxf(_rail_coyote_left - delta, 0.0)
@@ -2479,6 +2810,7 @@ func _handle_gravity_and_jump(delta: float) -> void:
 		_wall_lockout_normal = Vector3.ZERO
 		_wall_lockout_left = 0.0
 		_rail_coyote_left = 0.0
+		_wall_climb_coyote_left = 0.0
 		# A rail launch touching down: the speed it kept through the air starts easing out.
 		if _rail_launch_carry:
 			_rail_land_ease_elapsed = 0.0
@@ -2491,6 +2823,12 @@ func _handle_gravity_and_jump(delta: float) -> void:
 	if _wall_jump_buffered:
 		_wall_jump_buffered = false
 		_take_wall_jump()
+		return
+
+	# The climb jump, buffered by _handle_wall_climb() for the same reason.
+	if _wall_climb_jump_buffered:
+		_wall_climb_jump_buffered = false
+		_take_wall_climb_jump()
 		return
 
 	# Spent here, ahead of everything else. The exit snap teleported him onto the ledge
@@ -2512,6 +2850,10 @@ func _handle_gravity_and_jump(delta: float) -> void:
 		_take_floor_jump()
 		return
 
+	# No jump of any kind out in the blizzard (docs/specs/pilot9-tredge.md). begin_tredge()
+	# cleared the buffer, so nothing above this can fire either.
+	if is_tredging:
+		return
 	if frozen or not Input.is_action_just_pressed("jump"):
 		return
 
@@ -2531,6 +2873,10 @@ func _handle_gravity_and_jump(delta: float) -> void:
 		# the end tangent at the speed he ran off at, spending nothing: a late press is not
 		# punished. Ahead of the double jump for the wall coyote's reason.
 		_take_rail_jump(_rail_coyote_tangent * _rail_coyote_speed)
+	elif _wall_climb_coyote_left > 0.0:
+		# Climb coyote - a press a beat after the peel is still the climb jump, for the wall
+		# coyote's reason below.
+		_take_wall_climb_jump()
 	elif _wall_coyote_left > 0.0:
 		# Wall coyote - the press a beat late off the end of a wall. Ahead of the double jump
 		# on purpose: at chain speed this is the commonest input there is, and letting it
@@ -2634,6 +2980,10 @@ func _handle_character_rotation(delta: float) -> void:
 	elif is_sliding:
 		character.rotation.y = atan2(_slide_direction.x, _slide_direction.z)
 		return
+	elif is_wall_climbing:
+		# Welded into the face - the stick does nothing on a climb.
+		character.rotation.y = atan2(-_wall_climb_normal.x, -_wall_climb_normal.z)
+		return
 	elif is_wall_running:
 		# Welded parallel to the wall for the whole run (2026-09-24): the stick is
 		# camera-relative, so a camera nudge used to swing him off the face. _wall_run_direction
@@ -2658,7 +3008,8 @@ func _handle_character_rotation(delta: float) -> void:
 	else:
 		target = atan2(direction.x, direction.z) if face_travel_direction \
 			else camera_pivot.rotation.y + PI
-	character.rotation.y = lerp_angle(character.rotation.y, target, rotation_speed * delta)
+	var turn := rotation_speed * (tredge_turn_scale if is_tredging else 1.0)
+	character.rotation.y = lerp_angle(character.rotation.y, target, turn * delta)
 
 ## Handles controller stick input for camera rotation.
 func _handle_controller_camera(delta: float) -> void:
@@ -2666,13 +3017,45 @@ func _handle_controller_camera(delta: float) -> void:
 		return
 	if not InputMap.has_action("look_left") or not InputMap.has_action("look_right") or not InputMap.has_action("look_up") or not InputMap.has_action("look_down"):
 		return
-	var look_dir = Input.get_vector("look_left", "look_right", "look_up", "look_down")
-	if look_dir != Vector2.ZERO:
-		_rail_camera_idle = 0.0
-		var sensitivity := controller_sensitivity * Settings.controller_sensitivity
-		camera_pivot.rotation.y -= look_dir.x * sensitivity * delta
-		camera_pivot.rotation.x -= look_dir.y * sensitivity * delta
-		camera_pivot.rotation.x = clampf(camera_pivot.rotation.x, -tilt_limit, tilt_limit)
+	var raw := Input.get_vector("look_left", "look_right", "look_up", "look_down")
+	if raw == Vector2.ZERO:
+		_look_ramp_t = 0.0
+		return
+	_rail_camera_idle = 0.0
+	_look_ramp_t = _look_ramp_step(_look_ramp_t, raw.length(), delta, look_stick_ramp_time)
+	var look_dir := _look_stick_shape(raw, look_stick_curve) \
+		* _look_ramp_factor(_look_ramp_t, raw.length(), look_stick_ramp_start)
+	var sensitivity := controller_sensitivity * Settings.controller_sensitivity
+	camera_pivot.rotation.y -= look_dir.x * sensitivity * delta
+	camera_pivot.rotation.x = _clamp_pitch(camera_pivot.rotation.x - look_dir.y * sensitivity * delta,
+		tilt_up_limit, tilt_down_limit)
+
+## The stick's response curve: the direction kept, the deflection raised to `exponent`. Static and
+## pure. Zero stays zero; a full push stays a full push.
+static func _look_stick_shape(v: Vector2, exponent: float) -> Vector2:
+	var m := v.length()
+	if m <= 0.0001:
+		return Vector2.ZERO
+	return v / m * pow(minf(m, 1.0), exponent)
+
+## One frame of the ramp clock: climbs only while the stick is near full deflection (0.9), and
+## drops to nothing the moment it is not, so a flick never inherits a half-built ramp.
+static func _look_ramp_step(t: float, magnitude: float, delta: float, ramp_time: float) -> float:
+	if ramp_time <= 0.0:
+		return 1.0
+	if magnitude < 0.9:
+		return 0.0
+	return minf(t + delta / ramp_time, 1.0)
+
+## The turn-speed multiplier the ramp gives: `start` fresh into a full push, 1.0 once ramped. It
+## fades in with the deflection (0.6 to 0.95), so a gentle push is never slowed by it.
+static func _look_ramp_factor(t: float, magnitude: float, start: float) -> float:
+	var weight := smoothstep(0.6, 0.95, magnitude)
+	return lerpf(1.0, lerpf(start, 1.0, t), weight)
+
+## Pitch limits, radians: positive is looking up. Static and pure.
+static func _clamp_pitch(pitch: float, up_limit: float, down_limit: float) -> float:
+	return clampf(pitch, -down_limit, up_limit)
 
 ## The rail's swing-behind: once look input has been idle for rail_camera_idle_delay, the
 ## camera YAW eases toward the ride direction at up to rail_camera_swing_rate. Any look input -
@@ -2783,15 +3166,15 @@ func _handle_camera_shoulder(delta: float) -> void:
 	var side := _shoulder_target_side()
 	var want := side * camera_shoulder_offset
 	_shoulder_pos = _shoulder_ease(_shoulder_pos, want, delta, camera_shoulder_swap_time)
-	var scale := 0.0
+	var mode_scale := 0.0
 	if camera_distance > 0.0:
-		scale = clampf(_camera_mode_length / camera_distance, 0.0, 1.0)
+		mode_scale = clampf(_camera_mode_length / camera_distance, 0.0, 1.0)
 	var lead := signf(_shoulder_pos) if absf(_shoulder_pos) > 0.001 else side
-	var clear := _shoulder_clearance(lead) if scale > 0.0 else camera_shoulder_offset
+	var clear := _shoulder_clearance(lead) if mode_scale > 0.0 else camera_shoulder_offset
 	_shoulder_limit = _camera_length_step(_shoulder_limit, clear, delta,
 		camera_retract_speed, camera_return_speed)
 	var applied := signf(_shoulder_pos) * minf(absf(_shoulder_pos), _shoulder_limit)
-	spring_arm.position.x = applied * scale
+	spring_arm.position.x = applied * mode_scale
 
 ## The length the world allows, this frame, with no damping on it yet.
 ##
@@ -2864,12 +3247,44 @@ static func _camera_dash_lag_position(start: Vector3, target: Vector3, elapsed: 
 	var t := clampf((elapsed - delay) / duration, 0.0, 1.0)
 	return start.lerp(target, smoothstep(0.0, 1.0, t))
 
+## The GTA framing's two state shifts: the pull-back while sprinting or dashing and the pivot
+## drop while crouching or sliding, each eased on camera_state_ease_time. See
+## docs/specs/pilot9-gta-camera.md.
+##
+## Runs from _process(), not the physics step: the pivot is placed every drawn frame, and a
+## lift that only moved at the 60 Hz tick climbed in visible stairs on a faster display.
+func _handle_camera_state(delta: float) -> void:
+	var back_target := camera_sprint_pullback if (is_sprinting or is_dashing) else 0.0
+	var drop_target := camera_crouch_drop if (is_crouching or is_sliding) else 0.0
+	var back := _camera_state_spring(_camera_state_back, _camera_state_back_vel, back_target,
+		delta, camera_state_ease_time)
+	_camera_state_back = back.x
+	_camera_state_back_vel = back.y
+	var drop := _camera_state_spring(_camera_state_drop, _camera_state_drop_vel, drop_target,
+		delta, camera_state_ease_time)
+	_camera_state_drop = drop.x
+	_camera_state_drop_vel = drop.y
+
+## One step of a critically damped spring toward `target`, settled within 2% after
+## `ease_time`. Returns (value, velocity). Replaces the exponential ease these shifts used to
+## share with the shoulder, which is fastest on its first frame - so the instant a slide ended
+## the pivot was already rising at full speed, and the camera read as snapping up. A spring
+## from rest starts at zero speed instead. Static so the tests can check it without a rig.
+static func _camera_state_spring(x: float, v: float, target: float, delta: float,
+		ease_time: float) -> Vector2:
+	if ease_time <= 0.0:
+		return Vector2(target, 0.0)
+	# (1 + wt) e^(-wt) = 0.02 at wt ~= 5.83.
+	var step := _dip_spring_step(x - target, v, 5.83 / ease_time, delta)
+	return Vector2(step.x + target, step.y)
+
 ## Handles smooth camera transition between modes, and the walls.
 ##
 ## Two lengths, deliberately: the mode transition owns _camera_mode_length and the walls own
 ## spring_length. See docs/specs/pilot9-camera-collision.md for why the mesh reads the first.
 func _handle_camera_transition(delta: float) -> void:
-	_camera_mode_length = lerpf(_camera_mode_length, target_camera_distance,
+	var back := _camera_state_back if target_camera_distance > 0.0 else 0.0
+	_camera_mode_length = lerpf(_camera_mode_length, target_camera_distance + back,
 		clampf(camera_transition_speed * delta, 0.0, 1.0))
 	var desired := _camera_obstruction_length(_camera_mode_length)
 	# The shoulder first: the obstruction cast above already ran from last frame's origin, which
@@ -2915,10 +3330,13 @@ func _handle_camera_transition(delta: float) -> void:
 func _camera_zoom_lift() -> float:
 	if camera_zoom_max <= camera_zoom_min or camera_zoom_min <= 0.0:
 		return 0.0
+	# The GTA raise and the crouch drop fade out into first person with the zoom lift.
+	var fade := clampf(_camera_mode_length / camera_zoom_min, 0.0, 1.0)
+	var extra := (camera_pivot_raise - _camera_state_drop) * fade
 	if _camera_mode_length < camera_zoom_min:
-		return camera_zoom_in_lift * maxf(_camera_mode_length, 0.0) / camera_zoom_min
+		return camera_zoom_in_lift * maxf(_camera_mode_length, 0.0) / camera_zoom_min + extra
 	return lerpf(camera_zoom_in_lift, camera_zoom_out_lift, clampf(
-		(_camera_mode_length - camera_zoom_min) / (camera_zoom_max - camera_zoom_min), 0.0, 1.0))
+		(_camera_mode_length - camera_zoom_min) / (camera_zoom_max - camera_zoom_min), 0.0, 1.0)) + extra
 
 ## The upward pitch, radians, that puts a point `drop` metres under the pivot at the screen
 ## height the zoom asks for. At `zoom_min` that is wherever the rig's geometry already puts
@@ -2967,8 +3385,9 @@ func _handle_camera_fov(delta: float) -> void:
 	# target instead of arriving at it.
 	_sprint_fov = lerpf(_sprint_fov, target_fov, clampf(fov_transition_speed * delta, 0.0, 1.0))
 	_step_dash_fov_kick(delta)
-	camera_3d.fov = _dash_fov_lens(_sprint_fov, _dash_fov_kick * dash_fov_boost,
-		dash_fov_ceiling)
+	_reflect_fov_deg = move_toward(_reflect_fov_deg, 0.0, _reflect_fov_rate * delta) 		if Settings.camera_motion else 0.0
+	camera_3d.fov = _dash_fov_lens(_sprint_fov,
+		_dash_fov_kick * dash_fov_boost + _reflect_fov_deg, dash_fov_ceiling)
 
 ## Advances the dash kick's envelope one physics step. See docs/specs/pilot9-dash-fov.md.
 ## Reads `is_dashing` one frame late for the same reason the sprint gate does - it runs first
@@ -3040,13 +3459,14 @@ func _handle_camera_motion(delta: float) -> float:
 		delta)
 	_dip_offset = spring.x
 	_dip_velocity = spring.y
-	var scale := _camera_motion_scale(spring_arm.spring_length, camera_distance)
+	var motion_scale := _camera_motion_scale(spring_arm.spring_length, camera_distance)
 	var lateral := sin(_sway_phase)
 	# cos(2x): lowest at either end of the lateral swing - the foot planting on that side -
 	# and highest crossing the middle.
-	camera_3d.h_offset = camera_sway_lateral * _sway_weight * lateral * scale
+	var hit_shake: Vector2 = hit_feedback.shake_offset if hit_feedback != null else Vector2.ZERO
+	camera_3d.h_offset = camera_sway_lateral * _sway_weight * lateral * motion_scale + hit_shake.x
 	camera_3d.v_offset = (camera_sway_vertical * _sway_weight * cos(2.0 * _sway_phase)
-		+ _dip_offset) * scale
+		+ _dip_offset) * motion_scale + hit_shake.y
 	return deg_to_rad(camera_sway_roll) * _sway_weight * lateral
 
 ## Every state the sway fades out in, as one test. Walking needs no term of its own - the
@@ -3187,6 +3607,11 @@ func _zoom_camera(notches: float) -> void:
 ## is_sprinting/is_walking as a side effect.
 func _requested_speed() -> float:
 	var is_moving = input_dir != Vector2.ZERO and is_on_floor()
+	# The tredge outranks everything: one gait, slowed by the gust.
+	if is_tredging:
+		is_sprinting = false
+		is_walking = false
+		return tredge_speed * (1.0 - tredge_gust_slow * (tredge.gust if tredge != null else 0.0))
 	# Crouch outranks both gaits: it owns the whole locomotion state, so leaving either
 	# flag set would keep pilot9_animation.gd feeding the walk/run blends underneath it.
 	is_sprinting = sprint_toggled and is_moving and not Input.is_action_pressed("walk") and not is_crouching
@@ -3201,6 +3626,11 @@ func _requested_speed() -> float:
 	return speed
 
 func _apply_movement(delta: float) -> void:
+	if _wall_climb_coyote_left > 0.0 and not is_on_floor():
+		# The peel off a climb: the push away from the face holds for the climb coyote, or the
+		# air control (speed, not momentum) would turn it straight back into the wall on the
+		# next frame with the stick still held. See "Built" in docs/specs/pilot9-wall-climb.md.
+		return
 	if _wall_jump_push_time > 0.0 and not is_on_floor():
 		_apply_movement_under_wall_jump_push(delta)
 	else:
@@ -3254,6 +3684,15 @@ func _apply_stick_movement(delta: float) -> void:
 		return
 	var demanded := current_speed * input_strength if direction else 0.0
 	var carried := _horizontal_speed()
+	# The tredge keeps no momentum: momentum_decay is 0, so the gust's dip (and a run carried out
+	# of the building) would never come off him. Eased at tredge_speed_rate instead.
+	if is_tredging and is_on_floor():
+		var eased := move_toward(carried, demanded, tredge_speed_rate * delta)
+		var line := direction if direction \
+			else (Vector3(velocity.x, 0.0, velocity.z) / carried if carried > 0.0001 else Vector3.ZERO)
+		velocity.x = line.x * eased
+		velocity.z = line.z * eased
+		return
 	# The speed the stick asks for, raised to a sprint where momentum is in play - over a
 	# sprint on foot, and by however much of one he is already carrying in the air.
 	var target := demanded
@@ -3524,10 +3963,13 @@ func _probe_ledge(facing: Vector3, reach: float = -1.0) -> Dictionary:
 func _handle_mantle_trigger() -> void:
 	# A rail is ground he is riding, not a flight past a ledge - and it caught him first.
 	if frozen or is_climbing or is_vaulting or is_dashing or is_rail_grinding \
-			or is_rail_switching or is_on_floor():
+			or is_rail_switching or is_on_floor() or is_tredging:
 		return
 	if is_wall_running:
 		_try_mantle_off_wall_run()
+	elif is_wall_climbing:
+		# Into the face he is climbing, at the run-top reach - the capsule holds him off it.
+		_try_start_climb_along(-_wall_climb_normal, maxf(climb_probe_reach, wall_run_probe_reach))
 	else:
 		_try_start_climb()
 
@@ -3596,6 +4038,9 @@ func _start_climb(lip: Vector3, wall_normal: Vector3) -> void:
 	# same as every other mantle entry; nothing about a wall-run's own state survives it -
 	# the wall coyote and the wall-jump's push included.
 	_end_wall_run()
+	# The lip off a wall climb - the same handoff.
+	_end_wall_climb()
+	_wall_climb_coyote_left = 0.0
 	# Hard cut to `climb`, on every entry. The snap below has already put his frame-1 hands on
 	# the lip, and that is only true of climb_up's frame 1 - any other pose, or any blend into
 	# it, has his hands somewhere else. Left to the state machine the cut came 2+ frames late
@@ -3632,6 +4077,10 @@ func _start_climb(lip: Vector3, wall_normal: Vector3) -> void:
 	# leftover mesh pitch/roll) unwound over the mantle's first frames and read as a tilt.
 	character.rotation.x = 0.0
 	character.rotation.z = 0.0
+	# Centred too: a wall climb's slide in toward the face eased out over the first frames and
+	# carried the hands 0.09 m off the lip with it (tests/_probe_mantle_hands.gd, "from=wall_climb").
+	character.position = Vector3.ZERO
+	_reseed_body_lean()
 	if camera_3d:
 		camera_3d.rotation.z = 0.0
 	_camera_wall_roll = 0.0
@@ -3960,6 +4409,7 @@ func _start_vault(start: Vector3, dir: Vector3, entry_speed: float, dh: float, d
 	character.rotation.y = atan2(dir.x, dir.z)
 	character.rotation.x = 0.0
 	character.rotation.z = 0.0
+	_reseed_body_lean()
 	if collision_shape:
 		collision_shape.set_deferred("disabled", true)
 
@@ -4116,7 +4566,7 @@ func _handle_dash(delta: float) -> void:
 	# Mantle and frozen both refuse a fresh dash outright rather than queuing one - see
 	# _dash_availability(). Climbing is not cancellable and a dash out of the middle of it
 	# would fling a collider-less pilot9 through geometry.
-	if not Input.is_action_just_pressed("dash") or not _can_dash():
+	if is_tredging or not Input.is_action_just_pressed("dash") or not _can_dash():
 		return
 
 	# Fresh input, not `direction`: this runs ahead of _handle_movement_input() in
@@ -4182,6 +4632,9 @@ func _start_dash(heading: Vector3) -> void:
 	# answer to "where next", not a wall-jump. See "The dash" in docs/specs/pilot9-wall-run.md.
 	_wall_jump_push_time = 0.0
 	_wall_coyote_left = 0.0
+	# A dash ends a climb (the cooldown starts) and closes its coyote - the wall-run's rule.
+	_end_wall_climb()
+	_wall_climb_coyote_left = 0.0
 	# Same for the rail's: a dash is its own answer to "where next".
 	_rail_coyote_left = 0.0
 	_rail_launch_carry = false
@@ -4280,7 +4733,7 @@ func _check_dash_blocked() -> void:
 func _apply_rim_light() -> void:
 	if character == null:
 		return
-	var overlay: Material = rim_light_material if rim_light_enabled else null
+	var overlay: Material = rim_light_material if rim_light_enabled and not rim_light_suppressed else null
 	var meshes: Array[MeshInstance3D] = []
 	_ApplyStylized.collect_meshes(character, meshes)
 	for mi in meshes:
@@ -4518,10 +4971,10 @@ func _handle_wall_run(delta: float) -> void:
 		if _wall_run_time >= wall_run_flat_time + wall_run_droop_time:
 			_let_go_of_wall(WallLetGo.TIMER)
 			return
-		var hit := _probe_wall_side(WALL_RUN_PROBE_HEIGHT)
-		if hit.is_empty():
-			hit = _probe_wall_side(WALL_RUN_LOW_PROBE_HEIGHT)
-			if hit.is_empty():
+		var wall_hit := _probe_wall_side(WALL_RUN_PROBE_HEIGHT)
+		if wall_hit.is_empty():
+			wall_hit = _probe_wall_side(WALL_RUN_LOW_PROBE_HEIGHT)
+			if wall_hit.is_empty():
 				# The wall ended. Detach keeping every bit of velocity - the free launch off
 				# the end of a wall the spec calls out by name.
 				_let_go_of_wall(WallLetGo.WALL_ENDED)
@@ -4532,16 +4985,17 @@ func _handle_wall_run(delta: float) -> void:
 			if not _wall_run_leveled:
 				velocity.y = 0.0
 				_wall_run_leveled = true
-		var normal: Vector3 = hit.get("normal", Vector3.ZERO)
-		if not _wall_follows(_wall_normal, normal, wall_run_follow_angle):
+		var wall_face_normal: Vector3 = wall_hit.get("normal", Vector3.ZERO)
+		if not _wall_follows(_wall_normal, wall_face_normal, wall_run_follow_angle):
 			# The face turned more sharply than a seam or a curve - a different wall.
 			_let_go_of_wall(WallLetGo.WALL_ENDED)
 			return
-		_follow_wall(normal, hit["position"], hit["origin"])
+		_follow_wall(wall_face_normal, wall_hit["position"], wall_hit["origin"])
 		return
 
 	if frozen or is_climbing or is_vaulting or is_dashing or is_rail_grinding \
-			or is_rail_switching or is_on_floor() or not can_wall_run:
+			or is_rail_switching or is_wall_climbing or is_on_floor() or not can_wall_run \
+			or is_tredging:
 		return
 	var travel := _wall_run_travel_direction()
 	var hit := _probe_wall(travel)
@@ -4628,8 +5082,8 @@ func _start_wall_run(normal: Vector3, travel_dir: Vector3, point: Vector3 = Vect
 ## How much of `horizontal_velocity` runs along `direction` (a unit tangent in the wall
 ## plane), never negative. The part into or out of the face is what it throws away. Static
 ## and pure - see tests/test_pilot9_wall_run.gd.
-static func _along_wall_speed(horizontal_velocity: Vector3, direction: Vector3) -> float:
-	return maxf(horizontal_velocity.dot(direction), 0.0)
+static func _along_wall_speed(horizontal_velocity: Vector3, dir: Vector3) -> float:
+	return maxf(horizontal_velocity.dot(dir), 0.0)
 
 ## The run's speed `t` seconds in: an `entry` under `target` ramps up to it linearly across
 ## `ramp`; one at or over it is held. The wall lifts a jog to a sprint and never adds to a
@@ -4658,9 +5112,9 @@ func _apply_wall_run_velocity(delta: float) -> void:
 	velocity.x = _wall_run_direction.x * s - n.x * pull
 	velocity.z = _wall_run_direction.z * s - n.z * pull
 	if not _wall_run_leveled:
-		var scale := _gravity_scale(velocity.y, jump_fall_multiplier, jump_apex_speed,
+		var gravity_mult := _gravity_scale(velocity.y, jump_fall_multiplier, jump_apex_speed,
 			jump_apex_scale)
-		velocity.y = maxf(velocity.y - jump_gravity * scale * delta, -max_fall_speed)
+		velocity.y = maxf(velocity.y - jump_gravity * gravity_mult * delta, -max_fall_speed)
 		if velocity.y <= 0.0 and _wall_run_time <= wall_run_flat_time:
 			velocity.y = 0.0
 			_wall_run_leveled = true
@@ -4770,6 +5224,289 @@ func wall_run_on_right() -> bool:
 ## right. Static and pure - see tests/test_pilot9_wall_run.gd.
 static func _wall_on_right_of(wall_normal: Vector3, travel_dir: Vector3) -> bool:
 	return wall_normal.x * travel_dir.z - wall_normal.z * travel_dir.x > 0.0
+
+## -- the wall climb -----------------------------------------------------------------
+##
+## Running dead-on into a wall, he goes straight up it: a fixed wall_climb_height, then a stall
+## and a peel off, unless a lip (the mantle), a jump (the climb jump) or the wall's top ends it
+## first. On the ground or in the air. Velocity-driven like the wall-run, so move_and_slide()
+## keeps him honest against the geometry. See docs/specs/pilot9-wall-climb.md.
+
+## The entry gates, as one pure function: a run and not a drift (`min_speed`), the face
+## near-vertical (`wall_angle_deg`), travel within `climb_angle_deg` of dead-on into it, and
+## not mid-dash. No floor gate - a climb starts on the ground or in the air alike. Static so
+## every gate is assertable with no tree - see tests/test_pilot9_wall_climb.gd.
+static func _wall_climb_gates(horizontal_speed: float, wall_normal: Vector3, travel_dir: Vector3,
+		is_dashing_: bool, min_speed: float, wall_angle_deg: float,
+		climb_angle_deg: float) -> bool:
+	if is_dashing_ or horizontal_speed < min_speed:
+		return false
+	if wall_normal.length() <= 0.0001 or travel_dir.length() <= 0.0001:
+		return false
+	var n := wall_normal.normalized()
+	if absf(n.y) > sin(deg_to_rad(wall_angle_deg)):
+		return false
+	var flat := Vector3(travel_dir.x, 0.0, travel_dir.z)
+	if flat.length() <= 0.0001:
+		return false
+	var theta := rad_to_deg(acos(clampf(flat.normalized().dot(n), -1.0, 1.0)))
+	return theta >= 180.0 - climb_angle_deg - 0.0001
+
+## The flat-out climb speed that makes rise + stall come to exactly `height`: the rise is
+## speed x rise_time, the linear stall half of speed x stall_time. Static and pure.
+static func wall_climb_speed_for(height: float, rise_time: float, stall_time: float) -> float:
+	var t := rise_time + stall_time * 0.5
+	return height / t if t > 0.0 else 0.0
+
+func wall_climb_speed() -> float:
+	return wall_climb_speed_for(wall_climb_height, wall_climb_rise_time, wall_climb_stall_time)
+
+## How much of the flat-out climb speed he has `t` seconds in: all of it through the rise, then
+## linearly to nothing across the stall. Static and pure.
+static func wall_climb_speed_fraction_at(t: float, rise_time: float, stall_time: float) -> float:
+	if t <= rise_time:
+		return 1.0
+	if stall_time <= 0.0:
+		return 0.0
+	return clampf(1.0 - (t - rise_time) / stall_time, 0.0, 1.0)
+
+## The clip's rate this frame - pilot9_animation.gd writes it onto the `wall_climb` TimeScale.
+func wall_climb_clip_rate() -> float:
+	if not is_wall_climbing:
+		return wall_climb_anim_speed
+	return wall_climb_anim_speed * wall_climb_speed_fraction_at(_wall_climb_time,
+		wall_climb_rise_time, wall_climb_stall_time)
+
+## How far the mesh slides in toward the face during a climb, metres: the gap between where the
+## capsule holds him and the tipped clip's contact plane, less a palm. Negative pulls the mesh
+## back if the hands would reach through the wall. Read from the bake, so a new clip re-fits.
+func _wall_climb_hug() -> float:
+	if wall_climb_hand_reach <= 0.0:
+		return 0.0
+	return clampf(_wall_run_hold_distance() - wall_climb_hand_reach - WALL_CLIMB_PALM, -0.3, 0.5)
+
+## The same-wall cooldown, pure: true while `lock_left` is still running and the face (`normal`
+## through `point`) is the locked one. Any other face is open the moment the climb ends.
+static func _wall_climb_locked(lock_normal: Vector3, lock_point: Vector3, lock_left: float,
+		normal: Vector3, point: Vector3) -> bool:
+	return lock_left > 0.0 and _same_wall(lock_normal, lock_point, normal, point)
+
+## The instance wrapper: the pure gates plus everything that needs live state - the verbs that
+## own him outright, the toggle, the cooldown, and the mantle's claim on a reachable lip.
+func _can_start_wall_climb(hit: Dictionary, travel_dir: Vector3) -> bool:
+	if hit.is_empty() or not can_wall_climb:
+		return false
+	if frozen or is_climbing or is_vaulting or is_dashing or is_rail_grinding \
+			or is_rail_switching or is_wall_climbing:
+		return false
+	var normal: Vector3 = hit.get("normal", Vector3.ZERO)
+	var point: Vector3 = hit.get("position", Vector3.ZERO)
+	if _wall_climb_locked(_wall_climb_lock_normal, _wall_climb_lock_point, _wall_climb_lock_left,
+			normal, point):
+		return false
+	if not _wall_climb_gates(_horizontal_speed(), normal, travel_dir, is_dashing,
+			wall_run_min_speed, wall_run_wall_angle, wall_climb_angle):
+		return false
+	# A lip the mantle can already take is the mantle's - it ran first this frame in the air, and
+	# on the ground it takes the lip on his first airborne frame anyway. Only refused airborne:
+	# on the ground the mantle cannot fire, and the climb is what lifts him to it.
+	if not is_on_floor() and _wall_top_in_mantle_reach(normal):
+		return false
+	return true
+
+## Entry, sustain and exit - the wall-run's split. Runs ahead of _handle_wall_run() (a head-on
+## catch is a climb before it is ever a camera-redirected run) and ahead of
+## _handle_gravity_and_jump(), whose gravity it suspends and whose jump press it takes.
+func _handle_wall_climb(delta: float) -> void:
+	if _wall_climb_lock_left > 0.0:
+		_wall_climb_lock_left = maxf(_wall_climb_lock_left - delta, 0.0)
+		if _wall_climb_lock_left <= 0.0:
+			_wall_climb_lock_normal = Vector3.ZERO
+
+	if is_wall_climbing:
+		_wall_climb_time += delta
+		if frozen:
+			_end_wall_climb()
+			return
+		if Input.is_action_just_pressed("jump"):
+			# Buffered, not taken: gravity runs after this and would eat the launch this frame.
+			_wall_climb_jump_normal = _wall_climb_normal
+			_wall_climb_jump_buffered = true
+			_end_wall_climb()
+			return
+		if _wall_climb_time >= wall_climb_rise_time + wall_climb_stall_time:
+			_peel_off_wall()
+			return
+		var hit := _probe_wall_climb_face()
+		if hit.is_empty():
+			# The face ran out above his chest - the top of a wall the mantle would not take, or
+			# a gap. He keeps the climb speed he had and finishes it as a jump would.
+			_end_wall_climb()
+			return
+		var normal: Vector3 = hit.get("normal", Vector3.ZERO)
+		if not _wall_follows(_wall_climb_normal, normal, wall_run_follow_angle):
+			_end_wall_climb()
+			return
+		_wall_climb_normal = normal.normalized()
+		_wall_climb_point = hit["position"]
+		_wall_climb_gap = (hit["origin"] - _wall_climb_point).dot(_wall_climb_normal)
+		_emit_wall_climb_taps(delta)
+		return
+
+	if is_wall_running:
+		# The inside corner: a run that meets a wall dead ahead along it climbs that wall. A lip
+		# there is the mantle's (row 2 of the wall-run spec's table) and it ran first this frame.
+		var ahead_run := _probe_wall_ahead(_wall_run_direction)
+		if not ahead_run.is_empty() and _can_start_wall_climb(ahead_run, _wall_run_direction):
+			_start_wall_climb(ahead_run["normal"], ahead_run["position"])
+		return
+
+	var travel := _wall_run_travel_direction()
+	if is_tredging or Vector3(velocity.x, 0.0, velocity.z).length() <= 0.0001:
+		return
+	var ahead := _probe_wall_ahead(travel)
+	if _can_start_wall_climb(ahead, travel):
+		_start_wall_climb(ahead["normal"], ahead["position"])
+
+## The sustain ray: straight at the face along -normal, from chest height, the wall-run's reach.
+func _probe_wall_climb_face() -> Dictionary:
+	var into := -Vector3(_wall_climb_normal.x, 0.0, _wall_climb_normal.z)
+	if into.length() <= 0.0001:
+		return {}
+	var space := get_world_3d().direct_space_state
+	if space == null:
+		return {}
+	var origin := global_position + Vector3.UP * WALL_RUN_PROBE_HEIGHT
+	var query := PhysicsRayQueryParameters3D.create(origin,
+		origin + into.normalized() * wall_run_probe_reach)
+	query.exclude = [get_rid()]
+	var hit := space.intersect_ray(query)
+	if not hit.is_empty():
+		hit["origin"] = origin
+	return hit
+
+## The entry snap: face the wall, drop every horizontal bit of speed, take the climb speed
+## upward. A fall is caught outright, a rising jump replaced - he climbs exactly
+## wall_climb_height whatever he arrived with.
+func _start_wall_climb(normal: Vector3, point: Vector3) -> void:
+	# The inside-corner handoff ends a run; nothing about the run survives into the climb.
+	_end_wall_run()
+	is_wall_climbing = true
+	_wall_climb_time = 0.0
+	_wall_climb_phase = 0.0
+	_wall_climb_normal = Vector3(normal.x, 0.0, normal.z).normalized()
+	_wall_climb_point = point
+	_wall_climb_gap = (global_position + Vector3.UP * WALL_RUN_PROBE_HEIGHT - point) \
+		.dot(_wall_climb_normal)
+	_wall_climb_jump_buffered = false
+	_wall_climb_coyote_left = 0.0
+	velocity = Vector3.UP * wall_climb_speed()
+	# Every per-flight grace that would fire out of the middle of a climb goes - the wall-run
+	# entry's list. The double jump and the wall-jump chain are left alone (the spec's call).
+	_wall_jump_push_time = 0.0
+	_wall_jump_steer_back = 0.0
+	_wall_coyote_left = 0.0
+	_coyote_left = 0.0
+	_jump_buffered = 0.0
+	_rail_coyote_left = 0.0
+	_rail_launch_carry = false
+	_rail_land_ease_elapsed = -1.0
+	is_crouching = false
+	_slide_buffered = false
+	_end_slide()
+	var into := -_wall_climb_normal
+	character.rotation.y = atan2(into.x, into.z)
+	# The tilt and the slide in, snapped rather than eased: _align_model_to_slope() would take
+	# ~0.3 s to get there, and the reaching hands pass through the face for all of it.
+	character.rotation.x = -deg_to_rad(wall_climb_lean)
+	character.rotation.z = 0.0
+	if is_inside_tree():
+		character.position = global_basis.inverse() * (-_wall_climb_normal * _wall_climb_hug())
+	if is_inside_tree():
+		_wall_kick_point = global_position - _wall_climb_normal * _wall_climb_gap
+		if _effects_on():
+			_vfx.wall_attach(_wall_kick_point, _wall_climb_normal)
+
+## Clears the climb and starts the same-wall cooldown on the face he was on. Never touches
+## velocity: the jump has already written its own, the peel writes its push, and the wall
+## ending keeps the climb speed he had.
+func _end_wall_climb() -> void:
+	if not is_wall_climbing:
+		return
+	is_wall_climbing = false
+	_wall_climb_time = 0.0
+	_wall_climb_lock_normal = _wall_climb_normal
+	_wall_climb_lock_point = _wall_climb_point
+	_wall_climb_lock_left = wall_climb_same_wall_cooldown
+
+## The clock ran out: a small push off the face, the fall, and a beat in which jump is still
+## the climb jump.
+func _peel_off_wall() -> void:
+	var n := _wall_climb_normal
+	velocity = Vector3(n.x * wall_climb_peel_speed, 0.0, n.z * wall_climb_peel_speed)
+	_wall_climb_jump_normal = n
+	_wall_climb_coyote_left = wall_jump_coyote_time
+	_end_wall_climb()
+
+## Bypasses _apply_movement() while he climbs, as the wall-run's does. Up at the climb speed
+## (eased out through the stall), held to the face by the wall-run's pull, nothing along it.
+func _apply_wall_climb_velocity(_delta: float) -> void:
+	var pull := _wall_run_pull_speed(_wall_climb_gap, _wall_run_hold_distance(),
+		wall_run_pull_time)
+	var n := _wall_climb_normal
+	velocity.x = -n.x * pull
+	velocity.z = -n.z * pull
+	velocity.y = wall_climb_speed() * wall_climb_speed_fraction_at(_wall_climb_time,
+		wall_climb_rise_time, wall_climb_stall_time)
+
+## The climb jump: straight back off the face at wall_jump_kick and a full jump up, every time -
+## outside the wall-run's decaying chain. He turns to face away, and the wall-jump's push
+## protection carries the kick across a chimney. Called from _handle_gravity_and_jump().
+func _take_wall_climb_jump() -> void:
+	var n := Vector3(_wall_climb_jump_normal.x, 0.0, _wall_climb_jump_normal.z).normalized()
+	velocity = Vector3(n.x * wall_jump_kick, jump_velocity, n.z * wall_jump_kick)
+	# The push protection reads the wall-jump's normal.
+	_wall_jump_normal = n
+	_wall_jump_push_time = jump_air_time
+	_wall_jump_steer_back = 0.0
+	_wall_climb_coyote_left = 0.0
+	is_jumping = true
+	character.rotation.y = atan2(n.x, n.z)
+	if _effects_on() and _wall_kick_point != Vector3.ZERO:
+		_vfx.wall_jump(_wall_kick_point, n)
+
+## One tap at the hand that just took a hold, on the face. The loop's clock is advanced here at
+## the clip's own rate, so a grab phase crossed this frame is a grab the mesh is making now.
+func _emit_wall_climb_taps(delta: float) -> void:
+	if wall_climb_duration <= 0.0 or wall_climb_grab_phases.is_empty():
+		return
+	var from := _wall_climb_phase
+	_wall_climb_phase += delta * wall_climb_clip_rate() / wall_climb_duration
+	if not _effects_on():
+		return
+	for p in wall_climb_grab_phases:
+		# Crossed this frame, on this loop or the wrap into the next.
+		var crossed := (p > fposmod(from, 1.0) and p <= fposmod(from, 1.0) + (_wall_climb_phase - from)) \
+			or (p + 1.0 > fposmod(from, 1.0) and p + 1.0 <= fposmod(from, 1.0) + (_wall_climb_phase - from))
+		if crossed:
+			_vfx.hand_taps([_wall_climb_hand_on_face()])
+
+## The higher of his two hands - the one topping out - pushed onto the face.
+func _wall_climb_hand_on_face() -> Vector3:
+	var skel := get_node_or_null("character/Armature/GeneralSkeleton") as Skeleton3D
+	var hand := global_position + Vector3.UP * 2.0
+	if skel != null:
+		var best := -INF
+		for bone in [&"LeftHand", &"RightHand"]:
+			var idx := skel.find_bone(bone)
+			if idx < 0:
+				continue
+			var p := skel.global_transform * skel.get_bone_global_pose(idx).origin
+			if p.y > best:
+				best = p.y
+				hand = p
+	var n := _wall_climb_normal
+	return hand - n * (hand - _wall_climb_point).dot(n)
 
 ## -- the rail grind ---------------------------------------------------------------
 ##
@@ -4973,7 +5710,8 @@ func _handle_rail_grind(delta: float) -> void:
 		_rail_sweep_valid = false
 		_tick_rail_switch(delta)
 		return
-	if not can_rail_grind or frozen or is_climbing or is_vaulting or is_dashing or is_on_floor():
+	if not can_rail_grind or frozen or is_climbing or is_vaulting or is_dashing or is_on_floor() \
+			or is_wall_climbing or is_tredging:
 		_rail_sweep_valid = false
 		return
 	if not _try_catch_rail():
@@ -5319,36 +6057,43 @@ func _update_movement_vfx(delta: float) -> void:
 	_vfx_clock += delta
 	_kick_cooldown_left = maxf(_kick_cooldown_left - delta, 0.0)
 	var flat := Vector3(velocity.x, 0.0, velocity.z)
-	var speed := flat.length()
-	var fwd := flat / speed if speed > 0.01 else _facing()
+	var flat_speed := flat.length()
+	var fwd := flat / flat_speed if flat_speed > 0.01 else _facing()
 
 	# The lasers. The latch runs whatever the switch says, so turning effects back on mid-run
 	# picks up the right state; the dash only stops new bolts.
-	_laser_on = _laser_latch(_laser_on, speed, vfx_laser_on_speed, vfx_laser_off_speed)
+	_laser_on = _laser_latch(_laser_on, flat_speed, vfx_laser_on_speed, vfx_laser_off_speed)
 	var firing := on and _laser_on and not is_dashing
 	_laser_ease = minf(_laser_ease + delta / maxf(vfx_laser_fade_in, 0.001), 1.0) \
 		if firing else 0.0
 	var aim := flat + Vector3.UP * velocity.y * LASER_VERTICAL
 	_vfx.lasers(firing, global_position + Vector3.UP * vfx_laser_chest_height,
 		-aim.normalized() if aim.length() > 0.01 else -fwd,
-		_speed_ramp(speed, vfx_laser_on_speed, vfx_laser_full_speed), _laser_ease, velocity,
+		_speed_ramp(flat_speed, vfx_laser_on_speed, vfx_laser_full_speed), _laser_ease, velocity,
 		camera_3d.global_position if camera_3d != null else Vector3.INF, delta)
 
 	# The slide sparks, off the leading foot.
-	var sparking := on and is_sliding and speed >= vfx_slide_spark_min_speed
+	var sparking := on and is_sliding and flat_speed >= vfx_slide_spark_min_speed
 	_vfx.slide(sparking, global_position + fwd * SLIDE_SPARK_LEAD, -fwd,
-		_speed_ramp(speed, vfx_slide_spark_min_speed, slide_max_speed))
+		_speed_ramp(flat_speed, vfx_slide_spark_min_speed, slide_max_speed))
 
-	# The wall trail.
+	# The wall trail - the run's, or the scuffs off his feet up a climb.
 	if is_wall_running:
 		_wall_kick_point = _wall_foot_contact()
-	_vfx.wall_run(on and is_wall_running, _wall_kick_point, _wall_normal,
-		_wall_dust_fade(_wall_run_time, wall_run_flat_time, wall_run_droop_time))
+		_vfx.wall_run(on, _wall_kick_point, _wall_normal,
+			_wall_dust_fade(_wall_run_time, wall_run_flat_time, wall_run_droop_time))
+	elif is_wall_climbing:
+		_wall_kick_point = global_position - _wall_climb_normal * _wall_climb_gap
+		_vfx.wall_run(on, _wall_kick_point, _wall_climb_normal,
+			wall_climb_speed_fraction_at(_wall_climb_time, wall_climb_rise_time,
+				wall_climb_stall_time))
+	else:
+		_vfx.wall_run(false, _wall_kick_point, _wall_normal, 0.0)
 
-	_update_sprint_kicks(on, speed, fwd)
+	_update_sprint_kicks(on, flat_speed, fwd)
 
 ## The sprint kick and the hard-turn skid - floor only, one cooldown between them.
-func _update_sprint_kicks(on: bool, speed: float, fwd: Vector3) -> void:
+func _update_sprint_kicks(on: bool, run_speed: float, fwd: Vector3) -> void:
 	# A freeze forces is_sprinting off; reading that as a stop would kick on every unpause.
 	if frozen:
 		return
@@ -5360,7 +6105,7 @@ func _update_sprint_kicks(on: bool, speed: float, fwd: Vector3) -> void:
 	if not grounded:
 		_turn_history.clear()
 		return
-	var fast := speed >= sprint_speed * vfx_skid_min_speed_fraction
+	var fast := run_speed >= sprint_speed * vfx_skid_min_speed_fraction
 	var was_dir := Vector3.ZERO
 	if fast:
 		was_dir = _hard_turn_from(_turn_history, fwd, _vfx_clock, vfx_skid_window, vfx_skid_angle)
@@ -5411,16 +6156,16 @@ static func _sprint_started(grounded: bool, sprint_moving: bool, was: bool) -> b
 	return grounded and sprint_moving and not was
 
 ## The lasers' latch: on above `on_speed`, and once on, held down to `off_speed`. Static and pure.
-static func _laser_latch(was_on: bool, speed: float, on_speed: float, off_speed: float) -> bool:
+static func _laser_latch(was_on: bool, current_speed: float, on_speed: float, off_speed: float) -> bool:
 	if was_on:
-		return speed >= off_speed
-	return speed > on_speed
+		return current_speed >= off_speed
+	return current_speed > on_speed
 
 ## 0 at `from`, 1 at `full`, clamped - the lasers' and the slide sparks' strength. Static and pure.
-static func _speed_ramp(speed: float, from: float, full: float) -> float:
+static func _speed_ramp(current_speed: float, from: float, full: float) -> float:
 	if full <= from:
 		return 1.0
-	return clampf((speed - from) / (full - from), 0.0, 1.0)
+	return clampf((current_speed - from) / (full - from), 0.0, 1.0)
 
 ## 1 through the run, falling to 0 across the droop. Static and pure.
 static func _wall_dust_fade(t: float, flat_time: float, droop_time: float) -> float:
@@ -5502,6 +6247,7 @@ func _cut_to_dash_clip() -> void:
 ## docs/specs/pilot9-dash.md, Camera.
 func _process(delta: float) -> void:
 	_seek_vault_clip()
+	_handle_camera_state(delta)
 	var target := get_global_transform_interpolated() 		* (CAMERA_PIVOT_OFFSET + Vector3(0.0, _camera_zoom_lift(), 0.0))
 	if _camera_dash_lag_active:
 		_camera_dash_lag_elapsed += delta
@@ -5525,8 +6271,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		# authored value, not a replacement for it - the number itself is a
 		# deliberate feel decision. See docs/specs/settings.md, Controls.
 		var sensitivity := mouse_sensitivity * Settings.mouse_sensitivity
-		camera_pivot.rotation.x -= event.relative.y * sensitivity
-		camera_pivot.rotation.x = clampf(camera_pivot.rotation.x, -tilt_limit, tilt_limit)
+		camera_pivot.rotation.x = _clamp_pitch(camera_pivot.rotation.x - event.relative.y * sensitivity,
+			tilt_up_limit, tilt_down_limit)
 		camera_pivot.rotation.y += -event.relative.x * sensitivity
 		if is_wall_running:
 			camera_pivot.rotation.y = _clamp_yaw_off_wall(camera_pivot.rotation.y, _wall_normal)
@@ -5546,9 +6292,13 @@ func _input(event: InputEvent) -> void:
 	if not frozen and not is_wall_running and camera_mode == CameraMode.THIRD_PERSON \
 			and InputMap.has_action("shoulder_swap") and event.is_action_pressed("shoulder_swap"):
 		swap_shoulder()
-	# Anytime, mid-move included - pass 1 snaps, so there is nothing to interrupt.
-	if not frozen and InputMap.has_action("equip") and event.is_action_pressed("equip"):
-		toggle_drawn()
+	# The draw / holster animation; it ignores the press itself in a mantle, vault or wall-run.
+	# Out in the blizzard the staff is his torch: neither the holster nor the spin.
+	if not frozen and not is_tredging and InputMap.has_action("equip") \
+			and event.is_action_pressed("equip"):
+		press_equip()
+	if not frozen and not is_tredging and reflect_spin != null and InputMap.has_action("reflect") 			and event.is_action_pressed("reflect"):
+		reflect_spin.try_start()
 
 ## Flips the chosen shoulder. The eased slide in _handle_camera_shoulder() does the rest.
 func swap_shoulder() -> void:
@@ -5571,18 +6321,96 @@ func _setup_item_holder() -> void:
 	item_holder.setup(get_node_or_null("character/Armature/GeneralSkeleton") as Skeleton3D,
 		anim_player, anim_tree, self)
 	item_holder.set_item(starting_item)
+	_setup_reflect()
+	_setup_equip_anim()
 
 ## Swaps what he carries, keeping it drawn or holstered as it was. null takes it away.
 func set_item(item: HeldItem) -> void:
+	if equip_anim != null:
+		equip_anim.finish_now()
 	item_holder.set_item(item)
 	_apply_rim_light()
 
-## Draw or holster. Does nothing with no item.
+## Draw or holster as a snap, this frame. Does nothing with no item. Scripts and tests use this;
+## the R key plays the animation through press_equip().
 func toggle_drawn() -> void:
+	if equip_anim != null:
+		equip_anim.finish_now()
+	# A spin needs the staff in his hands: holstering ends it on the spot.
+	if reflect_spin != null:
+		reflect_spin.cancel()
 	item_holder.toggle_drawn()
+
+## The R key: the draw or holster animation. Returns whether one started. See
+## scripts/items/equip_anim.gd and docs/specs/pilot9-equip-holster.md.
+func press_equip() -> bool:
+	if equip_anim == null or not equip_anim.ready_to_play():
+		var was := is_item_drawn()
+		toggle_drawn()
+		return was != is_item_drawn()
+	return equip_anim.toggle()
+
+const _EquipAnim := preload("res://scripts/items/equip_anim.gd")
+
+## Built in _ready(), after the reflect. Null only before then.
+var equip_anim: Node = null
+
+func _setup_equip_anim() -> void:
+	equip_anim = _EquipAnim.new()
+	equip_anim.name = &"EquipAnim"
+	add_child(equip_anim)
+	equip_anim.setup(self, item_holder,
+		get_node_or_null("character/Armature/GeneralSkeleton") as Skeleton3D, reflect_spin)
 
 func is_item_drawn() -> bool:
 	return item_holder != null and item_holder.is_drawn
+
+## -- reflect ---------------------------------------------------------------------
+##
+## The staff spin that turns projectiles back. See scripts/items/reflect_spin.gd and
+## docs/specs/pilot9-reflect.md.
+
+const _ReflectSpin := preload("res://scripts/items/reflect_spin.gd")
+
+var reflect_spin: Node = null
+## Emitted when a hostile hit lands. The firing range's HUD counts these.
+signal hit_taken(amount: float, kind: StringName, point: Vector3)
+const _HitFeedback := preload("res://scripts/range/pilot_hit_feedback.gd")
+var hit_feedback: Node = null
+## Extra lens degrees from a perfect reflect, easing to zero. See kick_fov().
+var _reflect_fov_deg: float = 0.0
+var _reflect_fov_rate: float = 0.0
+
+func _setup_reflect() -> void:
+	add_to_group(&"reflect_target")
+	reflect_spin = _ReflectSpin.new()
+	reflect_spin.name = &"ReflectSpin"
+	add_child(reflect_spin)
+	reflect_spin.setup(self, item_holder,
+		get_node_or_null("character/Armature/GeneralSkeleton") as Skeleton3D, _vfx)
+	hit_feedback = _HitFeedback.new()
+	hit_feedback.name = &"HitFeedback"
+	add_child(hit_feedback)
+	hit_feedback.setup(self)
+
+## Something hostile landed on him (the firing range's bolts). Feedback only: he cannot be hurt, so
+## `amount` is carried for whatever listens, and nothing here changes his movement.
+func take_hit(amount: float, kind: StringName, point: Vector3) -> void:
+	if hit_feedback != null:
+		hit_feedback.hit(point)
+	hit_taken.emit(amount, kind, point)
+
+## A tinted spark burst for hit effects. MOVEMENT EFFECTS gates it.
+func spark_burst(point: Vector3, dir: Vector3, count: int, burst_speed: float, tint: Color) -> void:
+	if _effects_on():
+		_vfx.impact_burst(point, dir, count, burst_speed, tint)
+
+## Adds `degrees` to the lens and eases it back to nothing over `seconds`. Larger kicks win.
+func kick_fov(degrees: float, seconds: float) -> void:
+	if degrees <= _reflect_fov_deg:
+		return
+	_reflect_fov_deg = degrees
+	_reflect_fov_rate = degrees / maxf(seconds, 0.01)
 
 ## -- the hologram pause menu ----------------------------------------------------
 ##
@@ -5615,6 +6443,71 @@ func _setup_wall_hand() -> void:
 	wall_hand.name = &"WallHand"
 	add_child(wall_hand)
 	wall_hand.setup(get_node_or_null("character/Armature/GeneralSkeleton") as Skeleton3D, self)
+
+## -- the slide hand --------------------------------------------------------
+##
+## The right arm bent out to his side with the hand trailing at the floor during a slide. See
+## scripts/slide_hand.gd.
+
+const _SlideHand := preload("res://scripts/slide_hand.gd")
+
+## Where the right hand reaches during a slide, in skeleton space: the rig faces +Z with his
+## right on -X, and y 0 is the floor under his feet. Behind his shoulder and just off the ground.
+@export var slide_hand_target: Vector3 = Vector3(-0.35, 0.06, -0.6)
+## Which way the right elbow points, skeleton space - straight back behind him (rig faces +Z),
+## tucked in toward his body and a little up.
+@export var slide_elbow_pole: Vector3 = Vector3(0.45, 0.25, -1.0)
+
+## Built in _ready(), after the item holder and wall hand so it runs last on the right arm.
+var slide_hand: SkeletonModifier3D = null
+
+func _setup_slide_hand() -> void:
+	var skel := get_node_or_null("character/Armature/GeneralSkeleton") as Skeleton3D
+	if skel == null:
+		return
+	slide_hand = _SlideHand.new()
+	slide_hand.name = &"SlideHand"
+	slide_hand.body = self
+	skel.add_child(slide_hand)
+
+## -- the tredge ------------------------------------------------------------------
+##
+## Out in a Storm's snow he can only tredge. scripts/pilot9_tredge.gd decides when and draws the
+## pose; this side is the flag the lockouts read. See docs/specs/pilot9-tredge.md.
+
+const _Tredge := preload("res://scripts/pilot9_tredge.gd")
+
+## True while he is tredging: sprint, jump, crouch, slide, dash, wall-run, wall climb, mantle,
+## vault, rail, reflect and equip are all refused. The AnimationTree's `tredge` state reads it.
+var is_tredging: bool = false
+## Built in _ready(). Null only before then.
+var tredge: Node = null
+
+func _setup_tredge() -> void:
+	tredge = _Tredge.new()
+	tredge.name = &"Tredge"
+	add_child(tredge)
+	tredge.setup(self, get_node_or_null("character/Armature/GeneralSkeleton") as Skeleton3D)
+
+## Whether the tredge may start now: only out of plain locomotion, never mid-move.
+func can_begin_tredge() -> bool:
+	return not (is_dashing or is_wall_running or is_wall_climbing or is_climbing or is_vaulting
+		or is_sliding or is_rail_grinding or is_rail_switching)
+
+func begin_tredge() -> void:
+	is_tredging = true
+	is_crouching = false
+	# sprint_toggled is cleared by _update_sprint_toggle(), which runs right after this.
+	_jump_buffered = 0.0
+
+func end_tredge() -> void:
+	is_tredging = false
+
+## The tredge cycle's playback rate: tredge_clip_rate_at_speed at tredge_speed, following his
+## actual speed so the feet stay planted through a gust's dip.
+func tredge_clip_rate() -> float:
+	var h := Vector2(velocity.x, velocity.z).length()
+	return tredge_clip_rate_at_speed * h / maxf(tredge_speed, 0.01)
 
 ## -- the mech handshake -----------------------------------------------------
 ##
@@ -5670,6 +6563,9 @@ func _end_verbs_for_boarding() -> void:
 	# without this, boarding mid-wall-run would leave the tree switched off (and the
 	# AnimationPlayer parked on sprint_forward) under whatever he next steps out into.
 	_end_wall_run()
+	_end_wall_climb()
+	_wall_climb_jump_buffered = false
+	_wall_climb_coyote_left = 0.0
 	# Ends cleanly, as the wall-run does. The graces go with it - a rail coyote or carry firing
 	# the moment he steps back out would be a launch from somewhere he no longer is.
 	_end_rail_grind(RailExit.BOARD)
@@ -5710,6 +6606,7 @@ func exit_vehicle(exit_position: Vector3, facing_yaw: float) -> void:
 	# _align_model_to_slope(), which eases it back on from zero if EXIA parked on a grade.
 	character.rotation.x = 0.0
 	character.rotation.z = 0.0
+	_reseed_body_lean()
 	# Half a turn round from his facing: behind him, looking at the machine he climbed out of.
 	# mech-camera-handover.md's rule, and the fix for the handback dropping him staring at his
 	# own back. Written straight onto the pivot because the body is unrotated.

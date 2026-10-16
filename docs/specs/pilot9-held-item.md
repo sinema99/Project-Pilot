@@ -184,3 +184,8 @@ Departures and specifics:
 | item_holder | run gate | 0 at `walk_speed`, 1 at `speed` |
 | modifier | blend time | 0.15 s |
 | modifier | per-move list | table above |
+
+## 2026-10-13: draw / holster animation
+
+The `R` snap is now an animation: reach back, grab, a turn in the back plane, then settle. See
+[pilot9-equip-holster.md](pilot9-equip-holster.md). `pilot9.toggle_drawn()` is still the instant snap.

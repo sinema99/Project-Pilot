@@ -1,0 +1,7 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/habitat_part.gd" id="1_2uq0q"]
+
+[node name="TubeStraight" type="Node3D" unique_id=1341210398]
+script = ExtResource("1_2uq0q")
+kind = "tube_straight"

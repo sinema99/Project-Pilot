@@ -19,6 +19,7 @@ config/features=PackedStringArray("4.6", "Forward Plus")
 UI="*res://scripts/ui/ui_manager.gd"
 Screenshot="*res://scripts/screenshot.gd"
 Brightness="*res://scripts/rendering/brightness.gd"
+ScreenPixel="*res://scripts/rendering/screen_pixel.gd"
 Settings="*res://scripts/settings.gd"
 
 [display]
@@ -149,6 +150,12 @@ equip={
 , Object(InputEventJoypadButton,"resource_local_to_scene":false,"resource_name":"","device":-1,"button_index":14,"pressure":0.0,"pressed":false,"script":null)
 ]
 }
+reflect={
+"deadzone": 0.2,
+"events": [Object(InputEventMouseButton,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"button_mask":0,"position":Vector2(0, 0),"global_position":Vector2(0, 0),"factor":1.0,"button_index":1,"canceled":false,"pressed":false,"double_click":false,"script":null)
+, Object(InputEventJoypadButton,"resource_local_to_scene":false,"resource_name":"","device":-1,"button_index":10,"pressure":0.0,"pressed":false,"script":null)
+]
+}
 camera_mode_switch={
 "deadzone": 0.2,
 "events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":86,"key_label":0,"unicode":118,"location":0,"echo":false,"script":null)
@@ -184,6 +191,8 @@ look_down={
 [layer_names]
 
 3d_physics/layer_2="player_hurtbox"
+3d_physics/layer_8="reflectable"
+3d_physics/layer_9="range_dummy"
 
 [physics]
 
@@ -205,11 +214,11 @@ diffuse_curve={
 }
 specular_smoothness={
 "type": "float",
-"value": 0.05
+"value": 0.01
 }
 fresnel_smoothness={
 "type": "float",
-"value": 0.05
+"value": 0.01
 }
 outline_width={
 "type": "float",
@@ -218,4 +227,148 @@ outline_width={
 outline_color={
 "type": "color",
 "value": Color(0, 0, 0, 1)
+}
+pixel_block={
+"type": "float",
+"value": 1.0
+}
+paint_strength={
+"type": "float",
+"value": 0.5
+}
+paint_value={
+"type": "float",
+"value": 0.03
+}
+paint_warmth={
+"type": "float",
+"value": 0.015
+}
+paint_steps={
+"type": "float",
+"value": 3.0
+}
+paint_softness={
+"type": "float",
+"value": 0.08
+}
+paint_world_size={
+"type": "float",
+"value": 5.0
+}
+paint_world_detail_size={
+"type": "float",
+"value": 1.25
+}
+paint_world_detail_weight={
+"type": "float",
+"value": 0.35
+}
+paint_uv_size={
+"type": "float",
+"value": 0.1
+}
+paint_angularity={
+"type": "float",
+"value": 0.6
+}
+scatter_strength={
+"type": "float",
+"value": 1.0
+}
+scatter_dark={
+"type": "float",
+"value": 1.0
+}
+scatter_light={
+"type": "float",
+"value": 0.5
+}
+scatter_reach={
+"type": "float",
+"value": 0.1
+}
+scatter_world_size={
+"type": "float",
+"value": 0.05
+}
+scatter_uv_size={
+"type": "float",
+"value": 0.015
+}
+look_clump_strength={
+"type": "float",
+"value": 1.0
+}
+look_clump_value={
+"type": "float",
+"value": 0.14
+}
+look_clump_hue={
+"type": "float",
+"value": 0.08
+}
+look_clump_world_size={
+"type": "float",
+"value": 0.09
+}
+look_clump_uv_size={
+"type": "float",
+"value": 0.035
+}
+look_wrap={
+"type": "float",
+"value": 0.5
+}
+look_light_steps={
+"type": "float",
+"value": 4.0
+}
+look_light_softness={
+"type": "float",
+"value": 0.15
+}
+storm_fog={
+"type": "float",
+"value": 0.0
+}
+storm_visibility={
+"type": "float",
+"value": 40.0
+}
+storm_gust_visibility={
+"type": "float",
+"value": 25.0
+}
+storm_gust_period={
+"type": "float",
+"value": 8.0
+}
+storm_near_color={
+"type": "color",
+"value": Color(0.52, 0.58, 0.68, 1)
+}
+storm_far_color={
+"type": "color",
+"value": Color(0.8, 0.77, 0.86, 1)
+}
+storm_ink_floor={
+"type": "float",
+"value": 0.1
+}
+storm_torch_pos={
+"type": "vec3",
+"value": Vector3(0, 0, 0)
+}
+storm_torch_color={
+"type": "color",
+"value": Color(1, 0.824, 0.627, 1)
+}
+storm_torch={
+"type": "vec3",
+"value": Vector3(0, 3, 1)
+}
+storm_torch_fog={
+"type": "float",
+"value": 0.6
 }

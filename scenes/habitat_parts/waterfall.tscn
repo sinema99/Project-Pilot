@@ -1,0 +1,7 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/habitat_part.gd" id="1_eowcq"]
+
+[node name="Waterfall" type="Node3D" unique_id=832388015]
+script = ExtResource("1_eowcq")
+kind = "waterfall"

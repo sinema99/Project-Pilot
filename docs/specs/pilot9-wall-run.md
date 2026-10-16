@@ -168,6 +168,12 @@ right. Looking dead into the wall too gives no redirect, and he hits it.
 
 Unchanged by the cleanup pass except that `_wall_run_head_on_gates()` loses its budget argument.
 
+**2026-10-13: the dead-on 15 degrees belong to the wall climb** (`docs/specs/pilot9-wall-climb.md`).
+`_handle_wall_climb()` runs ahead of `_handle_wall_run()`, so within `wall_climb_angle` of dead-on
+he climbs the face instead. This attach still owns 15-30 degrees, and is the fallback inside 15
+whenever the climb refuses (`can_wall_climb` off, or that face still on its 1 s cooldown). An
+inside corner ahead of a run is now a climb up the corner wall, not the end of the run.
+
 ## The wall-jump
 
 | Component | Value |

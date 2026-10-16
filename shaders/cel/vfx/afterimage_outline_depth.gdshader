@@ -3,7 +3,7 @@ shader_type spatial;
 // The ink's depth pass: the same hull, depth only, render priority -1. See afterimage.gdshader.
 render_mode cull_front, unshaded, depth_draw_always, shadows_disabled;
 
-instance uniform float ghost_fade = 1.0;
+instance uniform float ghost_fade : instance_index(2) = 1.0;
 
 #include "res://shaders/cel/vfx/afterimage_dissolve.gdshaderinc"
 #include "res://shaders/cel/vfx/afterimage_hull.gdshaderinc"

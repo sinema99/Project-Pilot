@@ -121,6 +121,7 @@ func _rebuild() -> void:
 		label.position = Vector3(0.0, size.y + LABEL_LIFT, 0.0)
 		label.font_size = LABEL_FONT_SIZE
 		label.pixel_size = LABEL_PIXEL_SIZE
+		@warning_ignore("integer_division")
 		label.outline_size = LABEL_FONT_SIZE / 4
 		label.modulate = tint
 		label.outline_modulate = Color(0.0, 0.0, 0.0, 1.0)

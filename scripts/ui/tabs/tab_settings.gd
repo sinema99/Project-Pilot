@@ -1,6 +1,6 @@
 extends VBoxContainer
 
-# The SETTINGS tab: seventeen rows over three sections, all read and written through the
+# The SETTINGS tab: one row per Settings.DEFS entry over three sections, all read and written through the
 # `Settings` autoload. See docs/specs/settings.md and docs/specs/menu-refresh.md.
 #
 # Instanced twice - once under the shell, once under settings_screen.tscn for the main menu - and
@@ -14,12 +14,19 @@ extends VBoxContainer
 const SelectorRow := preload("res://scripts/ui/tabs/settings_selector_row.gd")
 const SliderRow := preload("res://scripts/ui/tabs/settings_slider_row.gd")
 const MenuRow := preload("res://scripts/ui/menu_row.gd")
+# Settings's static helpers, called on the script rather than the autoload instance.
+const SettingsScript := preload("res://scripts/settings.gd")
 
-# The 16:9 list RESOLUTION offers before it is filtered to the screen.
-const PIXEL_PRESETS := [
-	Vector2i(160, 90), Vector2i(240, 135), Vector2i(320, 180),
-	Vector2i(480, 270), Vector2i(640, 360),
-]
+# Rows the pixel filter overrides while it is on: the low-res world has no MSAA and renders at
+# exactly window / block. Shown dimmed with OVERRIDDEN_TEXT. See docs/specs/pixel-world.md.
+const PIXEL_OVERRIDDEN_KEYS: Array[StringName] = [&"msaa", &"render_scale"]
+const OVERRIDDEN_TEXT := "PIXEL FILTER ON"
+# PAINTED SHADING only exists in CEL (the clumps replace it). See docs/specs/pixel-look.md.
+const CEL_ONLY_TEXT := "PIXEL LOOK"
+
+# Settings keys with no row of their own. The PIXEL look's block size is shown and stepped on the
+# PIXEL FILTER row while PIXEL is on - see _bound_key().
+const ROWLESS_KEYS: Array[StringName] = [&"pixel_look_size"]
 
 # Rows that get a SliderRow instead of a SelectorRow - the ones the spec itself calls
 # "continuous", stepped in fine fractions rather than a short enum.
@@ -104,11 +111,13 @@ func _build() -> void:
 	for row: Array in Settings.DEFS:
 		var key: StringName = row[0]
 		var section: String = row[2]
+		if ROWLESS_KEYS.has(key):
+			continue
 		if section != last_section:
 			if last_section != "":
 				_add_spacer()
 			_add_header(section.to_upper())
-			if section == "display" and Settings.is_embedded():
+			if section == "display" and SettingsScript.is_embedded():
 				_add_embedded_note()
 			last_section = section
 		if SLIDER_KEYS.has(key):
@@ -143,7 +152,7 @@ func _add_spacer() -> void:
 func _add_selector_row(key: StringName) -> void:
 	var row := SelectorRow.new()
 	row.name = "Row_" + String(key)
-	row.text = Settings.label_of(key)
+	row.text = SettingsScript.label_of(key)
 	row.toggles_on_confirm = _options_of(key).size() == 2
 	row.stepped.connect(_step.bind(key))
 	add_child(row)
@@ -154,7 +163,7 @@ func _add_slider_row(key: StringName) -> void:
 	var row := SliderRow.new()
 	row.name = "Row_" + String(key)
 	row.setup(key)
-	row.text = Settings.label_of(key)
+	row.text = SettingsScript.label_of(key)
 	add_child(row)
 	# A drag writes straight to Settings and repaints the track itself, but it has no way to
 	# reformat its own printed value - that's _format_value() below, which belongs to this file.
@@ -184,22 +193,41 @@ func _refresh_row(key: StringName) -> void:
 	for control: Control in _row_keys:
 		if _row_keys[control] != key:
 			continue
-		var label := Settings.label_of(key)
-		var value := _format_value(key, Settings.get_value(key))
+		var label := SettingsScript.label_of(key)
+		var value := _format_value(key, Settings.get_value(_bound_key(key)))
 		if control is SliderRow:
 			control.sync(label, value)
+		elif PIXEL_OVERRIDDEN_KEYS.has(key):
+			_sync_maybe_disabled(control, key, label, value,
+				SettingsScript.effective_pixel_size(Settings.pixel_size, Settings.pixel_look_size, Settings.look) > 0,
+				OVERRIDDEN_TEXT)
+		elif key == &"painted_shading" or key == &"cel_scatter":
+			_sync_maybe_disabled(control, key, label, value, Settings.look == "pixel", CEL_ONLY_TEXT)
 		else:
 			control.sync(label, value, _can_step(key, -1), _can_step(key, 1))
 		return
 
+func _sync_maybe_disabled(control: Control, key: StringName, label: String, value: String,
+		disabled: bool, disabled_text: String) -> void:
+	control.set_row_disabled(disabled)
+	if disabled:
+		control.sync(label, disabled_text, false, false)
+	else:
+		control.sync(label, value, _can_step(key, -1), _can_step(key, 1))
+
+## The Settings key a row reads and writes. Itself, except PIXEL FILTER, which edits the active
+## look's own block size (PIXEL's has no OFF and defaults to 4X).
+func _bound_key(key: StringName) -> StringName:
+	return SettingsScript.pixel_filter_key(Settings.look) if key == &"pixel_size" else key
+
 ## The list a row steps through. RESOLUTION's is filtered to the screen; the rest are Settings'.
 func _options_of(key: StringName) -> Array:
-	return _resolution_options() if key == &"resolution" else Settings.values_of(key)
+	return _resolution_options() if key == &"resolution" else SettingsScript.values_of(_bound_key(key))
 
 func _index_of(key: StringName) -> int:
 	if key == &"resolution":
 		return maxi(_resolution_options().find(Settings.resolution), 0)
-	return Settings.index_for(key)
+	return Settings.index_for(_bound_key(key))
 
 ## Whether a step that way lands on a value. False at either end: the list clamps, it does not
 ## wrap, and the row draws that arrow at 35 %.
@@ -211,7 +239,7 @@ func _can_step(key: StringName, direction: int) -> bool:
 
 func _format_value(key: StringName, value: Variant) -> String:
 	match key:
-		&"window_mode", &"vsync", &"shadow_quality", &"camera_motion", &"hologram_menu", &"movement_effects":
+		&"window_mode", &"vsync", &"shadow_quality", &"camera_motion", &"hologram_menu", &"movement_effects", &"painted_shading", &"cel_scatter", &"look":
 			return String(value).to_upper()
 		&"msaa":
 			return "OFF" if value == "off" else String(value).to_upper()
@@ -224,12 +252,10 @@ func _format_value(key: StringName, value: Variant) -> String:
 			return "%.2f" % value
 		&"render_scale":
 			return "%d%%" % roundi(float(value) * 100.0)
-		&"pixel_filter":
-			var index := int(value)
-			if index < 0:
-				return "OFF"
-			var preset: Vector2i = PIXEL_PRESETS[index]
-			return "%dx%d" % [preset.x, preset.y]
+		&"pixel_size":
+			return "OFF" if int(value) == 0 else "%dX" % int(value)
+		&"colour_depth":
+			return "FULL" if int(value) == 0 else str(value)
 		&"mouse_sensitivity", &"controller_sensitivity":
 			return "%.2fx" % value
 		&"fov":
@@ -253,6 +279,11 @@ func _step(direction: int, key: StringName) -> void:
 			Settings.step_value(key, direction)
 			_refresh_row(key)
 			_queue_display_confirm(old_window_mode, old_resolution)
+		&"pixel_size", &"look":
+			Settings.step_value(_bound_key(key), direction)
+			# MSAA and RENDER SCALE grey out or come back with the filter; PAINTED SHADING and the
+			# PIXEL FILTER row's own value with the look.
+			_sync_all()
 		_:
 			Settings.step_value(key, direction)
 			_refresh_row(key)
@@ -264,7 +295,7 @@ func _step(direction: int, key: StringName) -> void:
 func _resolution_options() -> Array:
 	var screen := DisplayServer.screen_get_size()
 	var options: Array = []
-	for v: Vector2i in Settings.values_of(&"resolution"):
+	for v: Vector2i in SettingsScript.values_of(&"resolution"):
 		if v.x <= screen.x and v.y <= screen.y:
 			options.append(v)
 	if not options.has(screen):
@@ -324,7 +355,7 @@ func _confirm_dialog() -> Control:
 ## confirm back by another DISPLAY_SETTLE.
 func _queue_display_confirm(old_window_mode: String, old_resolution: Vector2i) -> void:
 	# Embedded, nothing on screen changed, so there is nothing to keep or revert.
-	if Settings.is_embedded():
+	if SettingsScript.is_embedded():
 		return
 	if not _display_run:
 		_display_run = true

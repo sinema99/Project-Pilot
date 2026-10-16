@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://bc8dn31uaapka"]
+
+[ext_resource type="PackedScene" path="res://scenes/cutscene_descent.tscn" id="1_yfu5v"]
+
+[node name="Node3D" type="Node3D" unique_id=568551836]
+
+[node name="Descent" parent="." unique_id=1941581662 instance=ExtResource("1_yfu5v")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.4928826, -1.1920929e-07, 1.7913619)

@@ -20,7 +20,7 @@ extends SceneTree
 #
 # What this script OWNS in both modes, and therefore overwrites on every run: the GLB_CLIPS
 # and FBX_CLIPS entries in the library, the whole `crouch` state with its transitions (and the
-# `slide`, `climb`, `wall_run`, `rail`, `vault` and `dash` states with theirs), RC's two
+# `slide`, `climb`, `wall_run`, `rail`, `vault`, `dash` and `wall_climb` states with theirs), RC's two
 # `-> jump_land` transitions (see _ensure_slide_state), AnimationTree.deterministic, and the
 # rig camera's `current` flag. Editing any of them in
 # the editor is wasted work - change it here.
@@ -102,6 +102,11 @@ const FBX_CLIPS := {
 	# slide's and the mantle's. See docs/specs/pilot9-vault.md.
 	"res://assets/pilot9_vault.fbx": {"clip": "mixamo_com", "as": &"vault",
 		"loop": Animation.LOOP_NONE},
+	# The wall climb: Mixamo "Climbing Up Wall", In Place - a 2.0 s hand-over-hand loop whose
+	# Hips bob ~0.3 m and come back. Nothing to bake out of the travel; _ensure_wall_climb_motion()
+	# only measures the grabs and the hands' reach. See docs/specs/pilot9-wall-climb.md.
+	"res://assets/pilot9_wall_climb.fbx": {"clip": "mixamo_com", "as": &"wall_climb",
+		"loop": Animation.LOOP_LINEAR},
 }
 
 const CROUCH_STATE := &"crouch"
@@ -127,6 +132,20 @@ const WALL_RUN_STATE := &"wall_run"
 ## The ground sprint's own forward cycle since 2026-09-26 - P_wall-runR is retired. The lean off
 ## the wall is pilot9.gd's (_align_model_to_slope()), not the clip's.
 const WALL_RUN_CLIP := &"sprint_forward"
+
+const WALL_CLIMB_STATE := &"wall_climb"
+const WALL_CLIMB_CLIP := &"wall_climb"
+## The `wall_climb` state's TimeScale. scripts/pilot9_animation.gd writes it every frame - the
+## clip's rate follows his climb speed and freezes in the stall. Same const-next-to-the-builder
+## discipline as CROUCH_SCALE_NODE: a stale path and the clip loops at authored speed.
+const WALL_CLIMB_SCALE_NODE := "WallClimbScale"
+## Samples across the wall-climb loop when finding the grabs.
+const WALL_CLIMB_SAMPLES := 120
+## Metres short of its furthest reach a hand still counts as on the face - see
+## _ensure_wall_climb_motion().
+const WALL_CLIMB_PLANT_SLOP := 0.03
+const WALL_CLIMB_BAKED := ["wall_climb_grab_phases", "wall_climb_hand_reach", "wall_climb_lean",
+	"wall_climb_duration"]
 
 const RAIL_STATE := &"rail"
 const RAIL_GRIND_CLIP := &"rail_grind"
@@ -264,6 +283,36 @@ const VAULT_BAKED := ["vault_motion_y", "vault_motion_z", "vault_duration", "vau
 	"vault_touchdown_time", "vault_top_height", "vault_plant_reach", "vault_post_travel",
 	"vault_foot_clearance", "vault_palm", "vault_hand_spread"]
 
+## RC's run cycles, re-baked into pilot9's library with a smaller arm swing - see
+## _ensure_run_arm_swing() and docs/specs/pilot9-run-arm-swing.md. Library name -> the addon file
+## it is always rebuilt from, so a second build never scales an already-scaled copy.
+const RUN_CLIPS := {
+	&"run_forward": "res://addons/real-controller/animations/run_forward.res",
+	&"run_forward_left": "res://addons/real-controller/animations/run_forward_left.res",
+	&"run_forward_right": "res://addons/real-controller/animations/run_forward_right.res",
+	&"run_left": "res://addons/real-controller/animations/run_left.res",
+	&"run_right": "res://addons/real-controller/animations/run_right.res",
+	&"run_backward": "res://addons/real-controller/animations/run_backward.res",
+	&"run_backward_left": "res://addons/real-controller/animations/run_backward_left.res",
+	&"run_backward_right": "res://addons/real-controller/animations/run_backward_right.res",
+}
+## Fraction of the run's arm swing kept (user, 2026-10-06: "a little less"; 1.0 = RC's own).
+const RUN_ARM_SWING := 0.7
+const ARM_SWING := preload("res://scripts/arm_swing.gd")
+## The joints that swing less. Hands and fingers keep their full motion on purpose.
+const RUN_ARM_BONES := ["LeftShoulder", "RightShoulder", "LeftUpperArm", "RightUpperArm",
+	"LeftLowerArm", "RightLowerArm"]
+
+## The blizzard tredge: a pilot9-only clip baked from RC's walk (legs only - see
+## scripts/tredge_bake.gd) and the `tredge` state that plays it over `idle`. See
+## docs/specs/pilot9-tredge.md.
+const TREDGE_SOURCE := "res://addons/real-controller/animations/walk_forward.res"
+const TREDGE_CLIP := &"tredge"
+const TREDGE_STATE := &"tredge"
+const TREDGE_BLEND_NODE := "TredgeMove"
+const TREDGE_SCALE_NODE := "TredgeScale"
+const TREDGE_BAKE := preload("res://scripts/tredge_bake.gd")
+
 ## RC's camera rig, unchanged by either mode. Only the `current` flag is asserted on it -
 ## see _ensure_camera_current().
 const CAMERA_PATH := "CameraPivot/SpringArm3D/Camera3D"
@@ -291,6 +340,9 @@ func _initialize() -> void:
 		quit(1)
 		return
 	if not _ensure_fbx_clips(root):
+		quit(1)
+		return
+	if not _ensure_run_arm_swing(root):
 		quit(1)
 		return
 	if not _ensure_crouch_state(root):
@@ -327,6 +379,15 @@ func _initialize() -> void:
 		quit(1)
 		return
 	if not _ensure_dash_state(root):
+		quit(1)
+		return
+	if not _ensure_wall_climb_motion(root):
+		quit(1)
+		return
+	if not _ensure_wall_climb_state(root):
+		quit(1)
+		return
+	if not _ensure_tredge(root):
 		quit(1)
 		return
 	if not _ensure_deterministic_blending(root):
@@ -559,15 +620,23 @@ func _ensure_fbx_clips(root: Node) -> bool:
 		anim.resource_path = ""
 		anim.resource_name = spec["as"]
 		anim.loop_mode = spec["loop"]
+		# A clip downloaded with fingers carries tracks for bones the BoneMap leaves unmapped (the
+		# blockout rig has no fingers), and those keep their Mixamo names. Dropped - they bind
+		# nothing. The retarget itself is judged on the Hips: a Mixamo-named Hips track means
+		# the BoneMap never ran.
+		for t in range(anim.get_track_count() - 1, -1, -1):
+			var bone := str(anim.track_get_path(t)).get_slice(":", 1)
+			if bone == "mixamorig_Hips" or bone == "mixamorig:Hips":
+				push_error(("%s's Hips track still names a Mixamo bone - the retarget did not run. " +
+					"Its .import needs assets/pilot9.glb.import's BoneMap under the FBX's own " +
+					"skeleton path (\"PATH:Skeleton3D\" for a Mixamo FBX) - see docs/reimport.md.")
+					% fbx_path)
+				return false
+			if bone.begins_with("mixamorig"):
+				anim.remove_track(t)
 		for t in anim.get_track_count():
 			var path := str(anim.track_get_path(t))
 			var bone := path.get_slice(":", 1)
-			if bone.begins_with("mixamorig"):
-				push_error(("%s's track '%s' still names a Mixamo bone - the retarget did not run. " +
-					"Its .import needs assets/pilot9.glb.import's BoneMap under the FBX's own " +
-					"skeleton path (\"PATH:Skeleton3D\" for a Mixamo FBX) - see docs/reimport.md.")
-					% [fbx_path, path])
-				return false
 			# The importer names the skeleton `GeneralSkeleton` and marks it unique, so the tracks
 			# normally come out as %GeneralSkeleton:<Bone> already. Rewritten if not, onto the one
 			# address every other clip in the library uses.
@@ -580,6 +649,37 @@ func _ensure_fbx_clips(root: Node) -> bool:
 		print("  fbx clip %s:%s -> \"%s\"  %.3fs, %d tracks, loop_mode %d"
 			% [fbx_path.get_file(), spec["clip"], spec["as"], anim.length,
 			anim.get_track_count(), anim.loop_mode])
+	return true
+
+
+# Replaces each RUN_CLIPS entry in pilot9's library with a copy of the addon clip whose arm
+# swing is scaled to RUN_ARM_SWING. The addon .res is the source every time and is never
+# written - other scenes use RC's clips as shipped. The copy is inlined into pilot9.tscn and
+# keeps the library name, so the RunBlend blend space needs no change.
+func _ensure_run_arm_swing(root: Node) -> bool:
+	var ap := root.get_node_or_null("AnimationPlayer") as AnimationPlayer
+	var lib := ap.get_animation_library(&"") if ap != null else null
+	if lib == null:
+		push_error("%s has no AnimationPlayer default library to hold the run clips" % OUT)
+		return false
+
+	for to in RUN_CLIPS:
+		var src := load(RUN_CLIPS[to]) as Animation
+		if src == null:
+			push_error("no run clip at %s - has the Real Controller addon moved?" % RUN_CLIPS[to])
+			return false
+		var anim := src.duplicate(true) as Animation
+		anim.resource_path = ""
+		anim.resource_name = to
+		var touched := ARM_SWING.scale_swing(anim, RUN_ARM_BONES, RUN_ARM_SWING)
+		if touched == 0:
+			push_error("%s has no rotation tracks on %s - the bone names changed?"
+				% [RUN_CLIPS[to], str(RUN_ARM_BONES)])
+			return false
+		if lib.has_animation(to):
+			lib.remove_animation(to)
+		lib.add_animation(to, anim)
+		print("  run clip \"%s\"  arm swing x%.2f on %d tracks" % [to, RUN_ARM_SWING, touched])
 	return true
 
 
@@ -1734,6 +1834,132 @@ func _ensure_dash_state(root: Node) -> bool:
 	return true
 
 
+# -- wall climb -----------------------------------------------------------------------
+
+# The wall climb's one bake, and it bakes no travel: the clip is In Place and the controller
+# drives the body at a constant speed (see docs/specs/pilot9-wall-climb.md). What it measures
+# instead, on pilot9's own skeleton:
+#
+# - The plants: the moments each hand reaches the face after topping out, as fractions of the
+#   loop - one tap each. A hand peaks, then comes forward onto the wall; the plant is the first
+#   sample after the peak within PLANT_SLOP of that hand's furthest reach.
+# - The lean: the clip's climber leans back off his face - the hands reach ~0.54 m in front of
+#   his origin, the toes only ~0.30 m. No slide puts both on a vertical wall, so the mesh is
+#   tipped back by the angle of the line through the furthest hand and the furthest toe, degrees.
+# - The reach: where that line meets his feet once tipped - the plane his hands and toes touch,
+#   metres in front of his origin. pilot9.gd slides the mesh in by the gap between it and the
+#   capsule's hold distance.
+func _ensure_wall_climb_motion(root: Node) -> bool:
+	var ap := root.get_node_or_null("AnimationPlayer") as AnimationPlayer
+	if ap == null or not ap.has_animation(WALL_CLIMB_CLIP):
+		push_error("no '%s' clip in the library - _ensure_fbx_clips() did not run" % WALL_CLIMB_CLIP)
+		return false
+	var skel := root.get_node_or_null("character/Armature/GeneralSkeleton") as Skeleton3D
+	if skel == null:
+		push_error("no character/Armature/GeneralSkeleton to measure the wall climb against")
+		return false
+	var hands := ["LeftHand", "RightHand"]
+	if not _has_bones(skel, hands) or not _has_bones(skel, CLIMB_FOOT_BONES):
+		push_error("the retargeted rig is missing %s / %s - the wall climb is measured on them"
+			% [str(hands), str(CLIMB_FOOT_BONES)])
+		return false
+
+	var anim := ap.get_animation(WALL_CLIMB_CLIP)
+	var n := WALL_CLIMB_SAMPLES
+	var phases := PackedFloat32Array()
+	var hand_far := Vector3(0, 0, -INF)
+	for hand in hands:
+		var pts := PackedVector3Array()
+		var far_z := -INF
+		for i in n:
+			var pt := _contact_point(skel, anim, anim.length * float(i) / float(n), [hand])
+			pts.append(pt)
+			far_z = maxf(far_z, pt.z)
+			if pt.z > hand_far.z:
+				hand_far = pt
+		for i in n:
+			var y := pts[i].y
+			if not (y > pts[(i - 1 + n) % n].y and y >= pts[(i + 1) % n].y):
+				continue
+			# A peak - walk forward to where this hand meets the face.
+			for k in n:
+				var j := (i + k) % n
+				if pts[j].z >= far_z - WALL_CLIMB_PLANT_SLOP:
+					phases.append(float(j) / float(n))
+					break
+	if phases.is_empty():
+		push_error("'%s' has no hand that tops out - not a climb" % WALL_CLIMB_CLIP)
+		return false
+	phases.sort()
+
+	var toe_far := Vector3(0, 0, -INF)
+	for i in n:
+		for toe in CLIMB_FOOT_BONES:
+			var pt := _contact_point(skel, anim, anim.length * float(i) / float(n), [toe])
+			if pt.z > toe_far.z:
+				toe_far = pt
+	var lean := atan2(hand_far.z - toe_far.z, hand_far.y - toe_far.y)
+	# Tipped back by `lean` about his feet, a point (y, z) lands at z cos - y sin: the same for
+	# both contacts by construction, and that is the plane.
+	var reach := toe_far.z * cos(lean) - toe_far.y * sin(lean)
+
+	root.set("wall_climb_grab_phases", phases)
+	root.set("wall_climb_hand_reach", reach)
+	root.set("wall_climb_lean", rad_to_deg(lean))
+	root.set("wall_climb_duration", anim.length)
+	print(("  wall climb: %d plants at %s of the loop; hands reach %.3f m at %.2f m up, toes " +
+		"%.3f m at %.2f m - tipped back %.1f deg, contact plane %.3f m in front of his origin")
+		% [phases.size(), str(phases), hand_far.z, hand_far.y, toe_far.z, toe_far.y,
+		rad_to_deg(lean), reach])
+	return true
+
+
+# The `wall_climb` state: the loop through a TimeScale pilot9_animation.gd drives. In from every
+# state a climb can start in - on the ground (Locomotion, the crouch and the slide, both of which
+# the climb ends), in the air, and off a wall-run that ran into an inside corner. 0.1 s, the
+# vault's fade: he arrives from a run, and a hard cut would pop.
+func _ensure_wall_climb_state(root: Node) -> bool:
+	var at := root.get_node_or_null("AnimationTree") as AnimationTree
+	var sm := at.tree_root as AnimationNodeStateMachine if at != null else null
+	if sm == null:
+		push_error("%s has no AnimationTree state machine" % OUT)
+		return false
+	var ap := root.get_node_or_null("AnimationPlayer") as AnimationPlayer
+	if ap == null or not ap.has_animation(WALL_CLIMB_CLIP):
+		push_error("no '%s' clip to wire the `wall_climb` state to" % WALL_CLIMB_CLIP)
+		return false
+
+	var clip := AnimationNodeAnimation.new()
+	clip.animation = WALL_CLIMB_CLIP
+	var bt := AnimationNodeBlendTree.new()
+	bt.add_node("Clip", clip, Vector2(-160, 40))
+	bt.add_node(WALL_CLIMB_SCALE_NODE, AnimationNodeTimeScale.new(), Vector2(60, 40))
+	bt.set_node_position("output", Vector2(300, 40))
+	bt.connect_node(WALL_CLIMB_SCALE_NODE, 0, "Clip")
+	bt.connect_node("output", 0, WALL_CLIMB_SCALE_NODE)
+
+	if sm.has_node(WALL_CLIMB_STATE):
+		sm.remove_node(WALL_CLIMB_STATE)   # takes its transitions with it - see _ensure_crouch_state
+	sm.add_node(WALL_CLIMB_STATE, bt, Vector2(1070, 1100))
+
+	for from in [&"Locomotion", CROUCH_STATE, SLIDE_STATE, &"jump_land", &"fall", &"jump",
+			WALL_RUN_STATE]:
+		_set_transition(sm, from, WALL_CLIMB_STATE, 0.1, "is_wall_climbing", 0)
+	# Out: the climb jump (velocity.y > 0 in the same call that clears is_wall_climbing, so it
+	# outranks the fall), the peel and the wall ending (fall). The mantle and the dash hard-cut
+	# out on their own (playback.start), so neither needs a transition.
+	_set_transition(sm, WALL_CLIMB_STATE, "jump", 0.1,
+		"velocity.y > 0 and not is_wall_climbing", 0)
+	_set_transition(sm, WALL_CLIMB_STATE, "Locomotion", 0.15,
+		"not is_wall_climbing and is_on_floor()", 1)
+	_set_transition(sm, WALL_CLIMB_STATE, "fall", 0.2,
+		"not is_wall_climbing and not is_on_floor()", 2)
+
+	print("  state \"%s\" -> %s (TimeScale, driven by the controller), %d states, %d transitions"
+		% [WALL_CLIMB_STATE, WALL_CLIMB_CLIP, sm.get_node_list().size(), sm.get_transition_count()])
+	return true
+
+
 # -- blending -------------------------------------------------------------------------
 
 # Real Controller ships its AnimationTree with `deterministic` OFF; Godot's own default is
@@ -1752,6 +1978,71 @@ func _ensure_dash_state(root: Node) -> bool:
 # Turning the flag back on costs one thing: while crouched, the two wrists - animated by
 # every RC clip, by neither GLB clip - sit at rest rather than freezing on whatever pose
 # idle left them in. tests/test_pilot9_crouch.gd guards the flag against the next re-export.
+# -- tredge ---------------------------------------------------------------------------
+
+# Bakes the `tredge` clip from RC's walk_forward (the addon file every time, never written - walk
+# itself is untouched) and adds the `tredge` state: idle and the clip in a Blend2, the clip
+# through a TimeScale. pilot9_animation.gd drives both off his speed. The hunch, the arms and the
+# gust stumble are not in the clip - they are scripts/tredge_pose.gd, at runtime.
+func _ensure_tredge(root: Node) -> bool:
+	var ap := root.get_node_or_null("AnimationPlayer") as AnimationPlayer
+	var lib := ap.get_animation_library(&"") if ap != null else null
+	var skel := root.get_node_or_null("character/Armature/GeneralSkeleton") as Skeleton3D
+	var at := root.get_node_or_null("AnimationTree") as AnimationTree
+	var sm := at.tree_root as AnimationNodeStateMachine if at != null else null
+	if lib == null or skel == null or sm == null:
+		push_error("%s is missing its library, skeleton or state machine for the tredge" % OUT)
+		return false
+	if not ap.has_animation(&"idle"):
+		push_error("no 'idle' clip for the tredge's braced idle")
+		return false
+
+	var src := load(TREDGE_SOURCE) as Animation
+	if src == null:
+		push_error("no walk clip at %s - has the Real Controller addon moved?" % TREDGE_SOURCE)
+		return false
+	var anim := src.duplicate(true) as Animation
+	anim.resource_path = ""
+	anim.resource_name = TREDGE_CLIP
+	var touched := TREDGE_BAKE.bake(anim, skel)
+	if touched == 0:
+		push_error("the tredge bake found no leg tracks on %s - the bone names changed?" % TREDGE_SOURCE)
+		return false
+	if lib.has_animation(TREDGE_CLIP):
+		lib.remove_animation(TREDGE_CLIP)
+	lib.add_animation(TREDGE_CLIP, anim)
+
+	var idle := AnimationNodeAnimation.new()
+	idle.animation = &"idle"
+	var clip := AnimationNodeAnimation.new()
+	clip.animation = TREDGE_CLIP
+	var bt := AnimationNodeBlendTree.new()
+	bt.add_node("Idle", idle, Vector2(-160, -60))
+	bt.add_node("Clip", clip, Vector2(-160, 120))
+	bt.add_node(TREDGE_SCALE_NODE, AnimationNodeTimeScale.new(), Vector2(60, 120))
+	bt.add_node(TREDGE_BLEND_NODE, AnimationNodeBlend2.new(), Vector2(260, 40))
+	bt.set_node_position("output", Vector2(480, 40))
+	bt.connect_node(TREDGE_SCALE_NODE, 0, "Clip")
+	bt.connect_node(TREDGE_BLEND_NODE, 0, "Idle")
+	bt.connect_node(TREDGE_BLEND_NODE, 1, TREDGE_SCALE_NODE)
+	bt.connect_node("output", 0, TREDGE_BLEND_NODE)
+
+	if sm.has_node(TREDGE_STATE):
+		sm.remove_node(TREDGE_STATE)   # takes its transitions with it - see _ensure_crouch_state
+	sm.add_node(TREDGE_STATE, bt, Vector2(330, 620))
+
+	# The 0.5 s blend each way is the spec's. Leaving the floor outranks the exit: walking off an
+	# edge while still exposed falls, and the landing comes back through jump_land.
+	_set_transition(sm, "Locomotion", TREDGE_STATE, 0.5, "is_tredging", 0)
+	_set_transition(sm, TREDGE_STATE, "fall", 0.3, "not is_on_floor() and velocity.y <= 0", 0)
+	_set_transition(sm, TREDGE_STATE, "Locomotion", 0.5, "not is_tredging", 1)
+	_set_transition(sm, "jump_land", TREDGE_STATE, 0.3, "is_tredging", 0)
+
+	print("  clip \"%s\" baked from walk_forward on %d tracks; state \"%s\" (idle / clip Blend2), %d states, %d transitions"
+		% [TREDGE_CLIP, touched, TREDGE_STATE, sm.get_node_list().size(), sm.get_transition_count()])
+	return true
+
+
 func _ensure_deterministic_blending(root: Node) -> bool:
 	var at := root.get_node_or_null("AnimationTree") as AnimationTree
 	if at == null:

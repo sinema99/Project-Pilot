@@ -1,0 +1,7 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/habitat_part.gd" id="1_q5sds"]
+
+[node name="CypressRow" type="Node3D" unique_id=2040828469]
+script = ExtResource("1_q5sds")
+kind = "cypress_row"

@@ -32,6 +32,15 @@ static func collect_meshes(root: Node, out: Array[MeshInstance3D]) -> void:
 	for child in root.get_children():
 		collect_meshes(child, out)
 
+# The `paint_seed` instance uniform for a mesh at `path` (relative to the applier), 0..100.
+# Painted shading offsets its UV noise by this, so two meshes with the same unwrap - pilot9's
+# left and right forearm - do not wear the same patches. From the path rather than random so a
+# mesh keeps its patches across runs. See docs/specs/painted-shading.md.
+static func paint_seed_for(path: String) -> float:
+	return float(absi(path.hash()) % 1000) / 10.0
+
+const PAINT_SEED := &"paint_seed"
+
 # Sets `mat` as material_override on every MeshInstance3D in `root`'s subtree
 # (including `root` itself). Returns how many meshes were touched.
 static func apply_to(root: Node, mat: Material) -> int:
@@ -74,6 +83,9 @@ static func apply_to(root: Node, mat: Material) -> int:
 #   { "mesh": MeshInstance3D, "surface": int, "material": Material }
 # surface == _WHOLE_MESH means the entry is a whole-mesh material_override.
 var _applied: Array[Dictionary] = []
+# Meshes we stamped a paint_seed on, for clear_now() to take it off again. Kept apart from
+# _applied: derive mode records one entry per surface, the seed is one per mesh.
+var _seeded: Array = []
 var _reapply_after_save := false
 
 const _WHOLE_MESH := -1
@@ -123,6 +135,12 @@ func apply_now() -> int:
 		var meshes: Array[MeshInstance3D] = []
 		collect_meshes(node, meshes)
 		for mi in meshes:
+			# A mesh built in code with its own material_override (staff light, spin discs)
+			# owns its look; surface overrides under it would never show anyway.
+			if derive_from_surfaces and mi.material_override != null:
+				continue
+			mi.set_instance_shader_parameter(PAINT_SEED, paint_seed_for(str(get_path_to(mi))))
+			_seeded.append(mi)
 			if derive_from_surfaces:
 				total += _apply_surfaces(mi, derived)
 			else:
@@ -219,4 +237,10 @@ func clear_now() -> int:
 				mi.set_surface_override_material(surface, null)
 				cleared += 1
 	_applied.clear()
+	# Same freed-node guard as above. Without this the pre-save pass would leave the seed on the
+	# instanced GLB meshes and it would serialise into the .tscn as a per-node override.
+	for node: Variant in _seeded:
+		if is_instance_valid(node) and node is GeometryInstance3D:
+			(node as GeometryInstance3D).set_instance_shader_parameter(PAINT_SEED, null)
+	_seeded.clear()
 	return cleared

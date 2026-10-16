@@ -1,0 +1,7 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/habitat_part.gd" id="1_d3hlg"]
+
+[node name="BlockCluster" type="Node3D" unique_id=939461129]
+script = ExtResource("1_d3hlg")
+kind = "block_cluster"

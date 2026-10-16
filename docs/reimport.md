@@ -750,13 +750,25 @@ retarget the GLB gets, and the builder lifts its clip into the library.
 3. **Add an `FBX_CLIPS` entry** in `scripts/pilot9_build_scene.gd` - the FBX's path, the clip
    name inside it (every Mixamo download calls its clip `mixamo_com`), the name it takes in
    pilot9's library and its loop mode - and run the builder. `_ensure_fbx_clips()` copies it
-   in, refuses (with the fix in the error) if any track still names a `mixamorig_*` bone, and
-   rewrites any path that is not `%GeneralSkeleton:` onto it.
+   in, refuses (with the fix in the error) if the Hips track still names a `mixamorig_*` bone,
+   drops the tracks of bones the BoneMap leaves unmapped (a download **with fingers** keeps
+   `mixamorig_*HandThumb1` etc. - the blockout rig has none), and rewrites any path that is not
+   `%GeneralSkeleton:` onto it.
+
+**Shortcut (2026-10-13, the wall climb):** step 2 in one go - copy the vault's `.import` with
+its `uid=`, `path=` and `dest_files=` lines deleted and the file name swapped, then
+`--import` once. Godot fills the three lines back in and the BoneMap is already right:
+
+```bash
+sed -e '/^uid=/d' -e '/^path=/d' -e '/^dest_files=/d' -e 's#pilot9_vault.fbx#<name>.fbx#g' \
+  assets/pilot9_vault.fbx.import > assets/<name>.fbx.import
+```
 
 A clip that is **not In Place** then needs a bake like the slide's, the mantle's or the
 vault's before it is usable; a clip that is In Place only needs a state.
 
-The vault's `.import` is the working example: `assets/pilot9_vault.fbx.import`.
+The vault's `.import` is the working example: `assets/pilot9_vault.fbx.import` (and
+`assets/pilot9_wall_climb.fbx.import`, an In Place loop with fingers).
 `tests/test_pilot9_vault.gd` guards its BoneMap key and the retarget.
 
 ---

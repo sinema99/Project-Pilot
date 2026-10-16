@@ -90,12 +90,20 @@ func test_input_waits_for_the_open_to_settle() -> void:
 	check(r.input_live(1.0, true), "live at t = 1")
 	check(not r.input_live(1.0, false), "never live while closing")
 
-func test_setting_row_defaults_on() -> void:
+func test_beam_flares_then_holds_a_faint_rest() -> void:
+	var r := _rig()
+	check(is_zero_approx(r.beam_strength(0.0, 0.1)), "dark at t = 0")
+	check(is_equal_approx(r.beam_strength(0.35, 0.1), 1.0), "full at the flare peak")
+	check(r.beam_strength(0.5, 0.1) > 0.1, "still easing down mid-way")
+	check(is_equal_approx(r.beam_strength(0.85, 0.1), 0.1), "settles on the rest level")
+	check(is_equal_approx(r.beam_strength(0.85, 0.1), r.beam_strength(2.0, 0.1)), "and holds")
+
+func test_setting_row_defaults_off() -> void:
 	var found := false
 	for row in load("res://scripts/settings.gd").DEFS:
 		if row[0] == &"hologram_menu":
 			found = true
-			eq(row[3][row[4]], "on", "HOLOGRAM MENU defaults on")
+			eq(row[3][row[4]], "off", "HOLOGRAM MENU defaults off")
 	check(found, "the HOLOGRAM MENU row exists")
 
 func test_shaders_compile() -> void:

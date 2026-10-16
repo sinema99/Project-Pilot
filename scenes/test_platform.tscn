@@ -6,8 +6,6 @@
 [ext_resource type="Material" uid="uid://bv5gy3lf6e5w8" path="res://resources/cel_sky.tres" id="4_sky"]
 [ext_resource type="Material" uid="uid://csrta6agxh215" path="res://resources/cel_ground.tres" id="5_ground"]
 [ext_resource type="Material" uid="uid://c7etxtnthghch" path="res://resources/cel_character.tres" id="6_char"]
-[ext_resource type="Shader" uid="uid://dcg01gsjj5mpj" path="res://shaders/pixelate.gdshader" id="7_pixelate"]
-[ext_resource type="Script" uid="uid://csg3i1yfc2wog" path="res://scripts/rendering/pixelate.gd" id="8_pixctl"]
 [ext_resource type="PackedScene" path="res://scenes/mech.tscn" id="9_mech"]
 
 [sub_resource type="Sky" id="Sky_cel"]
@@ -24,11 +22,6 @@ fog_density = 0.0004
 fog_sky_affect = 0.0
 
 [sub_resource type="WorldBoundaryShape3D" id="WorldBoundaryShape3D_ground"]
-
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_pixelate"]
-shader = ExtResource("7_pixelate")
-shader_parameter/pixel_grid = Vector2(640, 360)
-shader_parameter/color_steps = 0
 
 [node name="TestPlatform" type="Node3D" unique_id=1745083215]
 
@@ -78,16 +71,3 @@ derive_from_surfaces = true
 script = ExtResource("3_applier")
 material = ExtResource("6_char")
 targets = Array[NodePath]([NodePath("../EXIA/Model")])
-
-[node name="PixelFilter" type="CanvasLayer" parent="." unique_id=1247416858 groups=["pixel_filter"]]
-visible = false
-script = ExtResource("8_pixctl")
-
-[node name="Screen" type="ColorRect" parent="PixelFilter" unique_id=1054111563]
-material = SubResource("ShaderMaterial_pixelate")
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2

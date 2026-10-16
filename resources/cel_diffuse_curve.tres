@@ -1,7 +1,8 @@
 [gd_resource type="GradientTexture1D" format=3 uid="uid://ba35b0drfllgw"]
 
 [sub_resource type="Gradient" id="Gradient_celdiff"]
-offsets = PackedFloat32Array(0.38, 0.52)
+offsets = PackedFloat32Array(0, 0.495, 0.505, 1)
+colors = PackedColorArray(0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1)
 
 [resource]
 gradient = SubResource("Gradient_celdiff")

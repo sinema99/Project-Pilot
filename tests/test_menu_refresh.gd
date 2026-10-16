@@ -112,7 +112,9 @@ func test_each_tab_remembers_its_row_until_the_menu_closes() -> void:
 	var shell := _host(SHELL)
 	shell._show_tab(3, 0, false)
 	var settings: Control = shell.body(3)
-	var fifth: Control = settings.rows()[5]
+	# SHADOW QUALITY: not RENDER SCALE at [5], which the default-on pixel filter disables and so
+	# cannot hold focus - see docs/specs/pixel-world.md.
+	var fifth: Control = settings.rows()[6]
 	fifth.grab_focus()
 	shell._show_tab(0, -1)
 	shell._show_tab(3, 1)

@@ -4,27 +4,11 @@
 [ext_resource type="FontFile" uid="uid://b7q84xxvqx6lt" path="res://assets/fonts/BarlowCondensed-Medium.ttf" id="2_medium"]
 [ext_resource type="FontFile" uid="uid://dyo2rnaipi8h2" path="res://assets/fonts/BarlowCondensed-SemiBold.ttf" id="3_semibold"]
 
-[sub_resource type="FontVariation" id="FontVariation_row"]
-base_font = ExtResource("2_medium")
-spacing_glyph = 2
-
 [sub_resource type="FontVariation" id="FontVariation_body"]
 base_font = ExtResource("2_medium")
 spacing_glyph = 1
 
-[sub_resource type="FontVariation" id="FontVariation_tab"]
-base_font = ExtResource("3_semibold")
-spacing_glyph = 4
-
-[sub_resource type="FontVariation" id="FontVariation_header"]
-base_font = ExtResource("3_semibold")
-spacing_glyph = 3
-
-[sub_resource type="FontVariation" id="FontVariation_title"]
-base_font = ExtResource("3_semibold")
-spacing_glyph = 6
-
-[sub_resource type="FontVariation" id="FontVariation_hint"]
+[sub_resource type="FontVariation" id="FontVariation_row"]
 base_font = ExtResource("2_medium")
 spacing_glyph = 2
 
@@ -34,13 +18,16 @@ content_margin_top = 10.0
 content_margin_right = 16.0
 content_margin_bottom = 10.0
 
-[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_tab"]
-content_margin_left = 14.0
-content_margin_top = 6.0
-content_margin_right = 14.0
-content_margin_bottom = 10.0
+[sub_resource type="FontVariation" id="FontVariation_tab"]
+base_font = ExtResource("3_semibold")
+spacing_glyph = 4
 
-[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_panel"]
+[sub_resource type="StyleBoxLine" id="StyleBoxLine_rule"]
+color = Color(0.251, 0.949, 0.902, 0.4)
+
+[sub_resource type="FontVariation" id="FontVariation_hint"]
+base_font = ExtResource("2_medium")
+spacing_glyph = 2
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_keycap"]
 content_margin_left = 8.0
@@ -54,13 +41,26 @@ border_width_right = 1
 border_width_bottom = 1
 border_color = Color(0.251, 0.949, 0.902, 0.6)
 
-[sub_resource type="StyleBoxLine" id="StyleBoxLine_rule"]
-color = Color(0.251, 0.949, 0.902, 0.4)
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_tab"]
+content_margin_left = 14.0
+content_margin_top = 6.0
+content_margin_right = 14.0
+content_margin_bottom = 10.0
 
-[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_scroll"]
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_panel"]
+
+[sub_resource type="FontVariation" id="FontVariation_title"]
+base_font = ExtResource("3_semibold")
+spacing_glyph = 6
+
+[sub_resource type="FontVariation" id="FontVariation_header"]
+base_font = ExtResource("3_semibold")
+spacing_glyph = 3
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_grabber"]
 bg_color = Color(0.251, 0.949, 0.902, 0.5)
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_scroll"]
 
 [resource]
 default_font = ExtResource("1_regular")

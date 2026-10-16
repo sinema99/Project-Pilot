@@ -1,0 +1,7 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/habitat_part.gd" id="1_onb2a"]
+
+[node name="Island" type="Node3D" unique_id=678468722]
+script = ExtResource("1_onb2a")
+kind = "island"

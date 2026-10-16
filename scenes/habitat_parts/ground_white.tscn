@@ -1,0 +1,7 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/habitat_part.gd" id="1_l6461"]
+
+[node name="GroundWhite" type="Node3D" unique_id=1953532563]
+script = ExtResource("1_l6461")
+kind = "ground_white"

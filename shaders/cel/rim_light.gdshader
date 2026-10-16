@@ -18,6 +18,9 @@ render_mode unshaded, blend_mix, depth_draw_never, cull_back, shadows_disabled;
 
 // The ink's colour, from project.godot [shader_globals].
 global uniform vec4 outline_color;
+// Window pixels per rendered pixel. rim_width is in window pixels, so it is divided by this to
+// keep the rim its screen size when PixelWorld renders low-res - see docs/specs/pixel-world.md.
+global uniform float pixel_block;
 
 uniform sampler2D depth_texture: hint_depth_texture, filter_nearest, repeat_disable;
 uniform sampler2D screen_texture: hint_screen_texture, filter_nearest, repeat_disable;
@@ -58,7 +61,7 @@ void fragment() {
 	// it curves away - crescents rather than an even stroke.
 	vec2 n = NORMAL.xy;
 	float facing = clamp(dot(n / max(length(n), 1e-4), dir), 0.0, 1.0);
-	float width = mix(rim_width_min, rim_width, pow(facing, rim_taper));
+	float width = mix(rim_width_min, rim_width, pow(facing, rim_taper)) / max(pixel_block, 1.0);
 	// UV y runs down the screen, rim_direction's y runs up.
 	vec2 step_uv = vec2(dir.x, -dir.y) * width / VIEWPORT_SIZE;
 	float here = -VERTEX.z;

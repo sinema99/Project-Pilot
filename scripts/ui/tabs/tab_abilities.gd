@@ -22,6 +22,7 @@ const BASE_KIT := [
 	["MANTLE", "can_climb", "Pull up onto a ledge between 0.9 and 1.9 m."],
 	["DASH", "can_dash", "Vanish and travel flat for half a second."],
 	["WALL-RUN", "can_wall_run", "Run along a wall at speed."],
+	["WALL-CLIMB", "can_wall_climb", "Run straight at a wall to climb 4 m up it."],
 	["RAIL GRIND", "can_rail_grind", "Ride any rail you land on."],
 ]
 

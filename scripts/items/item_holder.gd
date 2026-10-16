@@ -28,6 +28,7 @@ const ARM_OVERRIDE_STATES := {
 	&"slide": true,
 	&"climb": false,
 	&"wall_run": false,
+	&"wall_climb": false,
 	&"rail": false,
 }
 
@@ -130,9 +131,15 @@ func set_item(item: HeldItem) -> void:
 
 ## Draw or holster. A snap: the item changes socket this frame. Does nothing with no item.
 func toggle_drawn() -> void:
+	set_drawn(not is_drawn)
+
+
+## Puts the item in the hand (true) or on the back, as a snap. Does nothing with no item. The
+## equip animation (scripts/items/equip_anim.gd) calls this at its handovers.
+func set_drawn(drawn: bool) -> void:
 	if item_instance == null:
 		return
-	is_drawn = not is_drawn
+	is_drawn = drawn
 	_place()
 
 
@@ -153,7 +160,15 @@ func owns(node: Node) -> bool:
 
 ## Where the arm override should be heading this frame.
 func arm_target() -> float:
-	if not is_drawn or arm_modifier == null or arm_modifier.pose.is_empty():
+	if not is_drawn:
+		return 0.0
+	return drawn_arm_target()
+
+
+## Where the arm override would be heading this frame if the item were drawn. The equip animation
+## settles into this before is_drawn turns true.
+func drawn_arm_target() -> float:
+	if item_instance == null or arm_modifier == null or arm_modifier.pose.is_empty():
 		return 0.0
 	if _body == null:
 		return 1.0 if arm_override_for(_current_state()) else 0.0

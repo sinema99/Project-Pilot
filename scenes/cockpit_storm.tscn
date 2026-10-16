@@ -1,0 +1,106 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/cutscene/cockpit.gd" id="1_shot"]
+[ext_resource type="Script" path="res://scripts/cutscene/cockpit_seat.gd" id="2_seat"]
+[ext_resource type="PackedScene" path="res://assets/pilot9.glb" id="3_pilot"]
+[ext_resource type="Script" path="res://scripts/cutscene/wire_sphere.gd" id="4_screen"]
+[ext_resource type="Script" path="res://scripts/rendering/apply_stylized.gd" id="5_applier"]
+[ext_resource type="Material" path="res://resources/pilot_cel_character.tres" id="6_pilotchar"]
+[ext_resource type="Script" path="res://scripts/cutscene/cockpit_snow.gd" id="7_snow"]
+[ext_resource type="Script" path="res://scripts/cutscene/cockpit_holo.gd" id="8_holo"]
+[ext_resource type="Script" path="res://scripts/cutscene/cockpit_storm_driver.gd" id="9_storm"]
+[ext_resource type="Script" path="res://scripts/cutscene/seated_pose.gd" id="10_pose"]
+
+[sub_resource type="Environment" id="Environment_storm"]
+background_mode = 1
+background_color = Color(0.82, 0.8, 0.89, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.82, 0.8, 0.9, 1)
+ambient_light_energy = 0.5
+
+[sub_resource type="Animation" id="Animation_shot"]
+resource_name = "shot"
+length = 10.0
+
+[sub_resource type="AnimationLibrary" id="AnimationLibrary_shot"]
+_data = {
+&"shot": SubResource("Animation_shot")
+}
+
+[node name="CockpitStorm" type="Node3D"]
+script = ExtResource("1_shot")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_storm")
+
+[node name="Key" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.640184, -0.549694, 0.536656, 0, 0.69857, 0.715542, -0.768221, -0.458079, 0.447214, 0, 3, 0)
+light_color = Color(0.9, 0.88, 0.96, 1)
+light_energy = 0.6
+light_indirect_energy = 0.0
+shadow_enabled = true
+directional_shadow_max_distance = 20.0
+
+[node name="ScreenSphere" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
+cast_shadow = 0
+script = ExtResource("4_screen")
+line_color = Color(0.05, 0.07, 0.11, 1)
+
+[node name="ScreenSnow" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
+cast_shadow = 0
+script = ExtResource("7_snow")
+
+[node name="StormFill" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.970143, 0.0560112, -0.235702, 0, 0.972891, 0.231196, 0.242536, -0.224044, 0.942809, 0, 2, 3)
+light_color = Color(0.9, 0.88, 0.96, 1)
+light_energy = 0.7
+light_indirect_energy = 0.0
+
+[node name="HoloSpill" type="OmniLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.15, 0.5)
+light_color = Color(0.45, 1, 0.7, 1)
+light_energy = 0.2
+light_indirect_energy = 0.0
+omni_range = 1.0
+
+[node name="Seat" type="Node3D" parent="."]
+script = ExtResource("2_seat")
+
+[node name="Pilot" parent="Seat" instance=ExtResource("3_pilot")]
+
+[node name="SeatedPose" type="SkeletonModifier3D" parent="Seat/Pilot/Armature/GeneralSkeleton"]
+script = ExtResource("10_pose")
+seat_path = NodePath("../../../..")
+
+[node name="Holo" type="Node3D" parent="."]
+script = ExtResource("8_holo")
+with_route = true
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(0.936329, -0.064630, 0.345124, 0.000000, 0.982914, 0.184066, -0.351123, -0.172347, 0.920331, 0.4500, 1.1200, 1.4000)
+current = true
+fov = 70.0
+far = 20.0
+
+[node name="ApplyCelPilot" type="Node" parent="."]
+script = ExtResource("5_applier")
+material = ExtResource("6_pilotchar")
+targets = Array[NodePath]([NodePath("../Seat/Pilot")])
+derive_from_surfaces = true
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="."]
+libraries/ = SubResource("AnimationLibrary_shot")
+
+[node name="Storm" type="Node" parent="." node_paths=PackedStringArray("animation_player", "seat", "pose", "holo", "snow", "key_light", "fill_light", "holo_light", "world_environment")]
+script = ExtResource("9_storm")
+animation_player = NodePath("../AnimationPlayer")
+seat = NodePath("../Seat")
+pose = NodePath("../Seat/Pilot/Armature/GeneralSkeleton/SeatedPose")
+holo = NodePath("../Holo")
+snow = NodePath("../ScreenSnow")
+key_light = NodePath("../Key")
+fill_light = NodePath("../StormFill")
+holo_light = NodePath("../HoloSpill")
+world_environment = NodePath("../WorldEnvironment")

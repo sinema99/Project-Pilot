@@ -1,0 +1,80 @@
+[gd_scene format=3 uid="uid://c3h8g7tciipwl"]
+
+[ext_resource type="PackedScene" path="res://scenes/pilot9.tscn" id="1_pilot"]
+[ext_resource type="Script" uid="uid://he1couvcqarw" path="res://scripts/rendering/apply_stylized.gd" id="2_applier"]
+[ext_resource type="Material" uid="uid://csrta6agxh215" path="res://resources/cel_ground.tres" id="4_ground"]
+[ext_resource type="Material" path="res://resources/pilot_cel_character.tres" id="5_pilotchar"]
+[ext_resource type="PackedScene" uid="uid://csindov7y230u" path="res://assets/OP_1.glb" id="6_map"]
+[ext_resource type="PackedScene" uid="uid://ces1m5kofa4ig" path="res://assets/pilot9_decimate.glb" id="7_decimate"]
+[ext_resource type="Script" uid="uid://bo4aoofkxdqs4" path="res://scripts/rendering/pixel_world.gd" id="8_pixelworld"]
+[ext_resource type="Script" uid="uid://c3xxrq8p6qwou" path="res://scripts/rendering/pixel_look.gd" id="9_pixellook"]
+[ext_resource type="Script" uid="uid://bniidcgteju6" path="res://scripts/rendering/storm.gd" id="10_storm"]
+[ext_resource type="PackedScene" path="res://scenes/sinestro2_parked.tscn" id="11_ship"]
+
+[sub_resource type="ProceduralSkyMaterial" id="Sky_overcast"]
+sky_top_color = Color(0.55, 0.6, 0.7, 1)
+sky_horizon_color = Color(0.8, 0.77, 0.86, 1)
+sky_curve = 0.5
+ground_bottom_color = Color(0.8, 0.77, 0.86, 1)
+ground_horizon_color = Color(0.8, 0.77, 0.86, 1)
+sun_angle_max = 0.0
+sun_curve = 0.0
+
+[sub_resource type="Sky" id="Sky_cel"]
+sky_material = SubResource("Sky_overcast")
+
+[sub_resource type="Environment" id="Environment_cel"]
+background_mode = 2
+sky = SubResource("Sky_cel")
+ambient_light_source = 2
+ambient_light_color = Color(0.45, 0.48, 0.58, 1)
+tonemap_mode = 2
+
+[node name="OperationIchi" type="Node3D" unique_id=878244231]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=140750228]
+environment = SubResource("Environment_cel")
+
+[node name="Sun" type="DirectionalLight3D" parent="." unique_id=14159389]
+transform = Transform3D(0.033844, -0.64242, 0.765606, 0, 0.766045, 0.642788, -0.999428, -0.021754, 0.025927, 0, 89.776596, 0)
+light_color = Color(0.78, 0.84, 0.95, 1)
+light_energy = 0.18
+light_indirect_energy = 0.0
+shadow_enabled = true
+shadow_bias = 0.02
+shadow_normal_bias = 0.5
+shadow_blur = 1.6
+directional_shadow_split_1 = 0.08
+directional_shadow_split_3 = 0.45
+directional_shadow_max_distance = 80.0
+sky_mode = 1
+
+[node name="OP_1" parent="." unique_id=1970927024 instance=ExtResource("6_map")]
+
+[node name="Pilot9" parent="." unique_id=1537782610 instance=ExtResource("1_pilot")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5076108, 2.6, 98.82546)
+body_glb = ExtResource("7_decimate")
+
+[node name="Sinestro2" parent="." unique_id=266507393 instance=ExtResource("11_ship")]
+transform = Transform3D(-0.46743682, -0.04356894, -0.8829518, -0.035653453, 0.9989013, -0.030415375, 0.88330704, 0.017263034, -0.46847668, 15.401359, 1.2872069, 100.4052)
+
+[node name="ApplyCelGround" type="Node" parent="." unique_id=1584376866]
+script = ExtResource("2_applier")
+material = ExtResource("4_ground")
+targets = Array[NodePath]([NodePath("../OP_1")])
+derive_from_surfaces = true
+
+[node name="ApplyCelPilot9" type="Node" parent="." unique_id=567231109]
+script = ExtResource("2_applier")
+material = ExtResource("5_pilotchar")
+targets = Array[NodePath]([NodePath("../Pilot9"), NodePath("../Sinestro2")])
+derive_from_surfaces = true
+
+[node name="PixelWorld" type="CanvasLayer" parent="." unique_id=457969611]
+script = ExtResource("8_pixelworld")
+
+[node name="PixelLook" type="Node" parent="." unique_id=541551080]
+script = ExtResource("9_pixellook")
+
+[node name="Storm" type="Node3D" parent="." unique_id=1070427475]
+script = ExtResource("10_storm")

@@ -4,11 +4,10 @@ extends CanvasLayer
 #
 # There is no shared Environment to write adjustment_brightness onto - trial.tscn
 # and test_platform.tscn each embed their own, and the main menu has no 3D at
-# all - so this is a full-screen pass instead, the same pattern
-# scripts/rendering/pixelate.gd already uses: a ColorRect on a CanvasLayer
+# all - so this is a full-screen pass instead: a ColorRect on a CanvasLayer
 # reading hint_screen_texture.
 #
-# Layer 90: above the world and above the pixel filter (layer 1) - the downsample
+# Layer 90: above the world and above PixelWorld (layer -100) - the pixel look
 # is a stylistic pass on the render, and brightness belongs after it - and below
 # the UI (layer 100), so the menu that would fix an unreadable brightness is
 # never the thing brightness darkens.

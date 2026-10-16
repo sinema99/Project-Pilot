@@ -1,0 +1,7 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/habitat_part.gd" id="1_jwo0c"]
+
+[node name="WalkwayPier" type="Node3D" unique_id=388892697]
+script = ExtResource("1_jwo0c")
+kind = "walkway_pier"

@@ -10,12 +10,14 @@ shader_type spatial;
 //
 // Both colours, the opacity and the fade are instance uniforms, so every ghost shares one
 // material and Pilot9Afterimage sets them per ghost with set_instance_shader_parameter().
+// The indices are pinned and shared by all four afterimage passes: left to declaration order
+// each pass numbered them differently and they read each other's slots.
 render_mode unshaded, cull_back, shadows_disabled, depth_draw_never;
 
-instance uniform vec4 ghost_color : source_color = vec4(0.30, 0.90, 1.00, 1.00);
-instance uniform float ghost_opacity = 0.5;
+instance uniform vec4 ghost_color : source_color, instance_index(0) = vec4(0.30, 0.90, 1.00, 1.00);
+instance uniform float ghost_opacity : instance_index(1) = 0.5;
 // 1.0 solid, 0.0 gone. A dissolve, not alpha - see ghost_dissolved().
-instance uniform float ghost_fade = 1.0;
+instance uniform float ghost_fade : instance_index(2) = 1.0;
 
 #include "res://shaders/cel/vfx/afterimage_dissolve.gdshaderinc"
 

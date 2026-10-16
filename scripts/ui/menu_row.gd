@@ -91,9 +91,9 @@ func is_selected() -> bool:
 	return has_focus() and not disabled
 
 func accent_color() -> Color:
-	var name := &"destructive" if destructive else &"accent"
+	var colour_name := &"destructive" if destructive else &"accent"
 	var fallback := FALLBACK_DESTRUCTIVE if destructive else FALLBACK_ACCENT
-	return get_theme_color(name, &"MenuRow") if has_theme_color(name, &"MenuRow") else fallback
+	return get_theme_color(colour_name, &"MenuRow") if has_theme_color(colour_name, &"MenuRow") else fallback
 
 ## The label colour right now: idle -> selected brightness, dimmed while held.
 func text_color() -> Color:

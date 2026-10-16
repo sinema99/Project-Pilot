@@ -1,0 +1,207 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/habitat_parts.gd" id="1_xgi3w"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/walkway_pier.tscn" id="2_hj3q4"]
+[ext_resource type="Script" path="res://scripts/habitat_part.gd" id="3_ecixj"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/walkway_causeway.tscn" id="4_wtvuy"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/control_cab.tscn" id="5_4osyt"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/wing_building.tscn" id="6_gutrh"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/concourse_deck.tscn" id="7_qpspw"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/service_deck.tscn" id="8_tclwj"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/white_dome.tscn" id="9_smajo"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/cliff_block.tscn" id="10_1whex"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/retaining_wall.tscn" id="11_fyubc"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/rock_bridge.tscn" id="12_axqlw"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/tower.tscn" id="13_fqpvd"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/waterfall.tscn" id="14_tmfia"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/tube_straight.tscn" id="15_g0gpw"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/tube_bend.tscn" id="16_ub15e"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/hydro_bed.tscn" id="17_4wxf1"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/corn_field.tscn" id="18_ln4ks"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/terrace.tscn" id="19_ntjet"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/ground_soil.tscn" id="20_47s01"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/ground_grass.tscn" id="21_1s80c"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/ground_grass_dark.tscn" id="22_0nqwp"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/ground_plaza.tscn" id="23_ude4r"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/ground_white.tscn" id="24_0qxv3"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/bank_corner.tscn" id="25_krjx3"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/island.tscn" id="26_11xeu"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/peninsula.tscn" id="27_brmwu"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/water_tile.tscn" id="28_xx4wp"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/tree.tscn" id="29_akehx"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/cypress.tscn" id="30_md3my"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/palm.tscn" id="31_d0gu6"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/shrub.tscn" id="32_qw6p2"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/hedge_row.tscn" id="33_trnj1"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/cypress_row.tscn" id="34_30g1w"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/tree_grove.tscn" id="35_3awhl"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/banners.tscn" id="36_kgdex"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/stripe_fan.tscn" id="37_3m5jn"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/bowl.tscn" id="38_c5vas"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/far_dome.tscn" id="39_odc6m"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/dome_cluster.tscn" id="40_mouqb"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/hillside_terrace.tscn" id="41_wada3"]
+[ext_resource type="PackedScene" path="res://scenes/habitat_parts/block_cluster.tscn" id="42_ljncx"]
+
+[node name="HabitatParts" type="Node3D" unique_id=669850427]
+script = ExtResource("1_xgi3w")
+
+[node name="WalkwayPier" type="Node3D" parent="." unique_id=388892697 instance=ExtResource("2_hj3q4")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3, 0, 36)
+script = ExtResource("3_ecixj")
+
+[node name="WalkwayCauseway" type="Node3D" parent="." unique_id=122571765 instance=ExtResource("4_wtvuy")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 22.5, 0, 36)
+script = ExtResource("3_ecixj")
+
+[node name="ControlCab" type="Node3D" parent="." unique_id=948041735 instance=ExtResource("5_4osyt")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 43, 0, 32)
+script = ExtResource("3_ecixj")
+
+[node name="WingBuilding" type="Node3D" parent="." unique_id=1988174303 instance=ExtResource("6_gutrh")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 18, 0, 128)
+script = ExtResource("3_ecixj")
+
+[node name="ConcourseDeck" type="Node3D" parent="." unique_id=1282787743 instance=ExtResource("7_qpspw")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 70, 0, 122)
+script = ExtResource("3_ecixj")
+
+[node name="ServiceDeck" type="Node3D" parent="." unique_id=492121980 instance=ExtResource("8_tclwj")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 120, 0, 119)
+script = ExtResource("3_ecixj")
+
+[node name="WhiteDome" type="Node3D" parent="." unique_id=2017908719 instance=ExtResource("9_smajo")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 159, 0, 125)
+script = ExtResource("3_ecixj")
+
+[node name="CliffBlock" type="Node3D" parent="." unique_id=1191322416 instance=ExtResource("10_1whex")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 194, 0, 128)
+script = ExtResource("3_ecixj")
+
+[node name="RetainingWall" type="Node3D" parent="." unique_id=1496320294 instance=ExtResource("11_fyubc")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 221, 0, 126)
+script = ExtResource("3_ecixj")
+
+[node name="RockBridge" type="Node3D" parent="." unique_id=95499065 instance=ExtResource("12_axqlw")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 20, 0, 215.5)
+script = ExtResource("3_ecixj")
+
+[node name="Tower" type="Node3D" parent="." unique_id=1550124610 instance=ExtResource("13_fqpvd")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 64, 0, 218)
+script = ExtResource("3_ecixj")
+
+[node name="Waterfall" type="Node3D" parent="." unique_id=832388015 instance=ExtResource("14_tmfia")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 118, 0, 214)
+script = ExtResource("3_ecixj")
+
+[node name="TubeStraight" type="Node3D" parent="." unique_id=1341210398 instance=ExtResource("15_g0gpw")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 156, 0, 216.5)
+script = ExtResource("3_ecixj")
+
+[node name="TubeBend" type="Node3D" parent="." unique_id=1050807933 instance=ExtResource("16_ub15e")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 190.5, 0, 216.5)
+script = ExtResource("3_ecixj")
+
+[node name="HydroBed" type="Node3D" parent="." unique_id=799502072 instance=ExtResource("17_4wxf1")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8.5, 0, 343)
+script = ExtResource("3_ecixj")
+
+[node name="CornField" type="Node3D" parent="." unique_id=1227137120 instance=ExtResource("18_ln4ks")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 41, 0, 343)
+script = ExtResource("3_ecixj")
+
+[node name="Terrace" type="Node3D" parent="." unique_id=1069628 instance=ExtResource("19_ntjet")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 20, 0, 431.5)
+script = ExtResource("3_ecixj")
+
+[node name="GroundSoil" type="Node3D" parent="." unique_id=1496815164 instance=ExtResource("20_47s01")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 64, 0, 433)
+script = ExtResource("3_ecixj")
+
+[node name="GroundGrass" type="Node3D" parent="." unique_id=1315011792 instance=ExtResource("21_1s80c")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 98, 0, 433)
+script = ExtResource("3_ecixj")
+
+[node name="GroundGrassDark" type="Node3D" parent="." unique_id=699879789 instance=ExtResource("22_0nqwp")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 132, 0, 433)
+script = ExtResource("3_ecixj")
+
+[node name="GroundPlaza" type="Node3D" parent="." unique_id=342651809 instance=ExtResource("23_ude4r")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 166, 0, 433)
+script = ExtResource("3_ecixj")
+
+[node name="GroundWhite" type="Node3D" parent="." unique_id=1953532563 instance=ExtResource("24_0qxv3")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 200, 0, 433)
+script = ExtResource("3_ecixj")
+
+[node name="BankCorner" type="Node3D" parent="." unique_id=999708894 instance=ExtResource("25_krjx3")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 234, 0, 433)
+script = ExtResource("3_ecixj")
+
+[node name="Island" type="Node3D" parent="." unique_id=678468722 instance=ExtResource("26_11xeu")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 275, 0, 433)
+script = ExtResource("3_ecixj")
+
+[node name="Peninsula" type="Node3D" parent="." unique_id=1108757456 instance=ExtResource("27_brmwu")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 15, 0, 485)
+script = ExtResource("3_ecixj")
+
+[node name="WaterTile" type="Node3D" parent="." unique_id=1769210010 instance=ExtResource("28_xx4wp")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 56, 0, 489)
+script = ExtResource("3_ecixj")
+
+[node name="Tree" type="Node3D" parent="." unique_id=440077797 instance=ExtResource("29_akehx")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 0, 575)
+script = ExtResource("3_ecixj")
+
+[node name="Cypress" type="Node3D" parent="." unique_id=503364436 instance=ExtResource("30_md3my")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24, 0, 573)
+script = ExtResource("3_ecixj")
+
+[node name="Palm" type="Node3D" parent="." unique_id=1887736423 instance=ExtResource("31_d0gu6")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 45, 0, 576)
+script = ExtResource("3_ecixj")
+
+[node name="Shrub" type="Node3D" parent="." unique_id=1274994879 instance=ExtResource("32_qw6p2")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 66, 0, 573)
+script = ExtResource("3_ecixj")
+
+[node name="HedgeRow" type="Node3D" parent="." unique_id=871985310 instance=ExtResource("33_trnj1")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 93, 0, 575)
+script = ExtResource("3_ecixj")
+
+[node name="CypressRow" type="Node3D" parent="." unique_id=2040828469 instance=ExtResource("34_30g1w")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 129, 0, 573)
+script = ExtResource("3_ecixj")
+
+[node name="TreeGrove" type="Node3D" parent="." unique_id=302995600 instance=ExtResource("35_3awhl")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 167, 0, 584)
+script = ExtResource("3_ecixj")
+
+[node name="Banners" type="Node3D" parent="." unique_id=423222219 instance=ExtResource("36_kgdex")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6, 0, 668)
+script = ExtResource("3_ecixj")
+
+[node name="StripeFan" type="Node3D" parent="." unique_id=533716422 instance=ExtResource("37_3m5jn")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 34, 0, 672)
+script = ExtResource("3_ecixj")
+
+[node name="Bowl" type="Node3D" parent="." unique_id=812315064 instance=ExtResource("38_c5vas")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 52.5, 0, 799.5)
+script = ExtResource("3_ecixj")
+
+[node name="FarDome" type="Node3D" parent="." unique_id=188194777 instance=ExtResource("39_odc6m")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 131, 0, 759)
+script = ExtResource("3_ecixj")
+
+[node name="DomeCluster" type="Node3D" parent="." unique_id=773385148 instance=ExtResource("40_mouqb")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 177, 0, 762)
+script = ExtResource("3_ecixj")
+
+[node name="HillsideTerrace" type="Node3D" parent="." unique_id=1588797868 instance=ExtResource("41_wada3")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 230, 0, 776)
+script = ExtResource("3_ecixj")
+
+[node name="BlockCluster" type="Node3D" parent="." unique_id=939461129 instance=ExtResource("42_ljncx")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 25, 0, 911)
+script = ExtResource("3_ecixj")

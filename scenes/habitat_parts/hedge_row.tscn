@@ -1,0 +1,7 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/habitat_part.gd" id="1_k1y3g"]
+
+[node name="HedgeRow" type="Node3D" unique_id=871985310]
+script = ExtResource("1_k1y3g")
+kind = "hedge_row"

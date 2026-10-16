@@ -1,0 +1,41 @@
+[gd_scene format=3 uid="uid://8wpgfx11baee"]
+
+[ext_resource type="Script" uid="uid://cxmjg3hysywv2" path="res://scripts/habitat.gd" id="1_habitat"]
+
+[node name="Habitat" type="Node3D" unique_id=910272078]
+script = ExtResource("1_habitat")
+causeway_length = 160.0
+
+[node name="Ground" type="Node3D" parent="." unique_id=395049606]
+
+[node name="Lake" type="Node3D" parent="." unique_id=1250521086]
+
+[node name="WalkwayAndCab" type="Node3D" parent="." unique_id=1475114587]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -36)
+
+[node name="Fields" type="Node3D" parent="." unique_id=33615821]
+
+[node name="LeftBuilding" type="Node3D" parent="." unique_id=1865667150]
+transform = Transform3D(2.1546, 0, 0, 0, 1.8, 0, 0, 0, 1.6, 37, 7, -196)
+
+[node name="LeftBuilding" type="Node3D" parent="LeftBuilding" unique_id=49896828]
+transform = Transform3D(0.5067618, 0, 0, 0, 0.79379994, 0, 0, 0, 0.47040004, -14.05356, -3.0000024, 135.25)
+
+[node name="Concourse" type="Node3D" parent="." unique_id=658274911]
+transform = Transform3D(1.188, 0, 0, 0, 1, 0, 0, 0, 1, -47, 0, 2)
+
+[node name="LeftTerraces" type="Node3D" parent="." unique_id=668530417]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3, 0, 15)
+
+[node name="LeftTerraces" type="Node3D" parent="LeftTerraces" unique_id=1819151973]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3, 0, -106)
+
+[node name="Backdrop" type="Node3D" parent="." unique_id=1331554509]
+
+[node name="Backdrop" type="Node3D" parent="Backdrop" unique_id=830621103]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -871)
+
+[node name="Vault" type="Node3D" parent="." unique_id=150870103]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -60)
+
+[node name="Routes" type="Node3D" parent="." unique_id=1090000001]

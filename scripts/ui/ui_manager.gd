@@ -56,8 +56,8 @@ var _dim_tween: Tween
 # The table this implements is in docs/specs/ui-shell.md.
 static func resolve(current: Array, action: int, enabled: bool, arg: StringName = &"") -> Dictionary:
 	var next: Array[StringName] = []
-	for name: StringName in current:
-		next.append(name)
+	for screen_name: StringName in current:
+		next.append(screen_name)
 
 	match action:
 		Action.BACK:
@@ -79,8 +79,8 @@ static func resolve(current: Array, action: int, enabled: bool, arg: StringName 
 				next.append(arg)
 
 	var paused := false
-	for name: StringName in next:
-		if SCREENS.get(name, {}).get("pauses", false):
+	for screen_name: StringName in next:
+		if SCREENS.get(screen_name, {}).get("pauses", false):
 			paused = true
 			break
 
@@ -107,8 +107,8 @@ func _ready() -> void:
 	_dim.visible = false
 	add_child(_dim)
 
-	for name: StringName in SCREENS:
-		_instances[name] = _spawn(SCREENS[name]["path"])
+	for screen_name: StringName in SCREENS:
+		_instances[screen_name] = _spawn(SCREENS[screen_name]["path"])
 
 	var dialog: Control = _instances[&"confirm"]
 	dialog.confirmed.connect(_on_confirm_accepted)
@@ -141,8 +141,8 @@ func _input(event: InputEvent) -> void:
 
 # --- public API ---------------------------------------------------------------
 
-func open(name: StringName) -> void:
-	_dispatch(Action.PUSH, name)
+func open(screen_name: StringName) -> void:
+	_dispatch(Action.PUSH, screen_name)
 
 func back() -> void:
 	_dispatch(Action.BACK)
@@ -152,10 +152,10 @@ func close() -> void:
 
 ## Pushes the confirm modal over whatever is open. `on_confirm` runs only if the
 ## player picks CONFIRM; cancelling just pops the modal.
-func confirm(title: String, message: String, on_confirm: Callable) -> void:
+func confirm(title: String, message: String, on_confirm: Callable, confirm_first := false) -> void:
 	_confirm_callback = on_confirm
 	var dialog: Control = _instances[&"confirm"]
-	dialog.setup(title, message)
+	dialog.setup(title, message, 0.0, confirm_first)
 	open(&"confirm")
 
 ## Leaves the menus and enters a gameplay scene. Re-arms the shell, which the
@@ -170,6 +170,12 @@ func start_game(path: String) -> void:
 func to_main_menu() -> void:
 	close()
 	get_tree().change_scene_to_file("res://scenes/ui/main_menu.tscn")
+
+## True while any menu is on screen: a screen on the stack, the main menu (shell off), or the
+## hologram still animating closed. ScreenPixel reads it to keep menus sharp - see
+## docs/specs/pixel-look.md, "Whole screen".
+func is_menu_showing() -> bool:
+	return not stack.is_empty() or not shell_enabled or is_instance_valid(_holo)
 
 # --- internals ----------------------------------------------------------------
 
@@ -213,21 +219,21 @@ func _apply(state: Dictionary) -> void:
 ## unpaused underneath it.
 func _update_screens(before: Array) -> void:
 	var dialog_on_top: bool = not stack.is_empty() and stack.back() == &"confirm"
-	for name: StringName in _instances:
-		var node: Control = _instances[name]
-		var want := stack.has(name)
+	for screen_name: StringName in _instances:
+		var node: Control = _instances[screen_name]
+		var want := stack.has(screen_name)
 		if want:
-			if not before.has(name) or not node.visible:
+			if not before.has(screen_name) or not node.visible:
 				node.visible = true
 				if node.has_method("present"):
 					node.present(_holo != null)
 		elif node.visible:
-			if before.has(name) and _holo == null and node.has_method("dismiss"):
+			if before.has(screen_name) and _holo == null and node.has_method("dismiss"):
 				node.dismiss()
 			else:
 				node.visible = false
 		if node.has_method("set_behind_dialog"):
-			node.set_behind_dialog(want and dialog_on_top and name != &"confirm")
+			node.set_behind_dialog(want and dialog_on_top and screen_name != &"confirm")
 
 func _set_dim(on: bool) -> void:
 	if _dim_tween != null:
@@ -262,8 +268,8 @@ func _apply_hologram(state: Dictionary) -> void:
 		_dim_tween.kill()
 	_dim.visible = false
 	var screens: Node = _holo.screen_host()
-	for name: StringName in [&"shell", &"confirm"]:
-		var node: Node = _instances[name]
+	for screen_name: StringName in [&"shell", &"confirm"]:
+		var node: Node = _instances[screen_name]
 		if node.get_parent() != screens:
 			node.get_parent().remove_child(node)
 			screens.add_child(node)
@@ -297,8 +303,8 @@ func _release_hologram() -> void:
 		if _holo.tree_exiting.is_connected(_on_hologram_gone):
 			_holo.tree_exiting.disconnect(_on_hologram_gone)
 	_holo = null
-	for name: StringName in [&"shell", &"confirm"]:
-		var node: Node = _instances.get(name)
+	for screen_name: StringName in [&"shell", &"confirm"]:
+		var node: Node = _instances.get(screen_name)
 		if node != null and node.get_parent() != self:
 			node.get_parent().remove_child(node)
 			add_child(node)

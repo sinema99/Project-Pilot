@@ -119,8 +119,8 @@ func test_the_lift_is_the_in_lift_zoomed_in_and_full_zoomed_out() -> void:
 	root.set("_camera_mode_length", 0.0)
 	approx(float(root.call("_camera_zoom_lift")), 0.0, 0.0001, "first person was lifted")
 	root.set("_camera_mode_length", float(root.get("camera_zoom_min")))
-	approx(float(root.call("_camera_zoom_lift")), float(root.get("camera_zoom_in_lift")), 0.0001,
-		"full zoom-in did not get the in-lift")
+	approx(float(root.call("_camera_zoom_lift")), float(root.get("camera_zoom_in_lift")) + float(root.get("camera_pivot_raise")), 0.0001,
+		"full zoom-in did not get the in-lift plus the raise")
 	root.set("_camera_mode_length", float(root.get("camera_zoom_max")))
-	approx(float(root.call("_camera_zoom_lift")), float(root.get("camera_zoom_out_lift")), 0.0001,
-		"full zoom-out did not get the whole lift")
+	approx(float(root.call("_camera_zoom_lift")), float(root.get("camera_zoom_out_lift")) + float(root.get("camera_pivot_raise")), 0.0001,
+		"full zoom-out did not get the whole lift plus the raise")

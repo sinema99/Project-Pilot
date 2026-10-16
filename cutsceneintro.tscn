@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://dfnq1u1qe5f8v"]
+
+[ext_resource type="PackedScene" path="res://scenes/cutscene_intro_space.tscn" id="1_byb4k"]
+
+[node name="Node3D" type="Node3D" unique_id=1041841411]
+
+[node name="CutsceneIntroSpace" parent="." unique_id=1532213265 instance=ExtResource("1_byb4k")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.24033737, 1.1920929e-07, 2.5780184)

@@ -32,4 +32,4 @@ func _on_main_menu_pressed() -> void:
 	UI.confirm("BACK TO MAIN MENU", "The current run will be lost.", UI.to_main_menu)
 
 func _on_quit_pressed() -> void:
-	UI.confirm("QUIT TO DESKTOP", "The current run will be lost.", get_tree().quit)
+	UI.confirm("QUIT TO DESKTOP", "The current run will be lost.", get_tree().quit, true)

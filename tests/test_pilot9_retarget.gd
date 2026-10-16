@@ -212,8 +212,18 @@ func test_trial_has_exactly_one_current_camera_and_it_is_the_rc_rig_camera() -> 
 	if root == null:
 		fail("trial.tscn did not load"); return
 	var cams := root.find_children("*", "Camera3D", true, false)
+	# Every pilot after the first in PilotSwitcher ships its own current camera; the switcher's
+	# _ready() parks them, which never runs on a bare instantiate - so leave theirs out here.
+	var parked: Array[String] = []
+	var switcher := root.get_node_or_null("PilotSwitcher")
+	if switcher:
+		for i in range(1, switcher.pilots.size()):
+			parked.append(str(switcher.pilots[i]).trim_prefix("../") + "/")
 	var current: Array = []
 	for c in cams:
+		var path := str(root.get_path_to(c))
+		if parked.any(func(p): return path.begins_with(p)):
+			continue
 		if (c as Camera3D).current:
 			current.append(c)
 	eq(current.size(), 1,
@@ -258,5 +268,6 @@ func test_trial_still_carries_the_cel_pass_on_pilot9() -> void:
 	if applier:
 		check(applier.apply_on_ready, "cel pass on pilot9 should be live now (flipped on after the retarget checked out)")
 		check(applier.material != null, "ApplyCelPilot9 has no material")
-		check(applier.targets.size() == 1 and str(applier.targets[0]) == "../Pilot9",
+		# Pilot9Decimate rides along since 2026-10-12 - see docs/specs/pilot-switch.md.
+		check(applier.targets.size() >= 1 and str(applier.targets[0]) == "../Pilot9",
 			"ApplyCelPilot9 no longer targets Pilot9")

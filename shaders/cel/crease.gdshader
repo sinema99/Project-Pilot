@@ -66,6 +66,10 @@ uniform sampler2D depth_tex : hint_depth_texture, repeat_disable, filter_nearest
 // Shared with outline.gdshader rather than redeclared, so the crease and the silhouette
 // can never drift to two different blacks. Defined in project.godot [shader_globals].
 global uniform vec4 outline_color;
+// Window pixels per rendered pixel - see docs/specs/pixel-world.md.
+global uniform float pixel_block;
+// The Ichi storm fogs the ink itself: this pass draws after the fog quad.
+#include "res://shaders/storm/storm_fog.gdshaderinc"
 
 /// Minimum dihedral angle that earns a line. Below ~20 the blockout's own tessellation
 /// starts showing through.
@@ -201,7 +205,8 @@ void fragment() {
 
 	// Half-width because a corner is inked from both sides: this fragment's face paints its
 	// own half and the far face paints the other, and they meet at the crease.
-	float half_w = max(line_width_px, 0.0) * 0.5;
+	// One block while PixelWorld renders low-res, like the hull outline.
+	float half_w = (pixel_block > 1.0 ? 1.0 : max(line_width_px, 0.0)) * 0.5;
 	// Probe just past the line's own edge, rounded to whole pixels so the taps land on texel
 	// centres - filter_nearest would otherwise snap them, skewing the ratio k is read from.
 	float probe_px = max(floor(half_w + 1.5), 1.0);
@@ -238,7 +243,7 @@ void fragment() {
 	// crease running parallel to it.
 	float inv_sq = inv_x * inv_x + inv_y * inv_y;
 
-	ALBEDO = outline_color.rgb;
+	ALBEDO = storm_fog_ink(outline_color.rgb, length(VERTEX), TIME);
 	if (inv_sq <= 0.0) {
 		ALPHA = 0.0;
 	} else {
