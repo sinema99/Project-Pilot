@@ -1,5 +1,6 @@
-## pilot9's held item: two sockets on his skeleton, the item instance that moves between them, and
-## the right-arm override while it is drawn. Built at runtime by pilot9.gd::_setup_item_holder()
+## pilot9's held item: a hand socket on his skeleton, the item instance in it (hidden while
+## holstered - he materializes it, see docs/specs/pilot9-staff-materialize.md), and the right-arm
+## override while it is drawn. Built at runtime by pilot9.gd::_setup_item_holder()
 ## rather than saved into pilot9.tscn, so a rig swap by scripts/pilot9_build_scene.gd cannot drop
 ## it. Knows nothing about staffs - see docs/specs/pilot9-held-item.md.
 extends Node
@@ -7,7 +8,6 @@ extends Node
 const _ArmPoseModifier := preload("res://scripts/items/arm_pose_modifier.gd")
 
 const HAND_BONE := &"RightHand"
-const BACK_BONE := &"UpperChest"
 
 ## The bones the hold pose may set. The blockout rig has no finger bones, so the fist is whatever
 ## the hand mesh is.
@@ -38,7 +38,6 @@ var is_drawn: bool = false
 var item_instance: Node3D = null
 
 var hand_socket: BoneAttachment3D = null
-var back_socket: BoneAttachment3D = null
 var arm_modifier: SkeletonModifier3D = null
 
 var _skeleton: Skeleton3D = null
@@ -88,7 +87,6 @@ func setup(skeleton: Skeleton3D, anim_player: AnimationPlayer, anim_tree: Animat
 		push_error("item_holder: no skeleton - pilot9 will not be able to hold anything")
 		return
 	hand_socket = _make_socket(&"HandSocket", HAND_BONE)
-	back_socket = _make_socket(&"BackSocket", BACK_BONE)
 	arm_modifier = _ArmPoseModifier.new()
 	arm_modifier.name = &"ArmPoseModifier"
 	_skeleton.add_child(arm_modifier)
@@ -129,12 +127,12 @@ func set_item(item: HeldItem) -> void:
 	_place()
 
 
-## Draw or holster. A snap: the item changes socket this frame. Does nothing with no item.
+## Draw or holster. A snap: the item shows or hides this frame. Does nothing with no item.
 func toggle_drawn() -> void:
 	set_drawn(not is_drawn)
 
 
-## Puts the item in the hand (true) or on the back, as a snap. Does nothing with no item. The
+## Shows the item in the hand (true) or hides it, as a snap. Does nothing with no item. The
 ## equip animation (scripts/items/equip_anim.gd) calls this at its handovers.
 func set_drawn(drawn: bool) -> void:
 	if item_instance == null:
@@ -144,13 +142,12 @@ func set_drawn(drawn: bool) -> void:
 
 
 func _place() -> void:
-	var socket := hand_socket if is_drawn else back_socket
-	var offset := held_item.hand_offset if is_drawn else held_item.back_offset
-	if item_instance.get_parent() != socket:
+	if item_instance.get_parent() != hand_socket:
 		if item_instance.get_parent() != null:
 			item_instance.get_parent().remove_child(item_instance)
-		socket.add_child(item_instance)
-	item_instance.transform = offset
+		hand_socket.add_child(item_instance)
+	item_instance.transform = held_item.hand_offset
+	item_instance.visible = is_drawn
 
 
 ## Whether `node` is part of the held item - pilot9's rim light skips these, which stays pilot-only.

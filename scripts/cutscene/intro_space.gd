@@ -93,6 +93,16 @@ const SHOT := &"shot"
 ## The overlay (heat + glint) put on every ship mesh.
 @export var ship_fx_material: ShaderMaterial
 
+@export_group("Composite")
+## The key light (docs/specs/shots-composite.md row 3): toward the Sun on screen. The sun is behind
+## the camera, up and left, so the light sits just past the frame edge on that line and washes onto
+## the planet's lit side. How far past the edge, as a fraction of the screen height.
+@export var sun_edge_margin := 0.05
+## The light fades in over these shot seconds, as the opening pan lands, up to light_energy.
+@export var light_in_start := 0.0
+@export var light_in_end := 2.5
+@export var light_energy := 0.6
+
 @onready var animation_player: AnimationPlayer = $AnimationPlayer
 @onready var camera: Camera3D = $CameraRig/Camera3D
 @onready var _surface: ShaderMaterial = ($PlanetTilt/Planet as MeshInstance3D).mesh.surface_get_material(0)
@@ -217,6 +227,41 @@ func _process(delta: float) -> void:
 	_update_lightning(t)
 	_trail.update_trail(t, _ship_start, ship_model_at, heat_at, camera.global_position)
 	_update_ship_fx(t)
+	_update_composite(t)
+
+
+## The shot's DepthComposite (the first effect on the WorldEnvironment's compositor), or null.
+func composite() -> DepthComposite:
+	return DepthComposite.find_in($WorldEnvironment as WorldEnvironment)
+
+
+## Where the sun is on screen (0..1 from the top left). In front of the camera and in frame: its
+## exact spot. Otherwise: its direction from the screen centre, out to `sun_edge_margin` past the edge.
+func sun_uv() -> Vector2:
+	var toward := ($Sun as Node3D).global_transform.basis.z.normalized()
+	var local := camera.global_basis.inverse() * toward
+	var size := camera.get_viewport().get_visible_rect().size
+	var aspect := size.x / maxf(size.y, 1.0)
+	if local.z < 0.0:
+		var uv := DepthComposite.screen_uv(camera, camera.global_position + toward)
+		if uv.x >= 0.0 and uv.x <= 1.0 and uv.y >= 0.0 and uv.y <= 1.0:
+			return uv
+	# Screen-height units, y down.
+	var d := Vector2(local.x, -local.y)
+	if d.length() < 1e-5:
+		d = Vector2.UP
+	d = d.normalized()
+	var k := minf(0.5 * aspect / maxf(absf(d.x), 1e-5), 0.5 / maxf(absf(d.y), 1e-5))
+	var p := d * (k + sun_edge_margin)
+	return Vector2(0.5 + p.x / aspect, 0.5 + p.y)
+
+
+func _update_composite(t: float) -> void:
+	var look := composite()
+	if look == null:
+		return
+	look.light_uv = sun_uv()
+	look.light_energy = light_energy * smoothstep(light_in_start, light_in_end, t)
 
 
 ## Cloud drift (degrees east) at shot time `t`: steady over the shot, so seeking shows the same sky.

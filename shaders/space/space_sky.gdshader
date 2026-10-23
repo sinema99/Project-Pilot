@@ -5,6 +5,8 @@
 // All held darker than the planet's night side. The twinkle runs on `twinkle_time`, which
 // intro_space.gd sets from the shot time so seeking shows the same frame.
 shader_type sky;
+// The soft layers (wash, nebula, band, dust lanes) run at half resolution; stars stay full res.
+render_mode use_half_res_pass;
 
 #include "res://shaders/space/space_noise.gdshaderinc"
 
@@ -99,6 +101,11 @@ vec3 star_layer(vec3 dir, float density, float chance, float chance_band, float 
 		for (int y = -1; y <= 1; y++) {
 			for (int z = -1; z <= 1; z++) {
 				vec3 c = cell + vec3(float(x), float(y), float(z));
+				// Most cells are empty: rule them out on the first hash (band_at is at most 1) before
+				// paying for the rest. Same stars as the full test.
+				if (space_hash(c + seed) > chance + chance_band) {
+					continue;
+				}
 				vec3 h = space_hash3(c + seed);
 				vec3 star = normalize(c + 0.2 + 0.6 * space_hash3(c + seed + 3.3));
 				if (h.x > chance + chance_band * band_at(star)) {
@@ -123,26 +130,32 @@ vec3 star_layer(vec3 dir, float density, float chance, float chance_band, float 
 
 void sky() {
 	vec3 dir = normalize(EYEDIR);
-	float g = smoothstep(-0.6, 0.6, dot(dir, normalize(wash_axis)));
-	vec3 col = mix(wash_low, wash_high, g) * wash_strength;
+	if (AT_HALF_RES_PASS) {
+		float g = smoothstep(-0.6, 0.6, dot(dir, normalize(wash_axis)));
+		vec3 col = mix(wash_low, wash_high, g) * wash_strength;
 
-	float neb = space_fbm(dir * nebula_scale + vec3(2.3, 5.1, 0.7), 5);
-	float neb_mix = space_fbm(dir * nebula_scale * 0.7 + vec3(9.4, 1.2, 4.4), 3);
-	float neb_amount = smoothstep(0.4, 0.8, neb) * nebula_strength;
-	col += mix(nebula_a, nebula_b, smoothstep(0.35, 0.65, neb_mix)) * neb_amount;
+		float neb = space_fbm(dir * nebula_scale + vec3(2.3, 5.1, 0.7), 5);
+		float neb_mix = space_fbm(dir * nebula_scale * 0.7 + vec3(9.4, 1.2, 4.4), 3);
+		float neb_amount = smoothstep(0.4, 0.8, neb) * nebula_strength;
+		col += mix(nebula_a, nebula_b, smoothstep(0.35, 0.65, neb_mix)) * neb_amount;
 
-	// Milky Way: soft glow, a brighter core, clumped along its length, cut by dust lanes.
-	float band = band_at(dir);
-	float clump = space_fbm(dir * 7.0 + vec3(3.1, 0.4, 8.8), 4);
-	float dust = space_fbm(dir * dust_scale + vec3(5.5, 2.2, 1.1), 4);
-	float lanes = smoothstep(0.45, 0.62, dust) * smoothstep(0.25, 0.9, band) * dust_amount;
-	vec3 glow = band_color * band + band_core * band * band * band;
-	col += glow * (0.55 + 0.9 * clump) * (1.0 - lanes) * band_strength;
-
-	vec3 stars = star_layer(dir, small_density, small_chance, 0.0, small_size, 0.0, 0.0) * small_brightness;
-	stars = max(stars, star_layer(dir, band_star_density, 0.0, band_star_chance, small_size * 0.7, 31.0, 0.0)
-			* band_star_brightness * (1.0 - lanes));
-	stars = max(stars, star_layer(dir, big_density, big_chance, 0.0, big_size, 17.0, 1.0) * big_brightness);
-	stars = max(stars, star_layer(dir, hero_density, hero_chance, 0.0, hero_size, 53.0, 1.0) * hero_brightness);
-	COLOR = col + stars;
+		// Milky Way: soft glow, a brighter core, clumped along its length, cut by dust lanes.
+		float band = band_at(dir);
+		float clump = space_fbm(dir * 7.0 + vec3(3.1, 0.4, 8.8), 4);
+		float dust = space_fbm(dir * dust_scale + vec3(5.5, 2.2, 1.1), 4);
+		float lanes = smoothstep(0.45, 0.62, dust) * smoothstep(0.25, 0.9, band) * dust_amount;
+		vec3 glow = band_color * band + band_core * band * band * band;
+		col += glow * (0.55 + 0.9 * clump) * (1.0 - lanes) * band_strength;
+		// The lanes ride along in alpha for the band stars below.
+		COLOR = col;
+		ALPHA = lanes;
+	} else {
+		float lanes = HALF_RES_COLOR.a;
+		vec3 stars = star_layer(dir, small_density, small_chance, 0.0, small_size, 0.0, 0.0) * small_brightness;
+		stars = max(stars, star_layer(dir, band_star_density, 0.0, band_star_chance, small_size * 0.7, 31.0, 0.0)
+				* band_star_brightness * (1.0 - lanes));
+		stars = max(stars, star_layer(dir, big_density, big_chance, 0.0, big_size, 17.0, 1.0) * big_brightness);
+		stars = max(stars, star_layer(dir, hero_density, hero_chance, 0.0, hero_size, 53.0, 1.0) * hero_brightness);
+		COLOR = HALF_RES_COLOR.rgb + stars;
+	}
 }

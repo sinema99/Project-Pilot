@@ -10,6 +10,9 @@
 [ext_resource type="Script" path="res://scripts/cutscene/descent_ruin.gd" id="8_ruin"]
 [ext_resource type="Script" path="res://scripts/cutscene/descent_sky_city.gd" id="9_sky_city"]
 [ext_resource type="Script" path="res://scripts/cutscene/descent_trees.gd" id="10_trees"]
+[ext_resource type="Script" path="res://scripts/rendering/depth_composite.gd" id="11_composite"]
+[ext_resource type="CompositorEffect" path="res://resources/cinema_post.tres" id="12_post"]
+[ext_resource type="Script" path="res://scripts/cutscene/descent_shafts.gd" id="13_shafts"]
 
 [sub_resource type="ProceduralSkyMaterial" id="Sky_overcast"]
 sky_top_color = Color(0.55, 0.6, 0.7, 1)
@@ -40,6 +43,17 @@ glow_strength = 1.0
 glow_blend_mode = 0
 glow_hdr_threshold = 1.0
 
+[sub_resource type="CompositorEffect" id="CompositorEffect_depth"]
+resource_local_to_scene = true
+script = ExtResource("11_composite")
+light_energy = 0.18
+light_radius = 0.12
+haze_amount = 0.2
+
+[sub_resource type="Compositor" id="Compositor_look"]
+resource_local_to_scene = true
+compositor_effects = Array[CompositorEffect]([SubResource("CompositorEffect_depth"), ExtResource("12_post")])
+
 [sub_resource type="CameraAttributesPractical" id="CameraAttributes_lens"]
 dof_blur_near_enabled = false
 
@@ -69,6 +83,7 @@ script = ExtResource("1_shot")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_descent")
+compositor = SubResource("Compositor_look")
 
 [node name="Sun" type="DirectionalLight3D" parent="."]
 transform = Transform3D(0.033844, -0.64242, 0.765606, 0, 0.766045, 0.642788, -0.999428, -0.021754, 0.025927, 0, 90, 0)
@@ -119,6 +134,9 @@ drift_opacity = 0.0
 
 [node name="SkyCity" type="MeshInstance3D" parent="."]
 script = ExtResource("9_sky_city")
+
+[node name="Shafts" type="MeshInstance3D" parent="."]
+script = ExtResource("13_shafts")
 
 [node name="Bolts" type="Node3D" parent="."]
 script = ExtResource("7_bolts")

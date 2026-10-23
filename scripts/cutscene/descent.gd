@@ -141,7 +141,26 @@ const TREE_FAR_LINES := [
 	[180.0, 4300.0, 330.0, 4900.0],
 ]
 
+## Light shafts from the cloud break (docs/specs/descent-composite.md row 4): [top sketch x (on the
+## deck's front edge), foot sketch x, foot distance (m), top width (m), foot width (m), strength,
+## phase]. Tops lean right of their feet, falling away from the light behind the ridge.
+const SHAFTS := [
+	[1030.0, 950.0, 3200.0, 70.0, 170.0, 0.7, 0.0],
+	[1160.0, 1100.0, 4200.0, 120.0, 280.0, 1.0, 1.7],
+	[1270.0, 1240.0, 3600.0, 50.0, 130.0, 0.6, 3.1],
+	[1390.0, 1400.0, 4800.0, 140.0, 320.0, 0.9, 4.4],
+	[1530.0, 1580.0, 3000.0, 80.0, 180.0, 0.6, 2.2],
+]
+
 @export var autoplay := true
+
+@export_group("Composite")
+## The light the composite organises around (docs/specs/descent-composite.md row 1): the pale gap
+## in the storm behind the mountains, in sketch px.
+@export var light_px := Vector2(1240.0, 340.0)
+## The shafts' brightness (their shader's `energy`; flyover keeps the 0.5 default). Low on purpose:
+## a dark storm with a hint of the gap, so the trail reads against it.
+@export var shaft_energy := 0.2
 
 @export_group("Trail")
 ## Shot time the trail punches out of the deck.
@@ -199,6 +218,8 @@ const TREE_FAR_LINES := [
 @onready var flash_light: DirectionalLight3D = $FlashLight
 @onready var bolts: DescentBolts = $Bolts
 @onready var ruin: DescentRuin = $Camera3D/Ruin
+@onready var shafts: DescentShafts = $Shafts
+@onready var world_environment: WorldEnvironment = $WorldEnvironment
 
 var lightning := IntroSpaceLightning.new()
 ## The arc the head flies, in world space, and where along it the breach is (m).
@@ -218,6 +239,11 @@ func _ready() -> void:
 	start_time = solve_start_time()
 	_build_lightning()
 	bolts.build(bolt_table, flash_decay)
+	shafts.build(SHAFTS)
+	shafts.material.set_shader_parameter(&"energy", shaft_energy)
+	var look := composite()
+	if look:
+		look.light_uv = light_px / SKETCH_SIZE
 	land.deck_material.set_shader_parameter(&"flash_opacity", flash_opacity)
 	var eye := land.to_global(CAMERA_POSITION)
 	land.deck_material.set_shader_parameter(&"eye_center", Vector2(eye.x, eye.z))
@@ -265,9 +291,25 @@ func apply(t: float) -> void:
 	var bolt_peak := 0.0
 	for b in bolts.brightness_at(t):
 		bolt_peak = maxf(bolt_peak, b)
-	ruin.apply(t, maxf(flash_opacity * live[0].w, ruin_bolt_rim * bolt_peak))
+	var flash := maxf(flash_opacity * live[0].w, ruin_bolt_rim * bolt_peak)
+	ruin.apply(t, flash)
+	shafts.apply(t, flash)
+	var look := composite()
+	if look:
+		look.flash = clampf(flash, 0.0, 1.0)
 	land.curtain_material.set_shader_parameter(&"glows", PackedVector4Array(bolts.curtain_glows(t, 4)))
 	land.curtain_material.set_shader_parameter(&"cloud_time", t)
+
+
+## The shot's DepthComposite (the first effect on the WorldEnvironment's compositor), or null.
+func composite() -> DepthComposite:
+	var c := world_environment.compositor
+	if c == null:
+		return null
+	for e in c.compositor_effects:
+		if e is DepthComposite:
+			return e
+	return null
 
 
 # --- the sketch ------------------------------------------------------------------------------

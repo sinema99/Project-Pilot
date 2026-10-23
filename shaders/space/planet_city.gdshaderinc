@@ -336,6 +336,30 @@ const vec4 OUTPOST_RAILS[OUTPOST_RAILS_COUNT] = vec4[](
 	vec4(-74.70, 62.08, -74.70, 59.16),
 	vec4(-85.84, 68.55, -85.84, 67.42),
 	vec4(-45.70, 48.86, -46.99, 48.86));
+// Cell mask: bit (y * CITY_CELLS_W + x) is set where anything above can draw (city_near), in
+// CITY_CELL-degree cells from CITY_CELL_ORIGIN. Margins cover today's shadow offsets plus a
+// pixel's footprint: raise CELL_ARC / CELL_TOWER_ARC in the generator if those grow.
+const float CITY_CELL = 1.0;
+const vec2 CITY_CELL_ORIGIN = vec2(-112.0, 15.0);
+const int CITY_CELLS_W = 69;
+const int CITY_CELLS_H = 56;
+const uint CITY_CELLS[121] = uint[](
+	2147483648u, 3u, 0u, 252u, 0u, 16320u, 0u, 524032u,
+	0u, 16769024u, 0u, 536608768u, 0u, 4286578688u, 0u, 4278190080u,
+	15u, 3758096384u, 255u, 0u, 8124u, 0u, 128896u, 0u,
+	4143104u, 0u, 33488896u, 0u, 1071644672u, 14u, 4227858432u, 455u,
+	503316480u, 14336u, 4026531840u, 2096755u, 0u, 67096574u, 0u, 4294574016u,
+	7u, 4282382336u, 8191u, 3892297728u, 262143u, 4294443008u, 33554428u, 2130706432u,
+	3221225344u, 3758096399u, 4294963201u, 1023u, 4294836224u, 32767u, 4280221696u, 1048575u,
+	3824943104u, 67108863u, 2139095040u, 2145386368u, 4057989120u, 4091539487u, 4227860367u, 2080244735u,
+	2147545598u, 2145417471u, 1998784u, 4262461432u, 63961151u, 3762290432u, 2180974591u, 268427295u,
+	1071709180u, 4294706160u, 4093607935u, 3481304583u, 2081423359u, 4027514880u, 2181038073u, 15u,
+	1073741694u, 65012208u, 3225415552u, 2080374787u, 66187264u, 2147483768u, 2117992463u, 3840u,
+	3221225968u, 2093071u, 4026532336u, 66978299u, 1065369088u, 2145402750u, 4027039744u, 4228116423u,
+	16252943u, 2415917310u, 511u, 4293926848u, 16369u, 4261412864u, 523327u, 3221225598u,
+	16746495u, 4032u, 66068472u, 129024u, 2113929216u, 0u, 264241152u, 0u,
+	4227860464u, 3u, 2147548672u, 127u, 2080768u, 4080u, 66584576u, 130560u,
+	0u);
 // END GENERATED
 
 group_uniforms City;
@@ -399,6 +423,9 @@ uniform float outpost_ragged : hint_range(0.0, 0.3) = 0.08;
 uniform vec3 outpost_drift_color : source_color = vec3(0.86, 0.9, 0.95);
 uniform float outpost_drift_deg : hint_range(0.05, 2.0) = 0.35;
 uniform float outpost_drift_cover : hint_range(0.0, 0.7) = 0.3;
+// Anti-aliasing: the city is all hard tests finer than a pixel from space (streets, lips, rails,
+// towers), so one sample per pixel crawls as the camera moves. Four rotated-grid samples per pixel.
+uniform bool city_aa = true;
 group_uniforms;
 
 // The grid space: degrees, longitude squeezed.
@@ -410,18 +437,120 @@ vec2 city_at_grid(vec3 e) {
 	return city_grid(earth_lat_lon(e));
 }
 
+// Can anything of the city (or its shadow) draw near Earth direction e? False lets a pixel skip the
+// shape loops; the generated cell mask is that coarse answer.
+bool city_near(vec3 e) {
+	ivec2 c = ivec2(floor((city_at_grid(e) - CITY_CELL_ORIGIN) / CITY_CELL));
+	if (any(lessThan(c, ivec2(0))) || c.x >= CITY_CELLS_W || c.y >= CITY_CELLS_H) {
+		return false;
+	}
+	int i = c.y * CITY_CELLS_W + c.x;
+	return ((CITY_CELLS[i >> 5] >> uint(i & 31)) & 1u) != 0u;
+}
+
 bool city_in_rect(vec2 g, vec4 r) {
 	return all(lessThanEqual(abs(g - r.xy), r.zw));
 }
 
-// Index of the platform under grid point g, or -1.
-int city_platform(vec2 g) {
+// The shapes near one pixel, as bit sets (bit i = shape i): every shape any of the pixel's samples
+// or their shadow / lip / tower-shadow lookups can hit. The shape loops below walk these instead of
+// every shape; walking in index order keeps every result the same as the full loops.
+struct CityCull {
+	uvec4 plats; // CITY_PLATFORMS
+	uvec4 outposts; // OUTPOST_PLATFORMS
+	uvec4 rails; // CITY_RAILS, then OUTPOST_RAILS from bit CITY_RAILS_COUNT
+	uvec4 towers; // CITY_TOWERS, then OUTPOST_TOWERS from bit CITY_TOWERS_COUNT (all in .x: 21 of 32)
+};
+
+void city_cull_add(inout uvec4 set, int i) {
+	set[i >> 5] |= 1u << uint(i & 31);
+}
+
+// Is rect r (centre, half size) within `reach` (grid units, x and y) of g?
+bool city_cull_hit(vec2 g, vec4 r, vec2 reach) {
+	return all(lessThanEqual(abs(g - r.xy), r.zw + reach));
+}
+
+// The cull for a pixel centred on Earth direction e whose samples spread `footprint` (radians) from
+// it. Reaches are arcs on the sphere, widened in x like the grid's longitude.
+CityCull city_cull(vec3 e, float footprint) {
+	CityCull k;
+	k.plats = uvec4(0u);
+	k.outposts = uvec4(0u);
+	k.rails = uvec4(0u);
+	k.towers = uvec4(0u);
+	vec2 ll = earth_lat_lon(e);
+	vec2 g = city_grid(ll);
+	float near_arc = degrees(footprint + max(max(city_shadow_offset, city_top_shadow_offset), city_lip_width)) * 1.1;
+	float tower_arc = degrees(footprint + city_tower_shadow) * 1.1;
+	float squeeze = cos(radians(CITY_MID_LAT));
+	float near_cos = max(cos(radians(min(abs(ll.x) + near_arc, 89.0))), 0.01);
+	float tower_cos = max(cos(radians(min(abs(ll.x) + tower_arc, 89.0))), 0.01);
+	vec2 near_ = vec2(near_arc * squeeze / near_cos, near_arc);
+	vec2 tower = vec2(tower_arc * squeeze / tower_cos, tower_arc);
 	for (int i = 0; i < CITY_PLATFORMS_COUNT; i++) {
-		if (city_in_rect(g, CITY_PLATFORMS[i])) {
-			return i;
+		if (city_cull_hit(g, CITY_PLATFORMS[i], near_)) {
+			city_cull_add(k.plats, i);
 		}
 	}
-	return -1;
+	float h = city_rail_deg * 0.5;
+	for (int i = 0; i < CITY_RAILS_COUNT; i++) {
+		vec4 s = CITY_RAILS[i];
+		if (city_cull_hit(g, vec4((s.xy + s.zw) * 0.5, abs(s.zw - s.xy) * 0.5 + h), near_)) {
+			city_cull_add(k.rails, i);
+		}
+	}
+	for (int i = 0; i < CITY_TOWERS_COUNT; i++) {
+		vec4 t = CITY_TOWERS[i];
+		if (city_cull_hit(g, vec4(t.xy, t.zw * max(city_tower_shadow_width, 1.0)), tower)) {
+			city_cull_add(k.towers, i);
+		}
+	}
+	if (outposts_on) {
+		for (int i = 0; i < OUTPOST_PLATFORMS_COUNT; i++) {
+			if (city_cull_hit(g, OUTPOST_PLATFORMS[i], near_)) {
+				city_cull_add(k.outposts, i);
+			}
+		}
+		for (int i = 0; i < OUTPOST_RAILS_COUNT; i++) {
+			vec4 s = OUTPOST_RAILS[i];
+			if (city_cull_hit(g, vec4((s.xy + s.zw) * 0.5, abs(s.zw - s.xy) * 0.5 + h), near_)) {
+				city_cull_add(k.rails, CITY_RAILS_COUNT + i);
+			}
+		}
+		for (int i = 0; i < OUTPOST_TOWERS_COUNT; i++) {
+			vec4 t = OUTPOST_TOWERS[i];
+			if (city_cull_hit(g, vec4(t.xy, t.zw * max(city_tower_shadow_width, 1.0)), tower)) {
+				city_cull_add(k.towers, CITY_TOWERS_COUNT + i);
+			}
+		}
+	}
+	return k;
+}
+
+// Index of the platform under grid point g, or -1. Where platforms overlap (the generator's stacked
+// edges) the smallest is on top, so the stack reads one way instead of whichever comes first.
+int city_platform(vec2 g, CityCull k) {
+	int best = -1;
+	float best_area = 1e9;
+	for (int w = 0; w < 2; w++) {
+		for (uint m = k.plats[w]; m != 0u; m &= m - 1u) {
+			int i = w * 32 + int(findLSB(m));
+			vec4 r = CITY_PLATFORMS[i];
+			if (city_in_rect(g, r) && r.z * r.w < best_area) {
+				best = i;
+				best_area = r.z * r.w;
+			}
+		}
+	}
+	return best;
+}
+
+// Is platform q stacked on platform p (smaller, so on top where they overlap)?
+bool city_stacked_on(int q, int p) {
+	vec4 a = CITY_PLATFORMS[q];
+	vec4 b = CITY_PLATFORMS[p];
+	return q >= 0 && q != p && a.z * a.w < b.z * b.w;
 }
 
 bool city_top(vec2 g) {
@@ -433,19 +562,13 @@ bool city_top(vec2 g) {
 	return false;
 }
 
-bool city_rail(vec2 g) {
+// The mega city's rails and the outposts' (outposts off: the cull leaves theirs out).
+bool city_rail(vec2 g, CityCull k) {
 	float h = city_rail_deg * 0.5;
-	for (int i = 0; i < CITY_RAILS_COUNT; i++) {
-		vec4 s = CITY_RAILS[i];
-		vec2 lo = min(s.xy, s.zw) - h;
-		vec2 hi = max(s.xy, s.zw) + h;
-		if (all(greaterThanEqual(g, lo)) && all(lessThanEqual(g, hi))) {
-			return true;
-		}
-	}
-	if (outposts_on) {
-		for (int i = 0; i < OUTPOST_RAILS_COUNT; i++) {
-			vec4 s = OUTPOST_RAILS[i];
+	for (int w = 0; w < 3; w++) {
+		for (uint m = k.rails[w]; m != 0u; m &= m - 1u) {
+			int i = w * 32 + int(findLSB(m));
+			vec4 s = i < CITY_RAILS_COUNT ? CITY_RAILS[i] : OUTPOST_RAILS[i - CITY_RAILS_COUNT];
 			vec2 lo = min(s.xy, s.zw) - h;
 			vec2 hi = max(s.xy, s.zw) + h;
 			if (all(greaterThanEqual(g, lo)) && all(lessThanEqual(g, hi))) {
@@ -456,9 +579,11 @@ bool city_rail(vec2 g) {
 	return false;
 }
 
-bool city_tower(vec2 g) {
-	for (int i = 0; i < CITY_TOWERS_COUNT; i++) {
-		if (city_in_rect(g, CITY_TOWERS[i])) {
+// The mega city's towers only (outpost_tower has the outposts').
+bool city_tower(vec2 g, CityCull k) {
+	for (uint m = k.towers.x; m != 0u; m &= m - 1u) {
+		int i = int(findLSB(m));
+		if (i < CITY_TOWERS_COUNT && city_in_rect(g, CITY_TOWERS[i])) {
 			return true;
 		}
 	}
@@ -473,19 +598,14 @@ bool city_tower_shades(vec4 t, vec2 g, vec2 d, float len2) {
 
 // Is grid point g in a tower's long shadow (the mega city's or an outpost's)? `sun` is the grid point
 // city_tower_shadow along the surface toward the relief light: a tower between the two shades g.
-bool city_tower_shade(vec2 g, vec2 sun) {
+bool city_tower_shade(vec2 g, vec2 sun, CityCull k) {
 	vec2 d = sun - g;
 	float len2 = max(dot(d, d), 1e-8);
-	for (int i = 0; i < CITY_TOWERS_COUNT; i++) {
-		if (city_tower_shades(CITY_TOWERS[i], g, d, len2)) {
+	for (uint m = k.towers.x; m != 0u; m &= m - 1u) {
+		int i = int(findLSB(m));
+		vec4 t = i < CITY_TOWERS_COUNT ? CITY_TOWERS[i] : OUTPOST_TOWERS[i - CITY_TOWERS_COUNT];
+		if (city_tower_shades(t, g, d, len2)) {
 			return true;
-		}
-	}
-	if (outposts_on) {
-		for (int i = 0; i < OUTPOST_TOWERS_COUNT; i++) {
-			if (city_tower_shades(OUTPOST_TOWERS[i], g, d, len2)) {
-				return true;
-			}
 		}
 	}
 	return false;
@@ -590,13 +710,13 @@ vec3 city_roof(vec2 g, vec4 r, vec3 base) {
 }
 
 // Unfinished outposts (revision 5). Index of the outpost platform under grid point g, or -1.
-int outpost_at(vec2 g) {
-	if (!outposts_on) {
-		return -1;
-	}
-	for (int i = 0; i < OUTPOST_PLATFORMS_COUNT; i++) {
-		if (city_in_rect(g, OUTPOST_PLATFORMS[i])) {
-			return i;
+int outpost_at(vec2 g, CityCull k) {
+	for (int w = 0; w < 3; w++) {
+		for (uint m = k.outposts[w]; m != 0u; m &= m - 1u) {
+			int i = w * 32 + int(findLSB(m));
+			if (city_in_rect(g, OUTPOST_PLATFORMS[i])) {
+				return i;
+			}
 		}
 	}
 	return -1;
@@ -633,14 +753,15 @@ bool outpost_girder_at(vec2 g, int i) {
 	return any(lessThan(f, vec2(outpost_girder))) || any(greaterThan(abs(g - r.xy), r.zw - w));
 }
 
-bool outpost_solid(vec2 g) {
-	int i = outpost_at(g);
+bool outpost_solid(vec2 g, CityCull k) {
+	int i = outpost_at(g, k);
 	return i >= 0 && (outpost_stage(g, i) < 2 || outpost_girder_at(g, i));
 }
 
-bool outpost_tower(vec2 g) {
-	for (int i = 0; i < OUTPOST_TOWERS_COUNT; i++) {
-		if (city_in_rect(g, OUTPOST_TOWERS[i])) {
+bool outpost_tower(vec2 g, CityCull k) {
+	for (uint m = k.towers.x; m != 0u; m &= m - 1u) {
+		int i = int(findLSB(m)) - CITY_TOWERS_COUNT;
+		if (i >= 0 && city_in_rect(g, OUTPOST_TOWERS[i])) {
 			return true;
 		}
 	}
@@ -648,9 +769,9 @@ bool outpost_tower(vec2 g) {
 }
 
 // An outpost's colour at grid point g; false off it or in an open frame cell (snow shows through).
-bool outpost_surface(vec2 g, vec3 e, vec3 toward, out vec3 col) {
+bool outpost_surface(vec2 g, vec3 e, vec3 toward, CityCull k, out vec3 col) {
 	col = vec3(0.0);
-	int i = outpost_at(g);
+	int i = outpost_at(g, k);
 	if (i < 0) {
 		return false;
 	}
@@ -664,7 +785,7 @@ bool outpost_surface(vec2 g, vec3 e, vec3 toward, out vec3 col) {
 		}
 		col = base * (1.0 - outpost_girder_dark);
 	} else {
-		if (outpost_tower(g)) {
+		if (outpost_tower(g, k)) {
 			col = city_tower_color;
 			return true;
 		}
@@ -684,7 +805,7 @@ bool outpost_surface(vec2 g, vec3 e, vec3 toward, out vec3 col) {
 			col = outpost_drift_color;
 		}
 	}
-	if (city_tower_shade(g, city_at_grid(normalize(e + toward * city_tower_shadow)))) {
+	if (city_tower_shade(g, city_at_grid(normalize(e + toward * city_tower_shadow)), k)) {
 		col *= city_shadow_tone;
 	}
 	return true;
@@ -692,24 +813,24 @@ bool outpost_surface(vec2 g, vec3 e, vec3 toward, out vec3 col) {
 
 // The city's colour at Earth direction `e`, with `found` false off the city. `toward` is the unit
 // tangent toward the relief light (earth_toward). Rails count as city but take no lip.
-vec3 city_surface(vec3 e, vec3 toward, out bool found) {
+vec3 city_surface(vec3 e, vec3 toward, CityCull k, out bool found) {
 	found = false;
 	if (!city_on) {
 		return vec3(0.0);
 	}
 	vec2 g = city_at_grid(e);
-	int p = city_platform(g);
+	int p = city_platform(g, k);
 	if (p < 0) {
 		vec3 oc;
-		if (outpost_surface(g, e, toward, oc)) {
+		if (outpost_surface(g, e, toward, k, oc)) {
 			found = true;
 			return oc;
 		}
-		found = city_rail(g);
+		found = city_rail(g, k);
 		return city_rail_color;
 	}
 	found = true;
-	if (city_tower(g)) {
+	if (city_tower(g, k)) {
 		return city_tower_color;
 	}
 	vec2 back = city_at_grid(normalize(e - toward * city_lip_width));
@@ -721,29 +842,67 @@ vec3 city_surface(vec3 e, vec3 toward, out bool found) {
 		}
 		col = city_roof(g, CITY_PLATFORMS[p], city_color * (1.0 + city_top_lift));
 	} else {
-		if (city_platform(back) < 0) {
+		// The lip on the platform's own edge, also where it is stacked on a bigger one.
+		if (!city_in_rect(back, CITY_PLATFORMS[p])) {
 			return city_lip_color;
 		}
 		float pick = floor(space_hash(vec3(CITY_PLATFORMS[p].xy * 7.13, 2.9)) * 3.0) - 1.0;
 		col = city_roof(g, CITY_PLATFORMS[p], city_color * (1.0 + pick * city_tile_shade));
-		// A raised block's short shadow on the platform under it.
-		if (city_top(city_at_grid(normalize(e + toward * city_top_shadow_offset)))) {
+		// A raised block's or a stacked platform's short shadow on the platform under it.
+		vec2 up = city_at_grid(normalize(e + toward * city_top_shadow_offset));
+		if (city_top(up) || city_stacked_on(city_platform(up, k), p)) {
 			col *= city_shadow_tone;
 		}
 	}
-	if (city_tower_shade(g, sun)) {
+	if (city_tower_shade(g, sun, k)) {
 		col *= city_shadow_tone;
 	}
 	return col;
 }
 
 // Does a platform or tower shade the ground at `e`? Shadows land away from the relief light.
-bool city_shadow_at(vec3 e, vec3 toward) {
+bool city_shadow_at(vec3 e, vec3 toward, CityCull k) {
 	if (!city_on) {
 		return false;
 	}
 	vec2 g = city_at_grid(e);
 	vec2 s = city_at_grid(normalize(e + toward * city_shadow_offset));
-	return city_platform(s) >= 0 || outpost_solid(s)
-			|| city_tower_shade(g, city_at_grid(normalize(e + toward * city_tower_shadow)));
+	return city_platform(s, k) >= 0 || outpost_solid(s, k)
+			|| city_tower_shade(g, city_at_grid(normalize(e + toward * city_tower_shadow)), k);
+}
+
+// The city over one pixel, supersampled: `dx` / `dy` are the pixel's step in Earth direction
+// (dFdx / dFdy of `e`, taken by the caller in uniform control flow). `col` is the mean colour of the
+// samples on the city, `cover` the share of samples on it, `shadow` the share of the rest that the
+// city shades.
+void city_pixel(vec3 e, vec3 dx, vec3 dy, vec3 toward, out vec3 col, out float cover, out float shadow) {
+	col = vec3(0.0);
+	cover = 0.0;
+	shadow = 0.0;
+	if (!city_on || !city_near(e)) {
+		return;
+	}
+	// Samples sit within 0.375 px of the centre on each axis.
+	CityCull k = city_cull(e, 0.375 * (length(dx) + length(dy)));
+	const vec2 RGSS[4] = vec2[](vec2(0.125, 0.375), vec2(-0.375, 0.125), vec2(0.375, -0.125), vec2(-0.125, -0.375));
+	int n = city_aa ? 4 : 1;
+	float off = 0.0;
+	for (int i = 0; i < n; i++) {
+		vec2 o = city_aa ? RGSS[i] : vec2(0.0);
+		vec3 es = normalize(e + dx * o.x + dy * o.y);
+		bool found;
+		vec3 c = city_surface(es, toward, k, found);
+		if (found) {
+			col += c;
+			cover += 1.0;
+		} else {
+			off += 1.0;
+			if (city_shadow_at(es, toward, k)) {
+				shadow += 1.0;
+			}
+		}
+	}
+	col /= max(cover, 1.0);
+	shadow /= max(off, 1.0);
+	cover /= float(n);
 }

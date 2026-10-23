@@ -1,5 +1,8 @@
 # pilot9 equip / holster animation
 
+> **Superseded 2026-10-22** by docs/specs/pilot9-staff-materialize.md: no back sling, the staff
+> materializes in his hand. Kept for history.
+
 2026-10-13. Grilled with the user the same day.
 
 Today `R` (`equip`) snaps the staff between the back socket and the hand in a single frame. This pass

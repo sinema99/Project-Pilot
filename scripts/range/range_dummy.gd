@@ -57,6 +57,8 @@ var _charge := -1.0
 var _wake_left := 0.0
 
 var _visual: Node3D = null
+## Holds the box's wobble on a hit in ANIME. Built in _build().
+var anime_hold: AnimeHold = null
 var _mat: StandardMaterial3D = null
 var _muzzle: Marker3D = null
 var _hitbox: Area3D = null
@@ -79,6 +81,11 @@ func _build() -> void:
 	_visual = Node3D.new()
 	_visual.name = &"Visual"
 	add_child(_visual)
+	# ANIME holds the wobble's first frame when it is hit. See docs/specs/anime-animation.md.
+	anime_hold = AnimeHold.new()
+	add_child(anime_hold)
+	anime_hold.setup()
+	anime_hold.inner = [_visual]
 	_mat = StandardMaterial3D.new()
 	_mat.emission_enabled = true
 	_mat.roughness = 0.9
@@ -174,6 +181,7 @@ func take_hit(amount: float, kind: StringName, point: Vector3) -> void:
 		return
 	_flash = 1.0
 	_recoil = 1.0
+	anime_hold.accent(&"hit", 1.0 if kind == &"reflect_perfect" else 0.0)
 	hit.emit(amount, kind, point)
 
 

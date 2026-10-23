@@ -250,7 +250,8 @@ func _drop(source: Node3D, offset: Vector3) -> void:
 		var copy: MeshInstance3D = copies[k]
 		copy.visible = is_instance_valid(mi) and mi.is_visible_in_tree() and mi.mesh != null
 		if copy.visible:
-			copy.mesh = mi.mesh
+			# A mesh rebuilt every frame (the poncho) hands over a copy that stays put.
+			copy.mesh = mi.frozen_mesh() if mi.has_method(&"frozen_mesh") else mi.mesh
 			copy.transform = to_base * mi.global_transform
 	ghost.visible = true
 	# Placed inside a physics tick with interpolation on: without this the ghost would lerp in

@@ -11,6 +11,8 @@
 [ext_resource type="Script" uid="uid://r83yk32inyj5" path="res://scripts/cutscene/cockpit_holo.gd" id="9_holo"]
 [ext_resource type="Script" uid="uid://b55ssie0ov6mr" path="res://scripts/cutscene/cockpit_reentry.gd" id="10_reentry"]
 [ext_resource type="Script" uid="uid://8mwyvsf68b4s" path="res://scripts/cutscene/seated_pose.gd" id="11_pose"]
+[ext_resource type="Script" path="res://scripts/rendering/depth_composite.gd" id="90_composite"]
+[ext_resource type="CompositorEffect" path="res://resources/cinema_post.tres" id="91_post"]
 
 [sub_resource type="Environment" id="Environment_cockpit"]
 background_mode = 1
@@ -18,6 +20,40 @@ background_color = Color(0.17, 0.17, 0.17, 1)
 ambient_light_source = 2
 ambient_light_color = Color(1, 0.45, 0.15, 1)
 ambient_light_energy = 0.3
+tonemap_mode = 0
+glow_enabled = true
+glow_levels/1 = 1.0
+glow_levels/2 = 1.0
+glow_levels/3 = 1.0
+glow_levels/4 = 0.6
+glow_levels/5 = 0.3
+glow_intensity = 0.5
+glow_strength = 1.0
+glow_blend_mode = 0
+glow_hdr_threshold = 1.0
+
+[sub_resource type="CompositorEffect" id="CompositorEffect_depth"]
+resource_local_to_scene = true
+script = ExtResource("90_composite")
+light_color = Color(1, 0.8, 0.55, 1)
+light_energy = 0.8
+light_radius = 0.25
+light_stretch = 1.0
+haze_amount = 0.0
+near_end = 2.4
+lit_start = 3.0
+near_value = 0.92
+dark_tint = Color(0.86, 0.88, 1, 1)
+dark_lift = Color(0.012, 0.014, 0.03, 1)
+flash_near_value = 0.92
+flash_start = 0.01
+wrap_near = 2.6
+wrap_far = 3.3
+wrap_strength = 1.2
+
+[sub_resource type="Compositor" id="Compositor_look"]
+resource_local_to_scene = true
+compositor_effects = Array[CompositorEffect]([SubResource("CompositorEffect_depth"), ExtResource("91_post")])
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_h4pee"]
 shading_mode = 0
@@ -110,6 +146,7 @@ script = ExtResource("1_shot")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1436368039]
 environment = SubResource("Environment_cockpit")
+compositor = SubResource("Compositor_look")
 
 [node name="Key" type="DirectionalLight3D" parent="." unique_id=1134329984]
 transform = Transform3D(0.640184, -0.549694, 0.536656, 0, 0.69857, 0.715542, -0.768221, -0.458079, 0.447214, 0, 3, 0)
@@ -179,8 +216,9 @@ derive_from_surfaces = true
 [node name="AnimationPlayer" type="AnimationPlayer" parent="." unique_id=680393293]
 libraries/ = SubResource("AnimationLibrary_shot")
 
-[node name="Reentry" type="Node" parent="." unique_id=1782312751 node_paths=PackedStringArray("animation_player", "seat", "pose", "camera", "holo", "fire", "drift_light")]
+[node name="Reentry" type="Node" parent="." unique_id=1782312751 node_paths=PackedStringArray("animation_player", "seat", "pose", "camera", "holo", "fire", "drift_light", "world_environment")]
 script = ExtResource("10_reentry")
+world_environment = NodePath("../WorldEnvironment")
 animation_player = NodePath("../AnimationPlayer")
 seat = NodePath("../Seat")
 pose = NodePath("../Seat/Pilot/Armature/GeneralSkeleton/SeatedPose")

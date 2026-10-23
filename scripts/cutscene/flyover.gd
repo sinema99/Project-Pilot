@@ -118,6 +118,17 @@ const SHIMMER_RINGS := 10
 @export_range(0.0, 1.0, 0.05) var flash_fog := 0.12
 @export var flash_color := Color(0.55, 0.9, 1.0)
 
+@export_group("Composite")
+## The key light (docs/specs/shots-composite.md row 6): a break in the cloud deck far ahead, by its
+## heading (degrees from the camera's level look direction, toward screen left) and elevation
+## (degrees; the camera looks down, so it sits just above the frame and bleeds in from the top).
+@export var light_heading_degrees := 0.0
+@export var light_elevation_degrees := -8.0
+## Height (m) the shafts fall from, and how much further along the light's heading their tops sit
+## than their feet, so they lean back toward the break.
+@export var shaft_top_height := 800.0
+@export var shaft_lean := 500.0
+
 @export_group("Hull rim")
 ## The ship's cool-teal fresnel rim (alpha = strength), and its strength at a full flash.
 @export var rim_color := Color(0.42, 0.66, 0.7, 0.3)
@@ -137,6 +148,16 @@ const SHIMMER_RINGS := 10
 @export var mist_top_wobble := 15.0
 @export var mist_drift := Vector2(0.0, -6.0)
 
+## Shaft cards from the break (docs/specs/shots-composite.md row 6): [heading offset (degrees from
+## light_heading_degrees, toward screen left), foot distance from the flight start (m), top width (m), foot width (m),
+## strength, phase].
+const SHAFTS := [
+	[-10.0, 1300.0, 60.0, 150.0, 0.7, 0.0],
+	[-1.0, 1600.0, 100.0, 220.0, 1.0, 1.7],
+	[7.0, 1350.0, 50.0, 120.0, 0.6, 3.1],
+	[15.0, 1750.0, 90.0, 200.0, 0.8, 4.4],
+]
+
 @onready var animation_player: AnimationPlayer = $AnimationPlayer
 @onready var camera: Camera3D = $Camera3D
 @onready var ship: Node3D = $Ship
@@ -145,6 +166,8 @@ const SHIMMER_RINGS := 10
 @onready var embers: FlyoverEmbers = $EngineEmbers
 @onready var city: FlyoverCity = $City
 @onready var flash_light: DirectionalLight3D = $FlashLight
+@onready var shafts: DescentShafts = $Shafts
+@onready var world_environment: WorldEnvironment = $WorldEnvironment
 
 var _done := false
 var _shimmers: Array[ShaderMaterial] = []
@@ -170,6 +193,7 @@ func _ready() -> void:
 	_collect_hull()
 	_build_mist()
 	flash_light.basis = Basis.looking_at(flash_direction)
+	shafts.build_cards(shaft_cards(), camera_at(shot_length() * 0.5).origin)
 	animation_player.animation_finished.connect(_on_animation_finished)
 	if autoplay:
 		restart()
@@ -201,7 +225,9 @@ func apply(t: float) -> void:
 	if _mist != null:
 		_mist.global_position = camera.global_position - camera.global_basis.z * MIST_SORT_DEPTH
 		_mist_material.set_shader_parameter(&"shot_time", t)
-	_apply_flash(flash_at(t))
+	var f := flash_at(t)
+	_apply_flash(f)
+	_apply_composite(t, f)
 	# From a full trail life before the shot: it opens with the trails already streaming.
 	trail.update_trail(t, t - trail.life, ship_at, func(_tau: float) -> float: return 0.0,
 			camera.global_position)
@@ -210,6 +236,44 @@ func apply(t: float) -> void:
 	_halo_material.set_shader_parameter(&"shot_time", t)
 	for m in _shimmers:
 		m.set_shader_parameter(&"shot_time", t)
+
+
+## Level (horizontal) world direction `offset_degrees` from the camera's first-frame look, toward
+## screen left.
+func level_direction(offset_degrees: float) -> Vector3:
+	var fwd := -camera_at(0.0).basis.z
+	fwd = Vector3(fwd.x, 0.0, fwd.z).normalized()
+	return fwd.rotated(Vector3.UP, deg_to_rad(offset_degrees))
+
+
+## The light's direction (world).
+func light_direction() -> Vector3:
+	var e := deg_to_rad(light_elevation_degrees)
+	return (level_direction(light_heading_degrees) * cos(e) + Vector3.UP * sin(e)).normalized()
+
+
+## The shaft cards in world space: feet on the ground along the light's heading from the flight start,
+## tops up at shaft_top_height and shaft_lean further on.
+func shaft_cards() -> Array:
+	var flight := flight_at(0.0)
+	var start := Vector3(flight.origin.x, 0.0, flight.origin.z)
+	var cards := []
+	for row: Array in SHAFTS:
+		var level := level_direction(light_heading_degrees + row[0])
+		var foot := start + level * float(row[1])
+		var top := foot + level * shaft_lean + Vector3.UP * shaft_top_height
+		cards.append([top, foot, row[2], row[3], row[4], row[5]])
+	return cards
+
+
+func _apply_composite(t: float, f: float) -> void:
+	shafts.apply(t, f)
+	var look := DepthComposite.find_in(world_environment)
+	if look == null:
+		return
+	# The break is effectively at infinity: placed off the camera, it holds still as the ship flies.
+	look.light_uv = DepthComposite.screen_uv(camera, camera.global_position + light_direction() * 10000.0)
+	look.flash = clampf(f, 0.0, 1.0)
 
 
 ## Lightning at shot time `t`, 0..1: the main double flicker, then the far one.

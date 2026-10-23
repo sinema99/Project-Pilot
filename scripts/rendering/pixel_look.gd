@@ -17,7 +17,8 @@ extends Node
 # It works on its parent's subtree (in trial.tscn, the whole scene), plus anything added anywhere
 # while PIXEL is on.
 #
-# QA key: I toggles LOOK, through Settings so the menu row agrees.
+# QA key: I cycles LOOK (CEL, PIXEL, RETRO), through Settings so the menu row agrees. RETRO is
+# RetroLook, a subclass of this node - see docs/specs/retro-look.md.
 
 const CEL_SHADER := preload("res://shaders/cel/cel-shader-base.gdshader")
 const PIXEL_SHADER := preload("res://shaders/pixel_look/pixel-look.gdshader")
@@ -147,6 +148,12 @@ func twin_of(cel: ShaderMaterial) -> ShaderMaterial:
 	return twin
 
 
+
+## The twin `node` gets for `cel`. PIXEL gives every node the same twin; RetroLook chooses per node
+## (cel or painted background).
+func twin_for(_node: GeometryInstance3D, cel: ShaderMaterial) -> ShaderMaterial:
+	return twin_of(cel)
+
 func _swap_geometry(node: GeometryInstance3D) -> int:
 	var count := 0
 	if _swapped_ids.has(node.get_instance_id()):
@@ -155,7 +162,7 @@ func _swap_geometry(node: GeometryInstance3D) -> int:
 		# A whole-node override hides every surface material, so it is the only slot that shows.
 		if is_cel(node.material_override):
 			_record(node, SLOT_OVERRIDE, node.material_override)
-			node.material_override = twin_of(node.material_override)
+			node.material_override = twin_for(node, node.material_override)
 			count += 1
 		return count
 	var mi := node as MeshInstance3D
@@ -166,7 +173,7 @@ func _swap_geometry(node: GeometryInstance3D) -> int:
 		var shown := override if override != null else mi.mesh.surface_get_material(i)
 		if is_cel(shown):
 			_record(mi, i, override)
-			mi.set_surface_override_material(i, twin_of(shown))
+			mi.set_surface_override_material(i, twin_for(mi, shown))
 			count += 1
 	return count
 
@@ -254,4 +261,5 @@ func _input(event: InputEvent) -> void:
 		return
 	var settings := get_node_or_null(^"/root/Settings")
 	if settings:
-		settings.set_value(&"look", "cel" if settings.look == "pixel" else "pixel")
+		var looks: Array = settings.values_of(&"look")
+		settings.set_value(&"look", looks[(looks.find(settings.look) + 1) % looks.size()])

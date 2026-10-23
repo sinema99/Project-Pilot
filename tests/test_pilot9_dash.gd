@@ -345,7 +345,8 @@ func test_afterimage_knobs_have_the_spec_defaults() -> void:
 	approx(body.afterimage_spacing, 1.6, 0.0001, "spacing drifted from the six-ghost 1.6 m")
 	eq(body.afterimage_max_count, 6, "max count drifted from the agreed six")
 	approx(body.dash_anim_speed, 2.5, 0.0001, "the sprint cycle's dash rate drifted")
-	approx(body.afterimage_clear_time, 0.35, 0.0001, "the tail-to-head clear drifted from 0.35 s")
+	approx(body.afterimage_clear_time, 1.0, 0.0001, "the tail-to-head clear drifted from 1.0 s")
+	approx(body.afterimage_fade_time, 0.3, 0.0001, "the per-ghost dissolve drifted from 0.3 s")
 	body.free()
 
 func test_crossings_land_on_every_multiple_of_the_spacing() -> void:

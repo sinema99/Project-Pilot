@@ -15,7 +15,8 @@
 [ext_resource type="Shader" path="res://shaders/space/bow_shock.gdshader" id="13_bow_shock"]
 [ext_resource type="Shader" path="res://shaders/space/glint_star.gdshader" id="14_glint_star"]
 [ext_resource type="Script" path="res://scripts/cutscene/intro_title_card.gd" id="15_title"]
-[ext_resource type="Script" path="res://scripts/rendering/cinema_post.gd" id="16_post"]
+[ext_resource type="CompositorEffect" path="res://resources/cinema_post.tres" id="16_post"]
+[ext_resource type="Script" path="res://scripts/rendering/depth_composite.gd" id="17_composite"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_sky"]
 shader = ExtResource("2_sky")
@@ -42,11 +43,24 @@ glow_strength = 1.0
 glow_blend_mode = 0
 glow_hdr_threshold = 0.75
 
-[sub_resource type="CompositorEffect" id="CompositorEffect_cinema"]
-script = ExtResource("16_post")
+[sub_resource type="CompositorEffect" id="CompositorEffect_depth"]
+resource_local_to_scene = true
+script = ExtResource("17_composite")
+light_color = Color(0.94, 0.97, 1, 1)
+light_radius = 0.12
+light_stretch = 0.6
+haze_amount = 0.0
+near_end = 150.0
+lit_start = 900.0
+near_value = 0.35
+flash_near_value = 0.35
+wrap_near = 2000.0
+wrap_far = 2800.0
+wrap_strength = 0.5
 
 [sub_resource type="Compositor" id="Compositor_cinema"]
-compositor_effects = Array[CompositorEffect]([SubResource("CompositorEffect_cinema")])
+resource_local_to_scene = true
+compositor_effects = Array[CompositorEffect]([SubResource("CompositorEffect_depth"), ExtResource("16_post")])
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_planet"]
 render_priority = 0

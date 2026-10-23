@@ -35,22 +35,38 @@ extends Node
 @export_range(0.0, 1.0) var torso_share := 0.25
 
 @export_group("Light")
-## Calm is the descent's pale daylight; the storm about 45% of it, cool slate.
+## Calm is a dim overcast; the storm darker again, cool slate.
 @export var calm_key := Color(0.9, 0.88, 0.96)
 @export var storm_key := Color(0.7, 0.75, 0.84)
-@export var calm_key_energy := 0.6
+@export var calm_key_energy := 0.4
 @export var storm_key_energy := 0.24
 @export var calm_fill := Color(0.9, 0.88, 0.96)
 @export var storm_fill := Color(0.68, 0.75, 0.8)
-@export var calm_fill_energy := 0.7
+@export var calm_fill_energy := 0.45
 @export var storm_fill_energy := 0.3
 ## The gusts pump the fill this much at full storm.
 @export var gust_flicker := 0.3
 @export var calm_ambient := Color(0.82, 0.8, 0.9)
 @export var storm_ambient := Color(0.55, 0.6, 0.68)
-@export var calm_ambient_energy := 0.5
+@export var calm_ambient_energy := 0.35
 @export var storm_ambient_energy := 0.22
 @export var lightning_energy := 2.2
+
+@export_group("Composite")
+## The composite look (docs/specs/shots-composite.md row 5): the light sits on the vanishing point
+## behind his head and the storm swallows it; the near tint heads for descent's slate-violet.
+@export var calm_light_energy := 0.15
+@export var storm_light_energy := 0.06
+@export var calm_light_radius := 0.15
+@export var storm_light_radius := 0.12
+@export var calm_wrap := 0.25
+@export var storm_wrap := 0.06
+@export var calm_tint := Color(0.92, 0.92, 1.0)
+@export var storm_tint := Color(0.72, 0.75, 0.92)
+@export_range(0.0, 1.0) var calm_near_value := 0.95
+@export_range(0.0, 1.0) var storm_near_value := 0.8
+## A full lightning flash adds this much wrap.
+@export var flash_wrap := 0.6
 
 const SHOT := &"shot"
 const SLOT_OFF := Color(0.03, 0.08, 0.1)
@@ -131,6 +147,28 @@ func apply(t: float) -> void:
 	for i in _slot_lamps.size():
 		if _slot_lamps[i] != null:
 			_slot_lamps[i].albedo_color = SLOT_LIT if beats.slot_lit(t, i) else SLOT_OFF
+	_update_composite(storm, fl)
+
+
+## The vanishing point, world: the snow's antipode of `ahead`, on the screen sphere.
+func vanishing_point() -> Vector3:
+	var r := snow.radius if snow != null else 4.05
+	var centre := snow.global_transform if snow != null else Transform3D()
+	return centre * (-beats.source_dir(time) * r)
+
+
+func _update_composite(storm: float, fl: float) -> void:
+	var look := DepthComposite.find_in(world_environment)
+	var camera := get_viewport().get_camera_3d() if is_inside_tree() else null
+	if look == null or camera == null:
+		return
+	look.light_uv = DepthComposite.screen_uv(camera, vanishing_point())
+	look.light_energy = lerpf(calm_light_energy, storm_light_energy, storm)
+	look.light_radius = lerpf(calm_light_radius, storm_light_radius, storm)
+	look.wrap_strength = lerpf(calm_wrap, storm_wrap, storm) + flash_wrap * fl
+	look.dark_tint = calm_tint.lerp(storm_tint, storm)
+	look.near_value = lerpf(calm_near_value, storm_near_value, storm)
+	look.flash = clampf(fl, 0.0, 1.0)
 
 
 # The route panel: hidden until it pops, the taps lighting its buttons, folding away.

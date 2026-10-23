@@ -25,6 +25,7 @@
 [ext_resource type="PackedScene" uid="uid://ces1m5kofa4ig" path="res://assets/pilot9_decimate.glb" id="32_decimate"]
 [ext_resource type="Script" uid="uid://ctoduvbsbv7t" path="res://scripts/pilot_switcher.gd" id="33_switcher"]
 [ext_resource type="PackedScene" uid="uid://qbdbdseixki0" path="res://assets/vanguard_1.glb" id="34_vanguard"]
+[ext_resource type="Script" path="res://scripts/rendering/retro_look.gd" id="35_retrolook"]
 
 [sub_resource type="Sky" id="Sky_cel"]
 sky_material = ExtResource("3_sky")
@@ -84,6 +85,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.08662796, 0, 0.036067963)
 
 [node name="Pilot9" parent="." unique_id=530713254 instance=ExtResource("1_pilot")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.678, 0)
+poncho_enabled = true
 
 [node name="Pilot9Decimate" parent="." unique_id=530713255 instance=ExtResource("1_pilot")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.5, 0.678, 0)
@@ -316,3 +318,7 @@ script = ExtResource("30_pixelworld")
 
 [node name="PixelLook" type="Node" parent="." unique_id=562500381]
 script = ExtResource("31_pixellook")
+
+[node name="RetroLook" type="Node" parent="." unique_id=1730582214]
+script = ExtResource("35_retrolook")
+floor_paths = Array[NodePath]([NodePath("../TrainingV"), NodePath("../JumpGrid/Slab"), NodePath("../JumpGrid/Rails/Floor"), NodePath("../JumpGrid/Vaults/Floor"), NodePath("../FiringRange/Slab")])

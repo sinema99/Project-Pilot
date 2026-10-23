@@ -99,6 +99,20 @@ extends Node
 ## ...and clear of the seat, which fills this NDC x range of the shot.
 @export var seat_ndc_x := Vector2(-0.5, 0.55)
 
+@export_group("Composite")
+## The composite look (docs/specs/shots-composite.md row 4): the light sits where the fire enters the
+## frame (its source on the screen sphere, kept just inside the frame edge), dims on the jolts and
+## grows as the fire swallows the wake on the push.
+@export var world_environment: WorldEnvironment
+@export var light_energy := 0.8
+@export var light_radius := 0.25
+## The light's radius at full swallow, times light_radius.
+@export var swallow_grow := 2.2
+## How far a full jolt flash drops the light and the wrap (0..1).
+@export_range(0.0, 1.0) var jolt_dim := 0.6
+## The light's centre stays this far outside the frame at most (UV).
+@export var edge_margin := 0.04
+
 @export_group("Drift light")
 @export var drift_center := Vector3(-0.5, 0.9, 1.3)
 @export var drift_energy := 0.7
@@ -124,6 +138,7 @@ var sparks: GPUParticles3D
 var startle: Label3D
 
 var _seat_rest := Transform3D()
+var _wrap_rest := 1.2
 var _camera_rest := Transform3D()
 var _holo_rest := Transform3D()
 var _lamps: Dictionary[StringName, StandardMaterial3D] = {}
@@ -153,6 +168,9 @@ func _ready() -> void:
 	_build_sparks()
 	_build_startle()
 	_build_drops()
+	var look := DepthComposite.find_in(world_environment)
+	if look != null:
+		_wrap_rest = look.wrap_strength
 	apply(0.0)
 
 
@@ -216,6 +234,26 @@ func apply(t: float) -> void:
 		var flicker := ReentryFire.flicker_at(t, 0.15)
 		drift_light.light_energy = drift_energy * flicker * (1.0 + shake.flare(t) * 0.8)
 	_light_lamps(t, fl)
+	_update_composite(t, fl)
+
+
+## Where the fire comes from as a screen UV, clamped to just past the frame edge.
+func fire_entry_uv() -> Vector2:
+	var src := fire.global_transform * (fire.source_direction.normalized() * fire.radius)
+	var uv := DepthComposite.screen_uv(camera, src)
+	var lo := -edge_margin
+	return Vector2(clampf(uv.x, lo, 1.0 - lo), clampf(uv.y, lo, 1.0 - lo))
+
+
+func _update_composite(t: float, fl: float) -> void:
+	var look := DepthComposite.find_in(world_environment)
+	if look == null or fire == null or camera == null:
+		return
+	var dim := 1.0 - jolt_dim * fl
+	look.light_uv = fire_entry_uv()
+	look.light_radius = light_radius * lerpf(1.0, swallow_grow, shake.swallow(t))
+	look.light_energy = light_energy * dim
+	look.wrap_strength = _wrap_rest * dim
 
 
 func _tune() -> void:

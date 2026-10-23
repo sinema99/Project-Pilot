@@ -17,9 +17,10 @@ func _tree() -> SceneTree:
 
 # --- settings ------------------------------------------------------------------
 
-func test_look_defaults_to_cel() -> void:
-	eq(SETTINGS.values_of(&"look"), ["cel", "pixel"], "CEL / PIXEL")
-	eq(SETTINGS.defaults()[&"look"], "cel", "the game boots in today's look")
+func test_look_rows() -> void:
+	eq(SETTINGS.values_of(&"look"), ["cel", "pixel", "retro"], "CEL / PIXEL / RETRO")
+	# 2026-10-21: RETRO is the default while the user judges it (docs/specs/retro-look.md).
+	eq(SETTINGS.defaults()[&"look"], "retro", "the game boots in the RETRO look")
 
 func test_dither_row_is_gone() -> void:
 	check(not SETTINGS.keys().has(&"dither"), "no DITHER row - the reference has no pattern")

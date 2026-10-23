@@ -27,11 +27,12 @@ uniform float gust : hint_range(0.0, 1.0) = 0.0;
 // 0..1 lightning.
 uniform float flash : hint_range(0.0, 1.0) = 0.0;
 
-// Calm sky, top to the horizon: the descent's pale lavender.
-uniform vec3 calm_top : source_color = vec3(0.82, 0.8, 0.89);
-uniform vec3 calm_high : source_color = vec3(0.85, 0.82, 0.9);
-uniform vec3 calm_low : source_color = vec3(0.87, 0.85, 0.92);
-uniform vec3 calm_deck : source_color = vec3(0.9, 0.9, 0.94);
+// Calm sky, top to the horizon: a dim overcast grey-violet (was pale lavender ~0.85; user 2026-10-21:
+// "relatively dark and stormy").
+uniform vec3 calm_top : source_color = vec3(0.58, 0.57, 0.64);
+uniform vec3 calm_high : source_color = vec3(0.6, 0.59, 0.65);
+uniform vec3 calm_low : source_color = vec3(0.62, 0.61, 0.67);
+uniform vec3 calm_deck : source_color = vec3(0.65, 0.65, 0.69);
 // Storm sky, the same four bands: dark slate-violet overhead, lighter grey-teal low.
 uniform vec3 storm_top : source_color = vec3(0.36, 0.37, 0.45);
 uniform vec3 storm_high : source_color = vec3(0.44, 0.46, 0.53);

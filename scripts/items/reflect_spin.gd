@@ -459,8 +459,7 @@ func _release_item() -> void:
 	if _holder != null and _holder.item_instance != null:
 		_holder.item_instance.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_INHERIT
 	if _holder != null and _holder.item_instance != null and _holder.held_item != null:
-		_holder.item_instance.transform = _holder.held_item.hand_offset if _holder.is_drawn \
-			else _holder.held_item.back_offset
+		_holder.item_instance.transform = _holder.held_item.hand_offset
 
 
 # --- per frame -------------------------------------------------------------------------------

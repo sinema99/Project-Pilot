@@ -6,8 +6,7 @@
 [resource]
 script = ExtResource("1_item")
 scene = ExtResource("2_scene")
-hand_offset = Transform3D(0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0.01, 0)
-back_offset = Transform3D(0.766, 0.643, 0, -0.633, 0.755, 0.174, 0.112, -0.133, 0.985, 0, -0.1, -0.2)
+hand_offset = Transform3D(0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0.08, 0.03)
 hold_rotations = Dictionary[StringName, Vector3]({
 &"RightHand": Vector3(0, -81, 16.7),
 &"RightLowerArm": Vector3(27.7, 90, 0),

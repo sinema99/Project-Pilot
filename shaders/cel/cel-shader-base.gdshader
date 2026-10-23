@@ -90,6 +90,23 @@ varying vec2 base_uv;
 // needed, same patch size everywhere).
 group_uniforms PaintedShading;
 uniform int paint_anchor: hint_enum("UV", "World") = 0;
+// RETRO's flat fills (docs/specs/retro-look.md): no painted patches and no scatter chips on this
+// material, whatever the PAINTED SHADING / CEL SCATTER globals say. Only RetroLook's twins set it.
+uniform bool flat_fill = false;
+group_uniforms;
+
+// RETRO's painted background (docs/specs/retro-look-pass-2.md). Neutral by default; only
+// RetroLook's background twins set them.
+group_uniforms RetroBackground;
+// rgb multiplies the fill (darker, cooler); alpha is the strength of the world-space brush texture.
+uniform vec4 bg_paint: source_color = vec4(1.0, 1.0, 1.0, 0.0);
+// On up-facing fragments: the fill moves toward floor_color by its alpha, and panel lines of
+// floor_panel's colour (strength = alpha) are painted on a floor_panel_size world grid.
+uniform vec4 floor_color: source_color = vec4(0.55, 0.62, 0.66, 0.0);
+uniform vec4 floor_panel: source_color = vec4(0.2, 0.24, 0.3, 0.0);
+uniform float floor_panel_size = 4.0;
+// Visible panel line width in metres.
+uniform float floor_panel_width = 0.035;
 group_uniforms;
 // Set per mesh by apply_stylized.gd, so two meshes with the same unwrap do not wear the same
 // patches. World-anchored materials ignore it.
@@ -173,18 +190,21 @@ void fragment() {
 
 ALBEDO = color.rgb * texture(base_texture, base_uv).rgb * texture(tile_texture, paint_uv).rgb;
 
-	float paint_n;
-	if (paint_anchor == 1) {
+	float paint_n = 0.5;
+	if (flat_fill) {
+	} else if (paint_anchor == 1) {
 		paint_n = paint_noise_world(paint_world_pos, paint_world_normal);
 	} else {
 		vec2 seed_offset = vec2(paint_seed * 7.13, paint_seed * 3.71);
 		paint_n = paint_noise(paint_uv / max(paint_uv_size, 1e-4) + seed_offset);
 	}
-	ALBEDO = paint_apply(ALBEDO, paint_level(paint_n));
+	if (!flat_fill) {
+		ALBEDO = paint_apply(ALBEDO, paint_level(paint_n));
+	}
 
 	// Chipped band edges - see includes/scatter.gdshaderinc. Same UV / World split as the paint.
 	scatter_shift = 0.0;
-	if (scatter_strength > 0.0) {
+	if (scatter_strength > 0.0 && !flat_fill) {
 		float scatter_c;
 		if (paint_anchor == 1) {
 			scatter_c = scatter_stroke_world(paint_world_pos / max(scatter_world_size, 1e-3),
@@ -194,6 +214,36 @@ ALBEDO = color.rgb * texture(base_texture, base_uv).rgb * texture(tile_texture, 
 			scatter_c = scatter_stroke(paint_uv / max(scatter_uv_size, 1e-4) + scatter_seed);
 		}
 		scatter_shift = scatter_shift_at(scatter_c);
+	}
+
+	// RETRO background: floor slate + panel lines, then the cooler darker fill and brush grain.
+	// Derivatives outside the branches, so they stay defined.
+	vec2 panel_g = paint_world_pos.xz / max(floor_panel_size, 1e-3);
+	vec2 panel_fw = fwidth(panel_g) * floor_panel_size;
+	if (floor_color.a > 0.0 || floor_panel.a > 0.0) {
+		float up = smoothstep(0.85, 0.95, paint_world_normal.y);
+		ALBEDO = mix(ALBEDO, floor_color.rgb, floor_color.a * up);
+		// Distance to the nearest grid line in metres, per axis, anti-aliased on the pixel's
+		// footprint. The line fades out once a pixel covers more than ~3 line widths: past that it
+		// would shimmer into moire.
+		vec2 d = abs(fract(panel_g + 0.5) - 0.5) * floor_panel_size;
+		vec2 fw = max(panel_fw, vec2(1e-5));
+		vec2 on = 1.0 - smoothstep(vec2(floor_panel_width * 0.5), vec2(floor_panel_width * 0.5) + fw, d);
+		vec2 fade = 1.0 - smoothstep(vec2(floor_panel_width), vec2(floor_panel_width * 3.0), fw);
+		float line = max(on.x * fade.x, on.y * fade.y);
+		ALBEDO = mix(ALBEDO, floor_panel.rgb, line * floor_panel.a * up);
+	}
+	ALBEDO *= bg_paint.rgb;
+	if (bg_paint.a > 0.0) {
+		// Brush texture: value noise stretched along one axis of the dominant world plane, so it
+		// reads as strokes rather than mottling.
+		vec3 an = abs(paint_world_normal);
+		vec2 plane = an.y > max(an.x, an.z) ? paint_world_pos.xz
+				: (an.x > an.z ? paint_world_pos.zy : paint_world_pos.xy);
+		float stroke = paint_cloud(vec2(plane.x * 0.35, plane.y * 2.2));
+		float fine = paint_value_noise(vec2(plane.x * 3.1, plane.y * 9.0) + vec2(41.7, 13.3));
+		float grain = 0.75 * stroke + 0.25 * fine - 0.5;
+		ALBEDO *= 1.0 + grain * 2.0 * bg_paint.a;
 	}
 }
 

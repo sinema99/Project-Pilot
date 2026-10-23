@@ -12,6 +12,9 @@
 [ext_resource type="Shader" path="res://shaders/cutscene/flyover_sky.gdshader" id="11_sky"]
 [ext_resource type="Script" path="res://scripts/cutscene/flyover_embers.gd" id="12_embers"]
 [ext_resource type="Shader" path="res://shaders/cutscene/engine_embers.gdshader" id="13_embers_shader"]
+[ext_resource type="Script" path="res://scripts/rendering/depth_composite.gd" id="90_composite"]
+[ext_resource type="CompositorEffect" path="res://resources/cinema_post.tres" id="91_post"]
+[ext_resource type="Script" path="res://scripts/cutscene/descent_shafts.gd" id="92_shafts"]
 
 [sub_resource type="ShaderMaterial" id="Sky_overcast"]
 shader = ExtResource("11_sky")
@@ -35,6 +38,32 @@ glow_intensity = 0.5
 glow_strength = 1.0
 glow_blend_mode = 0
 glow_hdr_threshold = 1.0
+
+[sub_resource type="CompositorEffect" id="CompositorEffect_depth"]
+resource_local_to_scene = true
+script = ExtResource("90_composite")
+light_energy = 0.45
+light_radius = 0.3
+light_stretch = 1.6
+haze_start = 700.0
+haze_end = 2600.0
+haze_amount = 0.35
+haze_radius = 0.8
+near_end = 30.0
+lit_start = 120.0
+near_value = 0.62
+dark_tint = Color(0.85, 0.85, 0.95, 1)
+dark_keep = 0.8
+sky_distance = 1200.0
+flash_near_value = 0.75
+flash_start = 0.01
+wrap_near = 900.0
+wrap_far = 1800.0
+wrap_strength = 0.5
+
+[sub_resource type="Compositor" id="Compositor_look"]
+resource_local_to_scene = true
+compositor_effects = Array[CompositorEffect]([SubResource("CompositorEffect_depth"), ExtResource("91_post")])
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_trail"]
 render_priority = 2
@@ -66,6 +95,10 @@ script = ExtResource("1_shot")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_flyover")
+compositor = SubResource("Compositor_look")
+
+[node name="Shafts" type="MeshInstance3D" parent="."]
+script = ExtResource("92_shafts")
 
 [node name="Sun" type="DirectionalLight3D" parent="."]
 transform = Transform3D(0.033844, -0.64242, 0.765606, 0, 0.766045, 0.642788, -0.999428, -0.021754, 0.025927, 0, 400, 0)

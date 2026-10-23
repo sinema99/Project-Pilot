@@ -21,8 +21,9 @@ const SettingsScript := preload("res://scripts/settings.gd")
 # exactly window / block. Shown dimmed with OVERRIDDEN_TEXT. See docs/specs/pixel-world.md.
 const PIXEL_OVERRIDDEN_KEYS: Array[StringName] = [&"msaa", &"render_scale"]
 const OVERRIDDEN_TEXT := "PIXEL FILTER ON"
-# PAINTED SHADING only exists in CEL (the clumps replace it). See docs/specs/pixel-look.md.
-const CEL_ONLY_TEXT := "PIXEL LOOK"
+# PAINTED SHADING only exists in CEL (PIXEL's clumps replace it, RETRO's fills are flat). The row
+# shows the look that overrides it. See docs/specs/pixel-look.md and docs/specs/retro-look.md.
+const CEL_ONLY_TEXT := "%s LOOK"
 
 # Settings keys with no row of their own. The PIXEL look's block size is shown and stepped on the
 # PIXEL FILTER row while PIXEL is on - see _bound_key().
@@ -202,7 +203,7 @@ func _refresh_row(key: StringName) -> void:
 				SettingsScript.effective_pixel_size(Settings.pixel_size, Settings.pixel_look_size, Settings.look) > 0,
 				OVERRIDDEN_TEXT)
 		elif key == &"painted_shading" or key == &"cel_scatter":
-			_sync_maybe_disabled(control, key, label, value, Settings.look == "pixel", CEL_ONLY_TEXT)
+			_sync_maybe_disabled(control, key, label, value, Settings.look != "cel", CEL_ONLY_TEXT % Settings.look.to_upper())
 		else:
 			control.sync(label, value, _can_step(key, -1), _can_step(key, 1))
 		return
@@ -239,7 +240,7 @@ func _can_step(key: StringName, direction: int) -> bool:
 
 func _format_value(key: StringName, value: Variant) -> String:
 	match key:
-		&"window_mode", &"vsync", &"shadow_quality", &"camera_motion", &"hologram_menu", &"movement_effects", &"painted_shading", &"cel_scatter", &"look":
+		&"window_mode", &"vsync", &"shadow_quality", &"camera_motion", &"hologram_menu", &"movement_effects", &"poncho", &"painted_shading", &"cel_scatter", &"look":
 			return String(value).to_upper()
 		&"msaa":
 			return "OFF" if value == "off" else String(value).to_upper()

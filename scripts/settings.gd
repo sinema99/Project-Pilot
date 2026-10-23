@@ -62,9 +62,13 @@ const DEFS := [
 	# The PIXEL look's own block size: no OFF, 4X by default. It has no row of its own - the PIXEL
 	# FILTER row edits whichever look is on (pixel_filter_key()). See docs/specs/pixel-look.md.
 	[&"pixel_look_size", "PIXEL FILTER", "graphics", [2, 3, 4, 6], 2],
-	# CEL (today's ink look) or PIXEL (stepped soft light, surface clumps, warm haze, no ink).
-	# See docs/specs/pixel-look.md.
-	[&"look", "LOOK", "graphics", ["cel", "pixel"], 0],
+	# CEL (today's ink look), PIXEL (stepped soft light, surface clumps, warm haze, no ink) or
+	# RETRO (90s anime cel: coloured lines, flat fills, video softness). RETRO is the default
+	# while it is being judged. See docs/specs/pixel-look.md and docs/specs/retro-look.md.
+	[&"look", "LOOK", "graphics", ["cel", "pixel", "retro"], 2],
+	# SMOOTH, or ANIME: characters' poses held and refreshed 12 times a second while the game stays
+	# smooth. SMOOTH by default; U flips it in play. See docs/specs/anime-animation.md.
+	[&"anime_animation", "ANIMATION", "graphics", ["smooth", "anime"], 0],
 	[&"colour_depth", "COLOUR DEPTH", "graphics", [0, 32, 16, 8], 0],
 	# Hand-painted patches inside each cel tone - see docs/specs/painted-shading.md.
 	[&"painted_shading", "PAINTED SHADING", "graphics", ["off", "on"], 1],
@@ -89,6 +93,8 @@ const DEFS := [
 	[&"hologram_menu", "HOLOGRAM MENU", "controls", ["off", "on"], 0],
 	# pilot9's sparks, dust and air - see docs/specs/pilot9-movement-vfx.md.
 	[&"movement_effects", "MOVEMENT EFFECTS", "controls", ["off", "on"], 1],
+	# pilot9's wool poncho - see docs/specs/pilot9-poncho.md.
+	[&"poncho", "PONCHO", "controls", ["off", "on"], 1],
 ]
 
 ## The size the UI is laid out at. With stretch aspect `keep` this is also the shape the 3D is
@@ -253,6 +259,8 @@ var colour_depth: int:
 	get: return _values.get(&"colour_depth", 0)
 var look: String:
 	get: return _values.get(&"look", "cel")
+var anime_animation: bool:
+	get: return _values.get(&"anime_animation", "smooth") == "anime"
 var painted_shading: bool:
 	get: return _values.get(&"painted_shading", "on") == "on"
 var cel_scatter: bool:
@@ -269,6 +277,8 @@ var hologram_menu: bool:
 	get: return _values.get(&"hologram_menu", "off") == "on"
 var movement_effects: bool:
 	get: return _values.get(&"movement_effects", "on") == "on"
+var poncho: bool:
+	get: return _values.get(&"poncho", "on") == "on"
 
 func _ready() -> void:
 	_save_timer = Timer.new()
@@ -398,10 +408,18 @@ func _apply(key: StringName, value: Variant) -> void:
 			ScreenPixel.apply_settings(block if look == "pixel" else 0,
 				colour_levels(look, colour_depth))
 			if key == &"look":
+				# The look being left lets go of its materials before the new one swaps them.
 				var pixel_look := get_tree().get_first_node_in_group(&"pixel_look")
-				if pixel_look:
-					pixel_look.apply_look(value == "pixel")
-		&"mouse_sensitivity", &"controller_sensitivity", &"fov", &"camera_motion", &"hologram_menu", &"movement_effects":
+				var retro_look := get_tree().get_first_node_in_group(&"retro_look")
+				if pixel_look and value != "pixel":
+					pixel_look.apply_look(false)
+				if retro_look and value != "retro":
+					retro_look.apply_look(false)
+				if pixel_look and value == "pixel":
+					pixel_look.apply_look(true)
+				if retro_look and value == "retro":
+					retro_look.apply_look(true)
+		&"mouse_sensitivity", &"controller_sensitivity", &"fov", &"camera_motion", &"hologram_menu", &"movement_effects", &"poncho", &"anime_animation":
 			# No global to push to, because every consumer reads these off this
 			# autoload at the point of use rather than caching them: both
 			# _unhandled_input() handlers and pilot9's

@@ -70,6 +70,8 @@ global uniform vec4 outline_color;
 global uniform float pixel_block;
 // The Ichi storm fogs the ink itself: this pass draws after the fog quad.
 #include "res://shaders/storm/storm_fog.gdshaderinc"
+// RETRO colours the ink from the fill under it - see docs/specs/retro-look.md.
+#include "res://shaders/cel/includes/ink_fill.gdshaderinc"
 
 /// Minimum dihedral angle that earns a line. Below ~20 the blockout's own tessellation
 /// starts showing through.
@@ -243,7 +245,8 @@ void fragment() {
 	// crease running parallel to it.
 	float inv_sq = inv_x * inv_x + inv_y * inv_y;
 
-	ALBEDO = storm_fog_ink(outline_color.rgb, length(VERTEX), TIME);
+	vec3 ink = ink_from_fill ? ink_from(ink_fill_at(UV)) : outline_color.rgb;
+	ALBEDO = storm_fog_ink(ink, length(VERTEX), TIME);
 	if (inv_sq <= 0.0) {
 		ALPHA = 0.0;
 	} else {

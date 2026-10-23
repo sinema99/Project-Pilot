@@ -127,6 +127,10 @@ float land_height(vec2 uv) {
 
 void fragment() {
 	vec3 d = normalize(sphere_dir);
+	// One pixel's step in Earth direction, for the city's supersampling (taken out here, where
+	// control flow is uniform, so the derivatives are defined).
+	vec3 d_dx = dFdx(d);
+	vec3 d_dy = dFdy(d);
 	vec2 ll = earth_lat_lon(d);
 	vec2 uv = earth_uv(ll);
 	float stroke = scatter_stroke(ll * scatter_planet_scale);
@@ -170,20 +174,18 @@ void fragment() {
 
 		vec3 lr = normalize(transpose(mat3(MODEL_MATRIX)) * normalize(relief_light_dir));
 		vec3 toward = earth_toward(d, lr);
-		// The mega sky city covers whatever is under it; its shadow falls on what is not.
-		bool city;
-		vec3 city_col = city_surface(d, toward, city);
-		if (city) {
-			col = city_col;
-			grade_water = 0.0;
-			painted = true;
-			glint = 0.0;
-		}
+		// The mega sky city covers whatever is under it; its shadow falls on what is not. Supersampled,
+		// so a pixel the city only partly covers blends (city_pixel).
+		vec3 city_col;
+		float city_cover;
+		float city_shade;
+		city_pixel(d, d_dx, d_dy, toward, city_col, city_cover, city_shade);
 
 		// Mild mountains: the masked height tilts a normal that only the raking relief light sees.
-		// Only real ranges: low relief (plains, plateaus) and the smooth ice sheet stay flat.
+		// Only real ranges: low relief (plains, plateaus) and the smooth ice sheet stay flat. Under the city's
+		// share of the pixel (mixed over below).
 		float mask = smoothstep(0.2, 0.65, tx.b);
-		if (mask > 0.01 && !water && !sheet && !city) {
+		if (mask > 0.01 && !water && !sheet && city_cover < 1.0) {
 			vec2 du = vec2(1.5 / EARTH_TEXELS.x, 0.0);
 			vec2 dv = vec2(0.0, 1.5 / EARTH_TEXELS.y);
 			float cell_m = EARTH_CELL * 111320.0 * 3.0;
@@ -196,14 +198,18 @@ void fragment() {
 			col *= r < -relief_step ? relief_shadow_tone : (r > relief_step ? relief_light_tone : 1.0);
 		}
 
-		if (painted) {
+		// The ground's own colour, painted if it would be, under the city's share of the pixel.
+		if (painted && city_cover < 1.0) {
 			col = mix(col, paint_apply(col, paint_level(paint_noise_triplanar(d * paint_planet_scale, d))),
 					paint_planet_amount);
 		}
-
-		if (!city && city_shadow_at(d, toward)) {
-			col *= city_shadow_tone;
-			glint = 0.0;
+		col *= mix(1.0, city_shadow_tone, city_shade);
+		glint *= 1.0 - max(city_cover, city_shade);
+		grade_water *= 1.0 - city_cover;
+		if (city_cover > 0.0) {
+			vec3 cc = mix(city_col, paint_apply(city_col, paint_level(paint_noise_triplanar(d * paint_planet_scale, d))),
+					paint_planet_amount);
+			col = mix(col, cc, city_cover);
 		}
 
 		// Cloud shadows: the cloud up-light of this point casts here.

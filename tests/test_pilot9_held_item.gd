@@ -48,7 +48,7 @@ func test_starting_item_is_the_staff() -> void:
 	eq(fresh.starting_item, load(STAFF), "pilot9 should start with the staff")
 	fresh.free()
 
-func test_spawns_holstered_on_his_back() -> void:
+func test_spawns_holstered_and_hidden() -> void:
 	var pilot := _scene()
 	if pilot == null:
 		fail("could not instance pilot9")
@@ -57,7 +57,8 @@ func test_spawns_holstered_on_his_back() -> void:
 	check(h.item_instance != null, "the staff should be instanced at spawn")
 	check(not pilot.is_item_drawn(), "he should spawn holstered")
 	if h.item_instance:
-		eq(h.item_instance.get_parent(), h.back_socket, "a holstered staff sits in the back socket")
+		eq(h.item_instance.get_parent(), h.hand_socket, "a holstered staff waits in the hand socket")
+		check(not h.item_instance.visible, "a holstered staff is hidden - no back sling")
 
 func test_sockets_are_on_the_spec_bones() -> void:
 	var pilot := _scene()
@@ -66,11 +67,9 @@ func test_sockets_are_on_the_spec_bones() -> void:
 		return
 	var h: Node = pilot.item_holder
 	eq(h.hand_socket.bone_name, "RightHand", "hand socket bone")
-	eq(h.back_socket.bone_name, "UpperChest", "back socket bone")
 	check(h.hand_socket.bone_idx >= 0, "RightHand should resolve on pilot9's skeleton")
-	check(h.back_socket.bone_idx >= 0, "UpperChest should resolve on pilot9's skeleton")
 
-func test_toggle_moves_it_between_sockets() -> void:
+func test_toggle_shows_and_hides_it() -> void:
 	var pilot := _scene()
 	if pilot == null:
 		fail("could not instance pilot9")
@@ -81,10 +80,11 @@ func test_toggle_moves_it_between_sockets() -> void:
 	check(pilot.is_item_drawn(), "one toggle should draw it")
 	eq(h.item_instance.get_parent(), h.hand_socket, "a drawn staff sits in the hand socket")
 	eq(h.item_instance.transform, staff.hand_offset, "drawn, it takes the item's hand_offset")
+	check(h.item_instance.visible, "drawn, it shows")
 	pilot.toggle_drawn()
 	check(not pilot.is_item_drawn(), "a second toggle should holster it")
-	eq(h.item_instance.get_parent(), h.back_socket, "holstered, it is back in the back socket")
-	eq(h.item_instance.transform, staff.back_offset, "holstered, it takes the item's back_offset")
+	eq(h.item_instance.get_parent(), h.hand_socket, "holstered, it stays in the hand socket")
+	check(not h.item_instance.visible, "holstered, it is hidden")
 
 func test_no_item_is_a_valid_state() -> void:
 	var pilot := _scene()
@@ -99,7 +99,7 @@ func test_no_item_is_a_valid_state() -> void:
 	eq(h.arm_target(), 0.0, "no item, no arm override")
 	pilot.set_item(load(STAFF))
 	check(h.item_instance != null, "an item set after none should appear")
-	eq(h.item_instance.get_parent(), h.back_socket, "...holstered")
+	check(not pilot.is_item_drawn() and not h.item_instance.visible, "...holstered, hidden")
 
 func test_swap_keeps_it_drawn_and_frees_the_old_one() -> void:
 	var pilot := _scene()

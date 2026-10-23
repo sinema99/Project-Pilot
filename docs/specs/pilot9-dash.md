@@ -439,8 +439,8 @@ grilling session on 2026-09-28; each numbered point below is one of those decisi
    rather than at the tick's end, or the gaps would alternate between 1.33 and 2.0 m.
 5. **Lifetime: hold, then clear tail to head.** Every ghost stays fully solid until the dash
    ends. Then the oldest starts to go first and each one after it follows, the whole trail
-   gone `afterimage_clear_time` (0.35 s) after he reappears. Each ghost's own fade lasts
-   `afterimage_fade_time` (0.12 s); the gap between one ghost's start and the next is whatever
+   gone `afterimage_clear_time` (1.0 s; 0.35 s until 2026-10-22) after he reappears. Each ghost's own fade lasts
+   `afterimage_fade_time` (0.3 s; 0.12 s until 2026-10-22); the gap between one ghost's start and the next is whatever
    is left, `(clear - fade) / (count - 1)`. **The fade is a dissolve, not alpha**: a screen-space
    hash throws away more and more pixels, so the ghost stays opaque, writes depth and never
    needs sorting against its neighbours. A transparent fade would have the overlapping copies

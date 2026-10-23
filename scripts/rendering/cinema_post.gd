@@ -62,6 +62,17 @@ extends CompositorEffect
 ## Grain frames per second. Film runs at 24.
 @export var grain_fps := 24.0
 
+@export_group("Video")
+# The analog transfer of the gameplay RETRO look (docs/specs/retro-look.md). Both 0 by default, so
+# the cutscene shots that share resources/cinema_post.tres render exactly as before.
+## Blur radius in pixels: a small tent over every tap, the softness of a film print on video.
+@export_range(0.0, 3.0, 0.05) var soften := 0.0
+## Chroma bleed: colour is taken from this many pixels either side (luma stays sharp), so colour
+## slides a little past the lines, sideways only, like video.
+@export_range(0.0, 12.0, 0.5) var bleed := 0.0
+## How much of the colour comes from the bleed instead of the pixel's own.
+@export_range(0.0, 1.0, 0.01) var bleed_amount := 0.0
+
 const _COPY := """
 #version 450
 layout(local_size_x = 8, local_size_y = 8) in;
@@ -138,7 +149,7 @@ layout(push_constant, std430) uniform P {
 	vec4 high_tint;     // rgb, contrast
 	vec4 lens;          // saturation, vignette strength, vignette start, vignette end
 	vec4 fx;            // aberration, aberration start, grain, grain floor
-	vec4 frame;         // grain seed, -, -, -
+	vec4 frame;         // grain seed, soften (px), bleed (px), bleed amount
 } pc;
 
 float hash(vec2 p) {
@@ -149,6 +160,15 @@ float hash(vec2 p) {
 
 float luma(vec3 c) {
 	return dot(c, vec3(0.2126, 0.7152, 0.0722));
+}
+
+// One tap, softened by a tent of pc.frame.y pixels: centre plus four diagonal bilinear taps.
+vec3 tap(vec2 uv, vec2 texel) {
+	vec3 c = texture(src, uv).rgb;
+	if (pc.frame.y <= 0.0) return c;
+	vec2 d = texel * pc.frame.y * 0.5;
+	return c * 0.2 + 0.2 * (texture(src, uv + vec2(d.x, d.y)).rgb + texture(src, uv + vec2(-d.x, d.y)).rgb
+			+ texture(src, uv + vec2(d.x, -d.y)).rgb + texture(src, uv + vec2(-d.x, -d.y)).rgb);
 }
 
 void main() {
@@ -163,10 +183,26 @@ void main() {
 
 	// Chromatic aberration: red out, blue in, only toward the edges.
 	float ca = pc.fx.x * smoothstep(pc.fx.y, 1.0, r);
+	vec2 texel = 1.0 / vec2(size);
 	vec3 c;
-	c.r = texture(src, uv + off * ca * 2.0).r;
-	c.g = texture(src, uv).g;
-	c.b = texture(src, uv - off * ca * 2.0).b;
+	if (ca > 0.0) {
+		c.r = tap(uv + off * ca * 2.0, texel).r;
+		c.g = tap(uv, texel).g;
+		c.b = tap(uv - off * ca * 2.0, texel).b;
+	} else {
+		c = tap(uv, texel);
+	}
+
+	// Chroma bleed: swap this pixel's colour (not its brightness) for a sideways average.
+	if (pc.frame.w > 0.0 && pc.frame.z > 0.0) {
+		vec3 wide = vec3(0.0);
+		for (int i = -3; i <= 3; i++) {
+			wide += texture(src, uv + vec2(float(i) / 3.0 * pc.frame.z * texel.x, 0.0)).rgb;
+		}
+		wide /= 7.0;
+		vec3 chroma = wide - vec3(luma(wide));
+		c = max(mix(c, vec3(luma(c)) + chroma, pc.frame.w), vec3(0.0));
+	}
 
 	// Anamorphic streak: mostly the lens tint, a little of the source colour.
 	vec3 s = texture(streak, uv).rgb;
@@ -359,5 +395,5 @@ func _render_callback(callback_type: int, render_data: RenderData) -> void:
 		push.append_array(_vec4(highlight_tint, contrast))
 		push.append_array(PackedFloat32Array([saturation, vignette_strength, vignette_start, vignette_end]))
 		push.append_array(PackedFloat32Array([aberration, aberration_start, grain, grain_floor]))
-		push.append_array(PackedFloat32Array([fmod(seed, 1000.0), 0.0, 0.0, 0.0]))
+		push.append_array(PackedFloat32Array([fmod(seed, 1000.0), soften, bleed, bleed_amount]))
 		_dispatch("composite", [_image(0, color), _sampled(1, _src), _sampled(2, a)], push, size)

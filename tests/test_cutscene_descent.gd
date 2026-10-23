@@ -413,3 +413,60 @@ func test_clouds_turn_and_churn_on_the_shot_clock() -> void:
 	s.apply(7.5)
 	approx(float(mat.get_shader_parameter(&"cloud_time")), 7.5, 1e-4, "driven by shot time")
 	s.free()
+
+
+# docs/specs/descent-composite.md: the composite look.
+func test_composite_runs_before_cinema_post() -> void:
+	var s := _shot()
+	var we := s.get_node("WorldEnvironment") as WorldEnvironment
+	check(we.compositor != null, "the environment has a compositor")
+	if we.compositor:
+		var fx := we.compositor.compositor_effects
+		eq(fx.size(), 2, "two effects")
+		check(fx[0] is DepthComposite, "DepthComposite first")
+		check(fx[1] is CinemaPost, "CinemaPost after it")
+	var look := s.composite()
+	check(look != null, "composite() finds it")
+	if look:
+		check(look.light_uv.is_equal_approx(s.light_px / DescentShot.SKETCH_SIZE), "light placed from the sketch")
+		check(look.light_uv.x > 0.5, "the light is right of centre")
+		check(look.light_uv.y < DescentShot.HORIZON_PX / DescentShot.SKETCH_SIZE.y, "and above the horizon")
+		check(look.near_end < look.lit_start, "dark band ends before the lit band")
+		check(look.lit_start < 1000.0, "the wrecks (320 m+) are mostly in the lit band")
+		check(look.flash_start > 10.0, "the ruin around the camera (1-10 m) never flash-lifts")
+	s.free()
+
+
+func test_near_band_is_dark_and_flash_lifts_it() -> void:
+	var tint := Color(0.72, 0.75, 0.92)
+	var base := DepthComposite.near_multiplier(tint, 0.28, Color(0.8, 0.9, 1.0), 0.6, 0.0)
+	var lit := DepthComposite.near_multiplier(tint, 0.28, Color(0.8, 0.9, 1.0), 0.6, 1.0)
+	var lum := func(c: Color) -> float: return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
+	approx(lum.call(base), pow(0.28, 2.2), 1e-4, "near band at 28% perceived")
+	approx(lum.call(lit), pow(0.6, 2.2), 1e-4, "a full flash lifts it to 60%")
+	check(base.b > base.r, "the darks lean blue-violet")
+
+
+func test_flash_reaches_the_composite_and_shafts() -> void:
+	var s := _shot()
+	var look := s.composite()
+	s.apply(0.55)
+	var during := look.flash
+	s.apply(9.0)
+	check(during > 0.1, "the breach flash pushes flash into the composite")
+	approx(look.flash, 0.0, 1e-3, "and it is gone between strikes")
+	approx(float(s.shafts.material.get_shader_parameter(&"time")), 9.0, 1e-4, "shafts breathe on the shot clock")
+	s.free()
+
+
+func test_shafts_fall_from_the_deck_onto_the_city() -> void:
+	var mesh := DescentShafts.shaft_mesh(DescentShot.SHAFTS)
+	var verts: PackedVector3Array = mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+	eq(verts.size(), DescentShot.SHAFTS.size() * 6, "one quad per shaft")
+	for i in DescentShot.SHAFTS.size():
+		var top := verts[i * 6]
+		var foot := (verts[i * 6 + 2] + verts[i * 6 + 5]) * 0.5
+		check(top.y > DescentShot.DECK_BASE, "shaft %d: top tucked above the deck base" % i)
+		approx(foot.y, 0.0, 1e-3, "shaft %d: foot on the ground" % i)
+		var px := DescentShot.to_sketch(foot)
+		check(px.x > 900.0 and px.x < 1650.0, "shaft %d: on the bright right side" % i)

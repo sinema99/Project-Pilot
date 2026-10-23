@@ -785,9 +785,9 @@ enum CameraMode {
 ## How see-through a ghost is, fill and ink alike: 1.0 solid, 0.5 half.
 @export_range(0.05, 1.0, 0.01) var afterimage_opacity: float = 0.2
 ## Seconds from the dash's end until the last (newest) ghost is gone.
-@export_range(0.05, 2.0, 0.01) var afterimage_clear_time: float = 0.35
+@export_range(0.05, 2.0, 0.01) var afterimage_clear_time: float = 1.0
 ## Seconds one ghost's dissolve takes. The gap between ghosts starting is what is left over.
-@export_range(0.01, 1.0, 0.01) var afterimage_fade_time: float = 0.12
+@export_range(0.01, 1.0, 0.01) var afterimage_fade_time: float = 0.3
 
 @export_group("Rim Light")
 ## The one-sided white edge light, after the Marvel Rivals renders. pilot9 only - it rides on
@@ -812,6 +812,29 @@ var rim_light_suppressed := false:
 		rim_light_suppressed = value
 		if is_node_ready() and rim_light_enabled:
 			_apply_rim_light()
+
+@export_group("Poncho")
+## The wool poncho in the scarf's red: a stiff shell over his shoulders and torso that lags, settles
+## and lifts a little with what he does. Built in code by scripts/pilot9_poncho.gd. Off by default;
+## trial's Pilot9 turns it on (not the second pilot, Ichi or the cutscenes). The PONCHO settings row
+## hides it live. See docs/specs/pilot9-poncho.md.
+@export var poncho_enabled: bool = false
+## Natural frequency of the pull back to its tailored shape, at the hem. Higher is stiffer.
+@export_range(0.5, 6.0, 0.05) var poncho_stiffness: float = 2.2
+## Damping ratio of that pull: 1.0 never overshoots, lower bounces more.
+@export_range(0.05, 1.5, 0.01) var poncho_damping: float = 0.55
+## How hard neighbouring points are pulled into line each substep - the "thick" in thick wool.
+@export_range(0.0, 0.9, 0.01) var poncho_bend: float = 0.3
+## Most acceleration the cloth ever feels, m/s^2. Caps every lag and bounce.
+@export_range(1.0, 100.0, 0.5) var poncho_max_accel: float = 20.0
+## Most sudden velocity change it feels, m/s: the rest of a landing or dash launch is not felt.
+@export_range(0.0, 10.0, 0.05) var poncho_max_jolt: float = 1.0
+## Speed at which the wind's lift is full, m/s. Faster adds nothing.
+@export_range(1.0, 60.0, 0.5) var poncho_wind_full_speed: float = 20.0
+## Hem lift at full wind, degrees.
+@export_range(0.0, 60.0, 0.5) var poncho_wind_max_lift: float = 18.0
+## Wool thickness, metres.
+@export_range(0.002, 0.08, 0.001) var poncho_thickness: float = 0.008
 
 @export_group("Body")
 ## A different body on the same rig: a GLB exported from the same Blender armature (same bone
@@ -1787,6 +1810,9 @@ func _ready() -> void:
 	# First: everything below that walks his meshes (afterimage pool, rim light, hologram
 	# masks) has to see the body he will actually wear.
 	_swap_body_meshes()
+	# Right after the body: the afterimage pool, the rim light and ApplyCelPilot9 all walk his
+	# meshes and should find the poncho among them.
+	_setup_poncho()
 	_zoom_distance = clampf(camera_distance, camera_zoom_min, camera_zoom_max)
 	target_camera_distance = 0.0 if camera_mode == CameraMode.FIRST_PERSON else _zoom_distance
 	_camera_mode_length = target_camera_distance
@@ -1796,12 +1822,15 @@ func _ready() -> void:
 	_setup_vfx()
 	_sprint_fov = camera_3d.fov
 	_setup_item_holder()
+	# Before the rim light and hologram, which walk his meshes.
+	_setup_hat()
 	_setup_wall_hand()
 	_setup_slide_hand()
 	_apply_rim_light()
 	_setup_hologram()
 	# Last of the skeleton modifiers: the tredge pose has the final word on both arms.
 	_setup_tredge()
+	_setup_anime_hold()
 	if character:
 		character.visible = camera_mode == CameraMode.THIRD_PERSON
 		# The scene's starting yaw is not a turn.
@@ -3509,6 +3538,8 @@ func _resolve_landing_dip() -> void:
 	if fall > 0.0 and not is_jumping:
 		_land_dust_pending = _landing_dust_strength(fall, landing_dip_min_speed,
 			jump_velocity * sqrt(jump_fall_multiplier), max_fall_speed)
+		_anime_accent(&"land", _land_dust_pending, func() -> bool:
+			return _anime_state() == &"jump_land")
 	if fall <= 0.0 or is_jumping or not Settings.camera_motion:
 		return
 	var depth := _landing_dip_depth(fall, landing_dip_min_speed,
@@ -4025,6 +4056,7 @@ func _try_start_climb_along(facing: Vector3, reach: float = -1.0) -> bool:
 ## time rather than nearly every time.
 func _start_climb(lip: Vector3, wall_normal: Vector3) -> void:
 	is_climbing = true
+	_anime_accent(&"mantle_grab", 1.0, func() -> bool: return is_climbing)
 	_climb_time = 0.0
 	_climb_jump_buffered = false
 	# The mantle ends him standing, and it cannot be entered out of a slide anyway. Clearing
@@ -4383,6 +4415,7 @@ func _try_start_vault() -> bool:
 func _start_vault(start: Vector3, dir: Vector3, entry_speed: float, dh: float, dz: float,
 		land_rise: float) -> void:
 	is_vaulting = true
+	_anime_accent(&"vault_plant", 1.0, func() -> bool: return is_vaulting)
 	_vault_u = 0.0
 	_vault_released = false
 	_vault_jump_buffered = false
@@ -5152,6 +5185,7 @@ func _take_wall_jump() -> void:
 	_wall_lockout_normal = Vector3.ZERO
 	_wall_lockout_left = 0.0
 	is_jumping = true
+	_anime_accent(&"wall_kick")
 	# On the wall where his feet last were - a coyote jump is already off it.
 	if _effects_on() and _wall_kick_point != Vector3.ZERO:
 		_vfx.wall_jump(_wall_kick_point, n)
@@ -5472,6 +5506,7 @@ func _take_wall_climb_jump() -> void:
 	_wall_climb_coyote_left = 0.0
 	is_jumping = true
 	character.rotation.y = atan2(n.x, n.z)
+	_anime_accent(&"wall_kick")
 	if _effects_on() and _wall_kick_point != Vector3.ZERO:
 		_vfx.wall_jump(_wall_kick_point, n)
 
@@ -5814,6 +5849,8 @@ func _start_rail_grind(rail, offset: float, dir: int, switched: bool = false) ->
 	_end_slide()
 	_end_wall_run()
 	velocity = Vector3.ZERO
+	# A switch is a hop between rails, not a landing; it gets the soft hold.
+	_anime_accent(&"rail_land", 0.0 if switched else 1.0, func() -> bool: return is_rail_grinding)
 	if _effects_on():
 		_vfx.rail_contact(global_position, -tangent * float(_rail_dir), not switched)
 
@@ -6299,6 +6336,9 @@ func _input(event: InputEvent) -> void:
 		press_equip()
 	if not frozen and not is_tredging and reflect_spin != null and InputMap.has_action("reflect") 			and event.is_action_pressed("reflect"):
 		reflect_spin.try_start()
+	# Cosmetic: works in the blizzard too. `frozen` keeps it to the pilot being played.
+	if not frozen and InputMap.has_action("hat") and event.is_action_pressed("hat"):
+		toggle_hat()
 
 ## Flips the chosen shoulder. The eased slide in _handle_camera_shoulder() does the rest.
 func swap_shoulder() -> void:
@@ -6364,6 +6404,46 @@ func _setup_equip_anim() -> void:
 
 func is_item_drawn() -> bool:
 	return item_holder != null and item_holder.is_drawn
+
+## -- the cowboy hat ------------------------------------------------------------------
+##
+## On and off with H, no animation. Everything lives in scripts/items/hat_holder.gd. See
+## docs/specs/pilot9-cowboy-hat.md.
+
+const _HatHolder := preload("res://scripts/items/hat_holder.gd")
+
+@export_group("Hat")
+## Where the hat sits, in Head-bone space (metres).
+@export var hat_offset: Vector3 = Vector3(0.0, 0.11, 0.035):
+	set(value):
+		hat_offset = value
+		if hat_holder != null:
+			hat_holder.place(hat_offset, hat_tilt)
+## How far it is tipped back off his brow, degrees.
+@export var hat_tilt: float = 6.0:
+	set(value):
+		hat_tilt = value
+		if hat_holder != null:
+			hat_holder.place(hat_offset, hat_tilt)
+@export_group("")
+
+## Built in _ready(). Null only before then.
+var hat_holder: Node = null
+
+func _setup_hat() -> void:
+	hat_holder = _HatHolder.new()
+	hat_holder.name = &"HatHolder"
+	add_child(hat_holder)
+	hat_holder.setup(get_node_or_null("character/Armature/GeneralSkeleton") as Skeleton3D,
+		hat_offset, hat_tilt)
+
+## The H key. Off at boot, never saved.
+func toggle_hat() -> void:
+	if hat_holder != null:
+		hat_holder.toggle()
+
+func is_hat_on() -> bool:
+	return hat_holder != null and hat_holder.is_on
 
 ## -- reflect ---------------------------------------------------------------------
 ##
@@ -6469,6 +6549,24 @@ func _setup_slide_hand() -> void:
 	slide_hand.name = &"SlideHand"
 	slide_hand.body = self
 	skel.add_child(slide_hand)
+
+## -- the poncho -----------------------------------------------------------------
+##
+## scripts/pilot9_poncho.gd is the whole of it; this only builds it. See docs/specs/pilot9-poncho.md.
+
+## Built in _ready() when poncho_enabled. Null otherwise.
+var poncho: Pilot9Poncho = null
+
+func _setup_poncho() -> void:
+	if not poncho_enabled:
+		return
+	var skel := get_node_or_null("character/Armature/GeneralSkeleton") as Skeleton3D
+	if skel == null:
+		return
+	poncho = Pilot9Poncho.new()
+	poncho.pilot = self
+	skel.add_child(poncho)
+	poncho.setup(skel)
 
 ## -- the tredge ------------------------------------------------------------------
 ##
@@ -6630,3 +6728,40 @@ func exit_vehicle(exit_position: Vector3, facing_yaw: float) -> void:
 	var playback: AnimationNodeStateMachinePlayback = anim_tree["parameters/playback"]
 	if playback != null:
 		playback.start(&"Locomotion")
+
+## -- anime animation ------------------------------------------------------------
+##
+## ANIME: drawn cycles on Locomotion (8 drawings a cycle, on his real foot plants) and held impact
+## accents; everything else, and his rotation and position always, smooth. The accents fire from
+## the moments themselves - see the anime_hold.accent() calls. See docs/specs/anime-animation.md.
+
+var anime_hold: AnimeHold = null
+
+func _setup_anime_hold() -> void:
+	var skel := get_node_or_null("character/Armature/GeneralSkeleton") as Skeleton3D
+	if skel == null:
+		return
+	anime_hold = AnimeHold.new()
+	add_child(anime_hold)
+	anime_hold.setup(skel)
+	anime_hold.cycle_state = _anime_in_locomotion
+	anime_hold.velocity = func() -> Vector3: return velocity
+	if reflect_spin != null and reflect_spin.has_signal(&"reflected"):
+		reflect_spin.reflected.connect(func(_p: Node, perfect: bool, _pt: Vector3) -> void:
+			if perfect:
+				_anime_accent(&"perfect_reflect"))
+
+func _anime_in_locomotion() -> bool:
+	return is_on_floor() and _anime_state() == &"Locomotion"
+
+func _anime_state() -> StringName:
+	if anim_tree == null:
+		return &""
+	var playback: AnimationNodeStateMachinePlayback = anim_tree.get("parameters/playback")
+	return playback.get_current_node() if playback else &""
+
+## `still_on`: asked when the hold would start; false drops it (see AnimeHold.accent()).
+func _anime_accent(accent_name: StringName, strength: float = 1.0,
+		still_on: Callable = Callable()) -> void:
+	if anime_hold != null:
+		anime_hold.accent(accent_name, strength, -1.0, still_on)

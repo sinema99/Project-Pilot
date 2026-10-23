@@ -92,6 +92,10 @@ BUILT = (0.35, 0.15)  # share built, +- spread
 BARE = (0.25, 0.1)
 FRAME_ONLY = 1.0 / 3.0  # share of lone slabs that never got a deck
 STUB = (1.0, 3.0)  # stub rail length, deg
+CELL = 1.0  # cell mask cell, deg
+CELL_ARC = 1.0  # cell margin, deg of arc: city_shadow_offset (0.46) + a far pixel's footprint
+CELL_TOWER_ARC = 2.4  # towers: city_tower_shadow (1.72) + the footprint
+RAIL_HALF = 0.06  # city_rail_deg / 2, rounded up
 LONE_STUB = 1.0 / 3.0
 
 
@@ -411,6 +415,44 @@ def outposts(poly, k, plats):
     return rects, fades, towers, rails
 
 
+def cell_mask(k, rects, boxes, towers):
+    """The coarse cell mask the shader skips empty sky with: a bit per CELL x CELL grid cell, set where
+    a shape, its shadow or a pixel's supersamples can reach. `k` is the grid's longitude squeeze,
+    `rects` are (cx, cy, hw, hh), `boxes` (x0, y0, x1, y1). Margins are arcs on the sphere, widened in
+    x toward the pole like the grid's longitude."""
+    spans = []
+
+    def add(x0, y0, x1, y1, arc):
+        lat = min(max(abs(y0), abs(y1)) + arc, 85.0)
+        mx = arc * k / math.cos(math.radians(lat))
+        spans.append((x0 - mx, y0 - arc, x1 + mx, y1 + arc))
+
+    for cx, cy, hw, hh in rects:
+        add(cx - hw, cy - hh, cx + hw, cy + hh, CELL_ARC)
+    for x0, y0, x1, y1 in boxes:
+        add(x0, y0, x1, y1, CELL_ARC + RAIL_HALF)
+    for cx, cy, hw, hh in towers:
+        add(cx - hw, cy - hh, cx + hw, cy + hh, CELL_TOWER_ARC)
+    ox = math.floor(min(s[0] for s in spans))
+    oy = math.floor(min(s[1] for s in spans))
+    w = int(math.ceil((max(s[2] for s in spans) - ox) / CELL))
+    h = int(math.ceil((max(s[3] for s in spans) - oy) / CELL))
+    bits = [0] * ((w * h + 31) // 32)
+    for x0, y0, x1, y1 in spans:
+        for cy in range(int((y0 - oy) // CELL), min(int((y1 - oy) // CELL), h - 1) + 1):
+            for cx in range(int((x0 - ox) // CELL), min(int((x1 - ox) // CELL), w - 1) + 1):
+                i = cy * w + cx
+                bits[i >> 5] |= 1 << (i & 31)
+    print("cell mask %d x %d, %d of %d cells on" % (w, h, sum(bin(b).count("1") for b in bits), w * h))
+    rows = ",\n".join("\t" + ", ".join("%du" % b for b in bits[i:i + 8]) for i in range(0, len(bits), 8))
+    return ("// Cell mask: bit (y * CITY_CELLS_W + x) is set where anything above can draw (city_near), in\n"
+            "// CITY_CELL-degree cells from CITY_CELL_ORIGIN. Margins cover today's shadow offsets plus a\n"
+            "// pixel's footprint: raise CELL_ARC / CELL_TOWER_ARC in the generator if those grow.\n"
+            "const float CITY_CELL = %.1f;\nconst vec2 CITY_CELL_ORIGIN = vec2(%.1f, %.1f);\n"
+            "const int CITY_CELLS_W = %d;\nconst int CITY_CELLS_H = %d;\n"
+            "const uint CITY_CELLS[%d] = uint[](\n%s);\n" % (CELL, ox, oy, w, h, len(bits), rows))
+
+
 def main():
     with open(INC, newline="") as f:
         text = f.read()
@@ -533,8 +575,8 @@ def main():
             longs.append((best[0] + 0.3, y, best[1] - 0.3, y))
     rails = shorts + longs
 
-    o_plats, o_fades, o_towers, o_rails = outposts(
-        poly, math.cos(math.radians(float(re.search(r"CITY_MID_LAT = ([0-9.]+);", text).group(1)))), plats)
+    k = math.cos(math.radians(float(re.search(r"CITY_MID_LAT = ([0-9.]+);", text).group(1))))
+    o_plats, o_fades, o_towers, o_rails = outposts(poly, k, plats)
 
     cover = covered(poly, plats, bbox)
     print("towers %d" % len(towers))
@@ -561,6 +603,9 @@ def main():
            + arr("OUTPOST_FADE", o_fades)
            + arr("OUTPOST_TOWERS", o_towers)
            + arr("OUTPOST_RAILS", o_rails)
+           + cell_mask(k, plats + o_plats,
+                       [(min(a, c), min(b, d), max(a, c), max(b, d)) for a, b, c, d in rails + o_rails],
+                       towers + o_towers)
            + "// END GENERATED\n")
     start = text.find("// BEGIN GENERATED")
     end = text.find("// END GENERATED\n")

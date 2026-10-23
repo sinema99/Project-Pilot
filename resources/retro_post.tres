@@ -1,0 +1,27 @@
+[gd_resource type="CompositorEffect" script_class="CinemaPost" format=3]
+
+[ext_resource type="Script" path="res://scripts/rendering/cinema_post.gd" id="1_post"]
+
+; The RETRO look's video pass (docs/specs/retro-look.md): CinemaPost with no lens flare or
+; aberration, a neutral grade, light vignette and grain, and the soften + chroma bleed of a
+; film print transferred to video. Gameplay only - RetroLook puts it on trial's WorldEnvironment.
+[resource]
+resource_local_to_scene = true
+script = ExtResource("1_post")
+streak_intensity = 0.0
+ghost_intensity = 0.0
+contrast = 1.0
+saturation = 1.0
+shadow_tint = Color(1, 1, 1, 1)
+highlight_tint = Color(1, 1, 1, 1)
+split_strength = 1.0
+aberration = 0.0
+vignette_strength = 0.25
+vignette_start = 0.5
+vignette_end = 1.25
+grain = 0.05
+grain_floor = 0.003
+grain_fps = 24.0
+soften = 0.6
+bleed = 3.0
+bleed_amount = 0.6

@@ -10,13 +10,49 @@
 [ext_resource type="Script" path="res://scripts/cutscene/cockpit_holo.gd" id="8_holo"]
 [ext_resource type="Script" path="res://scripts/cutscene/cockpit_storm_driver.gd" id="9_storm"]
 [ext_resource type="Script" path="res://scripts/cutscene/seated_pose.gd" id="10_pose"]
+[ext_resource type="Script" path="res://scripts/rendering/depth_composite.gd" id="90_composite"]
+[ext_resource type="CompositorEffect" path="res://resources/cinema_post.tres" id="91_post"]
 
 [sub_resource type="Environment" id="Environment_storm"]
 background_mode = 1
 background_color = Color(0.82, 0.8, 0.89, 1)
 ambient_light_source = 2
 ambient_light_color = Color(0.82, 0.8, 0.9, 1)
-ambient_light_energy = 0.5
+ambient_light_energy = 0.35
+tonemap_mode = 0
+glow_enabled = true
+glow_levels/1 = 1.0
+glow_levels/2 = 1.0
+glow_levels/3 = 1.0
+glow_levels/4 = 0.6
+glow_levels/5 = 0.3
+glow_intensity = 0.5
+glow_strength = 1.0
+glow_blend_mode = 0
+glow_hdr_threshold = 1.0
+
+[sub_resource type="CompositorEffect" id="CompositorEffect_depth"]
+resource_local_to_scene = true
+script = ExtResource("90_composite")
+light_color = Color(1, 0.957, 0.902, 1)
+light_energy = 0.15
+light_radius = 0.15
+light_stretch = 1.0
+haze_amount = 0.0
+near_end = 2.4
+lit_start = 3.0
+near_value = 0.95
+dark_tint = Color(0.92, 0.92, 1, 1)
+dark_lift = Color(0.012, 0.014, 0.03, 1)
+flash_near_value = 1.0
+flash_start = 0.01
+wrap_near = 2.6
+wrap_far = 3.3
+wrap_strength = 0.25
+
+[sub_resource type="Compositor" id="Compositor_look"]
+resource_local_to_scene = true
+compositor_effects = Array[CompositorEffect]([SubResource("CompositorEffect_depth"), ExtResource("91_post")])
 
 [sub_resource type="Animation" id="Animation_shot"]
 resource_name = "shot"
@@ -32,11 +68,12 @@ script = ExtResource("1_shot")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_storm")
+compositor = SubResource("Compositor_look")
 
 [node name="Key" type="DirectionalLight3D" parent="."]
 transform = Transform3D(0.640184, -0.549694, 0.536656, 0, 0.69857, 0.715542, -0.768221, -0.458079, 0.447214, 0, 3, 0)
 light_color = Color(0.9, 0.88, 0.96, 1)
-light_energy = 0.6
+light_energy = 0.4
 light_indirect_energy = 0.0
 shadow_enabled = true
 directional_shadow_max_distance = 20.0
@@ -55,7 +92,7 @@ script = ExtResource("7_snow")
 [node name="StormFill" type="DirectionalLight3D" parent="."]
 transform = Transform3D(0.970143, 0.0560112, -0.235702, 0, 0.972891, 0.231196, 0.242536, -0.224044, 0.942809, 0, 2, 3)
 light_color = Color(0.9, 0.88, 0.96, 1)
-light_energy = 0.7
+light_energy = 0.45
 light_indirect_energy = 0.0
 
 [node name="HoloSpill" type="OmniLight3D" parent="."]
