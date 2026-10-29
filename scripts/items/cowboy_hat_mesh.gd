@@ -2,11 +2,12 @@
 ##
 ## Hat space: y up, +Z the front, origin at the centre of the headband opening (the brim's
 ## underside at the crown). One closed surface of revolution - a profile swept round an ellipse -
-## bent per angle for the brim curl, the front dip, the crease and the two front pinches. The band
+## bent per angle for the brim curl, the front dip, the crease and the two soft front pinches. The
+## crown wall bows out a little and rolls into the top through a rounded shoulder. The band
 ## is a second mesh hugging the bottom of the crown.
 ##
 ## Every profile segment is its own smooth group, so the brim edge and the crown/brim join stay
-## hard under the cel bands while the crown's top edge rounds off.
+## hard under the cel bands while the crown's shoulder rounds off.
 extends RefCounted
 
 const SEGMENTS := 64
@@ -20,19 +21,26 @@ const BRIM_THICKNESS := 0.01
 const BRIM_CURL := 0.075
 const BRIM_DIP := 0.016
 
-## Crown half-widths at the brim and at the top - tapered (user, 2026-10-22: top not so wide).
+## Crown half-widths at the brim and where the wall meets the shoulder - tapered (user,
+## 2026-10-22: top not so wide). The flat of the top is SHOULDER narrower again.
 const CROWN_BASE := Vector2(0.128, 0.122)
 const CROWN_TOP := Vector2(0.09, 0.088)
-## Crown height at the back; the front is CROWN_FRONT_DROP lower.
-const CROWN_HEIGHT := 0.155
+## Crown height at the back; the front is CROWN_FRONT_DROP lower. 0.155 -> 0.14 on 2026-10-26
+## (user: looked like a top hat).
+const CROWN_HEIGHT := 0.14
 const CROWN_FRONT_DROP := 0.016
+## How far the wall bows out at mid height, and the radius of the rounded shoulder that rolls it
+## into the top - the shoulder is what keeps the crown from reading as a top hat.
+const CROWN_BOW := 0.008
+const SHOULDER := 0.03
 ## The centre crease: depth at its deepest, half-width across.
 const CREASE_DEPTH := 0.065
 const CREASE_WIDTH := 0.045
-## The front pinches: how far in, at which angle either side of the front, how wide.
-const PINCH_DEPTH := 0.045
-const PINCH_ANGLE := 0.65
-const PINCH_WIDTH := 0.32
+## The front pinches: how far in, at which angle either side of the front, how wide. Soft and
+## broad since 2026-10-26 (were 0.045 deep, 0.32 wide - user: a weird thing at the front).
+const PINCH_DEPTH := 0.022
+const PINCH_ANGLE := 0.7
+const PINCH_WIDTH := 0.55
 
 ## Band: from BAND_LOW to BAND_HIGH of the way up the crown, standing BAND_PROUD off it.
 const BAND_LOW := 0.04
@@ -68,20 +76,30 @@ static func _pinch(theta: float, k: float) -> float:
 	return PINCH_DEPTH * k * k * g
 
 
-## A point on the crown wall, `k` of the way up, pushed `proud` metres out.
+## A point on the crown wall, `k` of the way up to the shoulder, pushed `proud` metres out.
 static func _wall(theta: float, k: float, proud: float = 0.0) -> Vector3:
 	var r := CROWN_BASE.lerp(CROWN_TOP, k)
 	var dir := Vector3(sin(theta), 0.0, cos(theta))
 	var p := Vector3(r.x * dir.x, 0.0, r.y * dir.z)
 	var out := p.normalized() if p.length() > 0.0 else dir
-	p += out * (proud - _pinch(theta, k))
-	p.y = BRIM_THICKNESS + k * (_crown_height(theta) - BRIM_THICKNESS)
+	p += out * (proud + CROWN_BOW * sin(PI * k) - _pinch(theta, k))
+	p.y = BRIM_THICKNESS + k * (_crown_height(theta) - SHOULDER - BRIM_THICKNESS)
 	return p
 
 
-## A point on the crown top, `v` of the way from the centre (0) to the edge (1).
+## A point on the rounded shoulder, `s` of the way round its quarter circle (0 wall, 1 top).
+static func _shoulder(theta: float, s: float) -> Vector3:
+	var p := _wall(theta, 1.0)
+	var a := s * PI * 0.5
+	var flat := Vector3(p.x, 0.0, p.z)
+	p -= flat.normalized() * SHOULDER * (1.0 - cos(a))
+	p.y += SHOULDER * sin(a)
+	return p
+
+
+## A point on the crown top, `v` of the way from the centre (0) to the shoulder (1).
 static func _top(theta: float, v: float) -> Vector3:
-	var edge := _wall(theta, 1.0)
+	var edge := _shoulder(theta, 1.0)
 	var p := Vector3(edge.x * v, 0.0, edge.z * v)
 	var crease := CREASE_DEPTH * exp(-pow(p.x / CREASE_WIDTH, 2.0)) * (1.0 - pow(v, 6.0))
 	p.y = _crown_height(theta) - crease
@@ -114,13 +132,11 @@ static func _felt_strips() -> Array:
 	for u in [1.0, 0.75, 0.5, 0.25, 0.0]:
 		brim_top.append(_brim_row(u, true))
 	var crown := []
-	for k in [0.0, 0.25, 0.5, 0.75, 0.92]:
+	for k in [0.0, 0.25, 0.5, 0.75, 1.0]:
 		crown.append(_wall_row(k, 0.0))
-	crown.append(func(t: float) -> Vector3:
-		var p := _top(t, 0.97)
-		p.y -= 0.004
-		return p)
-	for v in [0.85, 0.65, 0.45, 0.25, 0.1, 0.0]:
+	for s in [0.25, 0.5, 0.75]:
+		crown.append(func(t: float) -> Vector3: return _shoulder(t, s))
+	for v in [1.0, 0.8, 0.6, 0.4, 0.25, 0.1, 0.0]:
 		crown.append(_top_row(v))
 	return [underside, rim, brim_top, crown]
 

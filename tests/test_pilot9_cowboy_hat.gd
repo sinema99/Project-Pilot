@@ -130,13 +130,13 @@ func test_ghosts_wear_it() -> void:
 	check(pilot._afterimage._sources.has(felt), "the afterimage pool should copy the hat")
 	pilot.toggle_hat()
 
-func test_hat_hides_his_ears() -> void:
+func test_hat_swaps_in_the_cut_head() -> void:
 	var pilot := _scene()
 	if pilot == null:
 		fail("could not instance pilot9")
 		return
 	var h: Node = pilot.hat_holder
-	check(not h.hatted.is_empty(), "his head mesh should have a hatted (ears cut) copy")
+	check(not h.hatted.is_empty(), "his head mesh should have a hatted (skull top cut) copy")
 	for mi: MeshInstance3D in h.hatted:
 		var pair: Array = h.hatted[mi]
 		eq(mi.mesh, pair[0], "hat off, %s wears its own mesh" % mi.name)
@@ -146,4 +146,45 @@ func test_hat_hides_his_ears() -> void:
 		eq(mi.mesh, h.hatted[mi][1], "hat on, %s wears the cut mesh" % mi.name)
 	pilot.toggle_hat()
 	for mi: MeshInstance3D in h.hatted:
-		eq(mi.mesh, h.hatted[mi][0], "hat off again, %s gets its ears back" % mi.name)
+		eq(mi.mesh, h.hatted[mi][0], "hat off again, %s gets its own mesh back" % mi.name)
+
+func test_raked_fit_scales_and_tips_it_forward() -> void:
+	var pilot := _scene()
+	if pilot == null:
+		fail("could not instance pilot9")
+		return
+	var t: Transform3D = pilot.hat_holder.hat.transform
+	check(pilot.hat_tilt < 0.0, "the default fit rakes the hat forward")
+	check(absf(t.basis.get_scale().x - pilot.hat_scale) < 0.001, "hat_scale scales the whole hat")
+	check(t.basis.z.normalized().y < 0.0, "raked forward, the front of the hat points down")
+
+# Raked forward, more of an ear fin is under the band than of the skull. The skull must still be
+# the piece that is cut, not deleted whole: pilot9's skull is ~230 triangles, his fins 1280 each.
+func test_raked_cut_keeps_the_skull() -> void:
+	var pilot := _scene()
+	if pilot == null:
+		fail("could not instance pilot9")
+		return
+	var h: Node = pilot.hat_holder
+	for mi: MeshInstance3D in h.hatted:
+		var cut: Mesh = h.hatted[mi][1]
+		var kept := 0
+		for s in cut.get_surface_count():
+			kept += (cut.surface_get_arrays(s)[Mesh.ARRAY_INDEX] as PackedInt32Array).size() / 3
+		check(kept > 250, "%s should keep his skull under the hat, kept %d triangles" % [mi.name, kept])
+
+# User, 2026-10-23: the ears come out through the hat. pilot9's two fins are 1280 triangles each;
+# only the skull top under the crown goes.
+func test_ears_come_through_the_hat() -> void:
+	var pilot := _scene()
+	if pilot == null:
+		fail("could not instance pilot9")
+		return
+	var h: Node = pilot.hat_holder
+	for mi: MeshInstance3D in h.hatted:
+		var own: Mesh = h.hatted[mi][0]
+		var cut: Mesh = h.hatted[mi][1]
+		for s in own.get_surface_count():
+			var before := (own.surface_get_arrays(s)[Mesh.ARRAY_INDEX] as PackedInt32Array).size() / 3
+			var after := (cut.surface_get_arrays(s)[Mesh.ARRAY_INDEX] as PackedInt32Array).size() / 3
+			check(before - after < 200, "%s surf %d: only the skull top should go, lost %d of %d" 				% [mi.name, s, before - after, before])

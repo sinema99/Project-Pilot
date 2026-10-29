@@ -1,0 +1,72 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/pilot9.tscn" id="1_pilot"]
+[ext_resource type="Script" uid="uid://he1couvcqarw" path="res://scripts/rendering/apply_stylized.gd" id="2_applier"]
+[ext_resource type="Material" uid="uid://bv5gy3lf6e5w8" path="res://resources/cel_sky.tres" id="3_sky"]
+[ext_resource type="Material" uid="uid://csrta6agxh215" path="res://resources/cel_ground.tres" id="4_ground"]
+[ext_resource type="Material" path="res://resources/pilot_cel_character.tres" id="5_pilotchar"]
+[ext_resource type="PackedScene" uid="uid://db3286mmnedkb" path="res://assets/starter_map.glb" id="6_map"]
+[ext_resource type="Script" path="res://scripts/mission_map.gd" id="7_mission"]
+[ext_resource type="Script" uid="uid://bo4aoofkxdqs4" path="res://scripts/rendering/pixel_world.gd" id="8_pixelworld"]
+[ext_resource type="Script" uid="uid://c3xxrq8p6qwou" path="res://scripts/rendering/pixel_look.gd" id="9_pixellook"]
+[ext_resource type="Script" path="res://scripts/rendering/retro_look.gd" id="10_retrolook"]
+
+[sub_resource type="Sky" id="Sky_cel"]
+sky_material = ExtResource("3_sky")
+
+[sub_resource type="Environment" id="Environment_cel"]
+background_mode = 2
+sky = SubResource("Sky_cel")
+ambient_light_source = 2
+ambient_light_color = Color(0.52, 0.6, 0.72, 1)
+tonemap_mode = 2
+fog_enabled = true
+fog_density = 0.0004
+fog_sky_affect = 0.0
+
+[node name="StarterMap" type="Node3D" node_paths=PackedStringArray("map", "pilot")]
+script = ExtResource("7_mission")
+map = NodePath("Map")
+pilot = NodePath("Pilot9")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_cel")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.033844, -0.64242, 0.765606, 0, 0.766045, 0.642788, -0.999428, -0.021754, 0.025927, 0, 89.776596, 0)
+light_color = Color(1, 0.9, 0.78, 1)
+light_energy = 0.7
+light_indirect_energy = 0.0
+shadow_enabled = true
+shadow_bias = 0.02
+shadow_normal_bias = 0.5
+shadow_blur = 0.6
+directional_shadow_split_1 = 0.08
+directional_shadow_split_3 = 0.45
+directional_shadow_max_distance = 80.0
+
+[node name="Map" parent="." instance=ExtResource("6_map")]
+
+[node name="Pilot9" parent="." instance=ExtResource("1_pilot")]
+
+[node name="ApplyCelGround" type="Node" parent="."]
+script = ExtResource("2_applier")
+material = ExtResource("4_ground")
+targets = Array[NodePath]([NodePath("../Map")])
+derive_from_surfaces = true
+
+[node name="ApplyCelPilot9" type="Node" parent="."]
+script = ExtResource("2_applier")
+material = ExtResource("5_pilotchar")
+targets = Array[NodePath]([NodePath("../Pilot9")])
+derive_from_surfaces = true
+
+[node name="PixelWorld" type="CanvasLayer" parent="."]
+script = ExtResource("8_pixelworld")
+
+[node name="PixelLook" type="Node" parent="."]
+script = ExtResource("9_pixellook")
+
+[node name="RetroLook" type="Node" parent="."]
+script = ExtResource("10_retrolook")
+floor_paths = Array[NodePath]([NodePath("../Map")])

@@ -232,7 +232,7 @@ shakes, he gets knocked about on it, hologram panels float in front of him, and 
   keys off the `shot` track (1.2 s 0.6, 2.9 s 0.4, 4.1 s 1.0) and applies everything each frame from the shot
   time (`apply(t)`). Tunables are exports (buzz mm/deg, kick cm/deg, settle, camera share 0.1, body throw 1.5).
   Also owns the lamps (`ButtonSlots0-6` twinkle green, handset windows pulse, gauge and dials pulse,
-  `LegButtonL2` + `GripButtonL` flash red on jolts), the `FireDrift` omni (drifts round (-0.5, 0.9, 1.3),
+  `GripButtonL` flashes red on jolts; `LegButtonL2` was a second alarm lamp until 2026-10-26), the `FireDrift` omni (drifts round (-0.5, 0.9, 1.3),
   flickers, pumps on jolts) and the spark burst (70 streaks from the camera-side console seam, on the
   strongest jolt only).
 - `SeatedPose` gained `body_sway` (spread Spine 0.4 / Chest 0.3 / UpperChest 0.3, applied before the arm IK so

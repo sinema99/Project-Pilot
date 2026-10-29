@@ -126,8 +126,8 @@ const BLINK_PARTS := [&"ButtonSlots0", &"ButtonSlots1", &"ButtonSlots2", &"Butto
 		&"ButtonSlots5", &"ButtonSlots6", &"HandsetWindowL", &"HandsetWindowR"]
 ## The cyan gauge faces: they pulse.
 const GAUGE_PARTS := [&"Gauge", &"Dial0", &"Dial1"]
-## Red lamps that flash on the jolts.
-const ALARM_PARTS := [&"LegButtonL2", &"GripButtonL"]
+## The red lamp that flashes on the jolts: the left stick's thumb button.
+const ALARM_PARTS := [&"GripButtonL"]
 
 var shake := CockpitShake.new()
 var beats := CockpitBeats.new()

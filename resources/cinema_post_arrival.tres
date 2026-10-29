@@ -1,0 +1,14 @@
+[gd_resource type="CompositorEffect" script_class="CinemaPost" format=3]
+
+[ext_resource type="Script" path="res://scripts/rendering/cinema_post.gd" id="1_post"]
+
+[resource]
+resource_local_to_scene = true
+script = ExtResource("1_post")
+contrast = 1.12
+saturation = 0.92
+shadow_tint = Color(0.84, 0.98, 1.07, 1)
+highlight_tint = Color(0.98, 1.0, 1.04, 1)
+aberration = 0.0003
+vignette_strength = 0.5
+vignette_start = 0.4

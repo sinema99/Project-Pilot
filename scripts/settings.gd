@@ -93,8 +93,6 @@ const DEFS := [
 	[&"hologram_menu", "HOLOGRAM MENU", "controls", ["off", "on"], 0],
 	# pilot9's sparks, dust and air - see docs/specs/pilot9-movement-vfx.md.
 	[&"movement_effects", "MOVEMENT EFFECTS", "controls", ["off", "on"], 1],
-	# pilot9's wool poncho - see docs/specs/pilot9-poncho.md.
-	[&"poncho", "PONCHO", "controls", ["off", "on"], 1],
 ]
 
 ## The size the UI is laid out at. With stretch aspect `keep` this is also the shape the 3D is
@@ -277,8 +275,6 @@ var hologram_menu: bool:
 	get: return _values.get(&"hologram_menu", "off") == "on"
 var movement_effects: bool:
 	get: return _values.get(&"movement_effects", "on") == "on"
-var poncho: bool:
-	get: return _values.get(&"poncho", "on") == "on"
 
 func _ready() -> void:
 	_save_timer = Timer.new()
@@ -419,7 +415,7 @@ func _apply(key: StringName, value: Variant) -> void:
 					pixel_look.apply_look(true)
 				if retro_look and value == "retro":
 					retro_look.apply_look(true)
-		&"mouse_sensitivity", &"controller_sensitivity", &"fov", &"camera_motion", &"hologram_menu", &"movement_effects", &"poncho", &"anime_animation":
+		&"mouse_sensitivity", &"controller_sensitivity", &"fov", &"camera_motion", &"hologram_menu", &"movement_effects", &"anime_animation":
 			# No global to push to, because every consumer reads these off this
 			# autoload at the point of use rather than caching them: both
 			# _unhandled_input() handlers and pilot9's

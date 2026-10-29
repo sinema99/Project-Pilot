@@ -2,7 +2,8 @@ extends SceneTree
 
 # Throwaway probe, WINDOWED: puts the cowboy hat on pilot9 in trial.tscn and shoots his head from
 # the front, side, back and three-quarter, plus the game camera. Run:
-#   godot --path . --script tests/_probe_hat_shot.gd -- <out_dir> [pilot_index]
+#   godot --path . --script tests/_probe_hat_shot.gd -- <out_dir> [pilot_index] [y z tilt [scale]]
+# The optional y / z / tilt / scale try a fit without touching pilot9's defaults.
 
 # [name, yaw from his facing (deg), distance, height above his feet]
 const SHOTS := [
@@ -20,11 +21,15 @@ var _out := ""
 var _cam: Camera3D
 var _i := 0
 var _which := 0
+var _fit: Array = []
 
 func _initialize() -> void:
 	var args := OS.get_cmdline_user_args()
 	_out = args[0] if args.size() > 0 else OS.get_user_data_dir()
 	_which = int(args[1]) if args.size() > 1 else 0
+	_fit = [float(args[2]), float(args[3]), float(args[4])] if args.size() > 4 else []
+	if args.size() > 5:
+		_fit.append(float(args[5]))
 	change_scene_to_file("res://scenes/trial.tscn")
 
 func _process(_delta: float) -> bool:
@@ -38,6 +43,11 @@ func _process(_delta: float) -> bool:
 	if _frames == 60:
 		_shot("game_off.png")
 	if _frames == 62:
+		if not _fit.is_empty():
+			_pilot.hat_offset = Vector3(0.0, _fit[0], _fit[1])
+			_pilot.hat_tilt = _fit[2]
+			if _fit.size() > 3:
+				_pilot.hat_scale = _fit[3]
 		_pilot.toggle_hat()
 	if _frames == 66:
 		_shot("game_on.png")

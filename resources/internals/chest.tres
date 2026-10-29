@@ -1,0 +1,25 @@
+[gd_resource type="ShaderMaterial" format=3]
+
+[ext_resource type="Material" path="res://resources/cel_crease_material.tres" id="1_ry33k"]
+[ext_resource type="Shader" path="res://shaders/cel/cel-shader-base.gdshader" id="2_vdojv"]
+
+[resource]
+render_priority = 0
+next_pass = ExtResource("1_ry33k")
+shader = ExtResource("2_vdojv")
+shader_parameter/shade_bias = null
+shader_parameter/paint_soft = null
+shader_parameter/shadow_tone = null
+shader_parameter/shadow_tint = null
+shader_parameter/color = Color(0.85, 0.62, 0.22, 1)
+shader_parameter/specular = Color(0, 0, 0, 0.501961)
+shader_parameter/fresnel = Color(0, 0, 0, 0)
+shader_parameter/paint_anchor = 1
+shader_parameter/flat_fill = null
+shader_parameter/bg_paint = null
+shader_parameter/floor_color = null
+shader_parameter/floor_panel = null
+shader_parameter/floor_panel_size = null
+shader_parameter/floor_panel_width = null
+shader_parameter/uv_scale = Vector2(1, 1)
+shader_parameter/uv_offset = Vector2(0, 0)

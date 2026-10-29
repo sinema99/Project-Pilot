@@ -240,7 +240,7 @@ func _can_step(key: StringName, direction: int) -> bool:
 
 func _format_value(key: StringName, value: Variant) -> String:
 	match key:
-		&"window_mode", &"vsync", &"shadow_quality", &"camera_motion", &"hologram_menu", &"movement_effects", &"poncho", &"painted_shading", &"cel_scatter", &"look":
+		&"window_mode", &"vsync", &"shadow_quality", &"camera_motion", &"hologram_menu", &"movement_effects", &"painted_shading", &"cel_scatter", &"look":
 			return String(value).to_upper()
 		&"msaa":
 			return "OFF" if value == "off" else String(value).to_upper()

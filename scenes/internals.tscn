@@ -1,0 +1,2173 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/mission_map.gd" id="1_1uoba"]
+[ext_resource type="Material" path="res://resources/internals/shell.tres" id="2_nrb3i"]
+[ext_resource type="Material" path="res://resources/internals/floor.tres" id="3_08j2o"]
+[ext_resource type="Material" path="res://resources/internals/solid.tres" id="4_fjohw"]
+[ext_resource type="Script" path="res://scripts/mission/kill_volume.gd" id="5_lrcog"]
+[ext_resource type="Script" path="res://scripts/mission/one_way_gate.gd" id="6_akkup"]
+[ext_resource type="Material" path="res://resources/internals/gate.tres" id="7_aib5f"]
+[ext_resource type="Script" path="res://scripts/mission/rest_pad.gd" id="8_l4r2p"]
+[ext_resource type="Material" path="res://resources/internals/glow_rest.tres" id="9_ug32v"]
+[ext_resource type="Script" path="res://scripts/mission/ability_pickup.gd" id="10_ep8u5"]
+[ext_resource type="Material" path="res://resources/internals/glow_pickup.tres" id="11_g4ear"]
+[ext_resource type="Material" path="res://resources/internals/chest.tres" id="12_oejuo"]
+[ext_resource type="Script" path="res://scripts/mission/exit_volume.gd" id="13_a27to"]
+[ext_resource type="PackedScene" path="res://scenes/pilot9.tscn" id="14_fxefd"]
+[ext_resource type="Script" path="res://scripts/mission/mission_hud.gd" id="15_8ftam"]
+[ext_resource type="Script" path="res://scripts/rendering/apply_stylized.gd" id="16_pjc7d"]
+[ext_resource type="Material" path="res://resources/pilot_cel_character.tres" id="17_mk3nn"]
+[ext_resource type="Script" path="res://scripts/rendering/pixel_world.gd" id="18_r3fbt"]
+[ext_resource type="Script" path="res://scripts/rendering/pixel_look.gd" id="19_hj5we"]
+[ext_resource type="Script" path="res://scripts/rendering/retro_look.gd" id="20_7e8ay"]
+
+[sub_resource type="Environment" id="Environment_kq7e7"]
+background_mode = 1
+background_color = Color(0.02, 0.025, 0.03, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.34, 0.37, 0.42, 1)
+tonemap_mode = 2
+glow_enabled = true
+fog_enabled = true
+fog_light_color = Color(0.04, 0.05, 0.06, 1)
+fog_density = 0.008
+fog_sky_affect = 0.0
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_f8w3e"]
+size = Vector3(78, 3, 30)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_uuo4d"]
+size = Vector3(28, 3, 28)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_c33vb"]
+size = Vector3(70, 3, 70)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_lbce2"]
+size = Vector3(30, 3, 44)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_84ep4"]
+size = Vector3(62, 3, 30)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_0hbws"]
+size = Vector3(30, 3, 32)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_nm4oc"]
+size = Vector3(4, 4, 0.6)
+
+[sub_resource type="BoxMesh" id="BoxMesh_8d5nd"]
+size = Vector3(4, 4, 0.6)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_r320v"]
+size = Vector3(4, 4, 3)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_aokyf"]
+size = Vector3(0.6, 3, 4)
+
+[sub_resource type="BoxMesh" id="BoxMesh_mmi08"]
+size = Vector3(0.6, 3, 4)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_dibgt"]
+size = Vector3(3, 3, 4)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_pynof"]
+size = Vector3(4, 3, 0.6)
+
+[sub_resource type="BoxMesh" id="BoxMesh_tcebl"]
+size = Vector3(4, 3, 0.6)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_32i3a"]
+size = Vector3(4, 3, 3)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_mkeg5"]
+size = Vector3(3, 2, 3)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_amjvr"]
+size = Vector3(3, 2, 3)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_33csx"]
+size = Vector3(3, 2, 3)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_ttita"]
+size = Vector3(2, 2.4, 2)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_c203j"]
+size = Vector3(8, 4, 8)
+
+[node name="Internals" type="Node3D" unique_id=909480111 node_paths=PackedStringArray("map", "pilot")]
+script = ExtResource("1_1uoba")
+map = NodePath("Map")
+pilot = NodePath("Pilot9")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=721429796]
+environment = SubResource("Environment_kq7e7")
+
+[node name="Map" type="Node3D" parent="." unique_id=2093562846]
+
+[node name="Shell" type="CSGCombiner3D" parent="Map" unique_id=1910040572]
+use_collision = true
+
+[node name="Walls_Z01" type="CSGCombiner3D" parent="Map/Shell" unique_id=1619709608]
+
+[node name="H1_outer" type="CSGBox3D" parent="Map/Shell/Walls_Z01" unique_id=135169484]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14, 47.5, 11)
+size = Vector3(14, 7, 12)
+material = ExtResource("2_nrb3i")
+
+[node name="H2_outer" type="CSGBox3D" parent="Map/Shell/Walls_Z01" unique_id=1571038860]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 28, 47, 10)
+size = Vector3(18, 6, 6)
+material = ExtResource("2_nrb3i")
+
+[node name="Walls_Z02" type="CSGCombiner3D" parent="Map/Shell" unique_id=1424926917]
+
+[node name="F0_outer" type="CSGBox3D" parent="Map/Shell/Walls_Z02" unique_id=1691104940]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 75, 37, 17)
+size = Vector3(80, 28, 32)
+material = ExtResource("2_nrb3i")
+
+[node name="FD_outer" type="CSGBox3D" parent="Map/Shell/Walls_Z02" unique_id=1757476466]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 34, 39.5, 28)
+size = Vector3(6, 5, 6)
+material = ExtResource("2_nrb3i")
+
+[node name="Walls_Z03" type="CSGCombiner3D" parent="Map/Shell" unique_id=920041403]
+
+[node name="V0_outer" type="CSGBox3D" parent="Map/Shell/Walls_Z03" unique_id=1480077270]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 18, 35, 39)
+size = Vector3(30, 32, 30)
+material = ExtResource("2_nrb3i")
+
+[node name="Walls_Z04" type="CSGCombiner3D" parent="Map/Shell" unique_id=1258317412]
+
+[node name="C0_outer" type="CSGBox3D" parent="Map/Shell/Walls_Z04" unique_id=1886696704]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 32, 76.5)
+size = Vector3(6, 6, 49)
+material = ExtResource("2_nrb3i")
+
+[node name="CA_outer" type="CSGBox3D" parent="Map/Shell/Walls_Z04" unique_id=864179921]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9, 32, 63)
+size = Vector3(12, 6, 12)
+material = ExtResource("2_nrb3i")
+
+[node name="CK_outer" type="CSGBox3D" parent="Map/Shell/Walls_Z04" unique_id=1219268162]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 31.1, 77)
+size = Vector3(6, 4.2, 20)
+material = ExtResource("2_nrb3i")
+
+[node name="CD_outer" type="CSGBox3D" parent="Map/Shell/Walls_Z04" unique_id=1669469997]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9, 32, 92)
+size = Vector3(12, 6, 14)
+material = ExtResource("2_nrb3i")
+
+[node name="CB_outer" type="CSGBox3D" parent="Map/Shell/Walls_Z04" unique_id=1799971540]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 25.5, 32, 62)
+size = Vector3(17, 6, 10)
+material = ExtResource("2_nrb3i")
+
+[node name="CX_outer" type="CSGBox3D" parent="Map/Shell/Walls_Z04" unique_id=1668832219]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 20, 32, 77)
+size = Vector3(6, 6, 6)
+material = ExtResource("2_nrb3i")
+
+[node name="CC_outer" type="CSGBox3D" parent="Map/Shell/Walls_Z04" unique_id=594860346]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 33, 33, 77)
+size = Vector3(24, 8, 16)
+material = ExtResource("2_nrb3i")
+
+[node name="SC1_outer" type="CSGBox3D" parent="Map/Shell/Walls_Z04" unique_id=1531456585]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 35, 32, 51)
+size = Vector3(6, 6, 20)
+material = ExtResource("2_nrb3i")
+
+[node name="SC2_outer" type="CSGBox3D" parent="Map/Shell/Walls_Z04" unique_id=780611802]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 40.5, 32, 44)
+size = Vector3(9, 6, 6)
+material = ExtResource("2_nrb3i")
+
+[node name="Walls_Z05" type="CSGCombiner3D" parent="Map/Shell" unique_id=732957198]
+
+[node name="T0_outer" type="CSGBox3D" parent="Map/Shell/Walls_Z05" unique_id=939115395]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 79, 25, 75)
+size = Vector3(72, 48, 72)
+material = ExtResource("2_nrb3i")
+
+[node name="NK_outer" type="CSGBox3D" parent="Map/Shell/Walls_Z05" unique_id=1588474431]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 79, 32, 37)
+size = Vector3(12, 6, 8)
+material = ExtResource("2_nrb3i")
+
+[node name="TA_outer" type="CSGBox3D" parent="Map/Shell/Walls_Z05" unique_id=271944831]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 116, 38, 95)
+size = Vector3(6, 6, 8)
+material = ExtResource("2_nrb3i")
+
+[node name="Walls_Z06" type="CSGCombiner3D" parent="Map/Shell" unique_id=744300830]
+
+[node name="G0_outer" type="CSGBox3D" parent="Map/Shell/Walls_Z06" unique_id=1598689362]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 131, 15, 78)
+size = Vector3(32, 32, 46)
+material = ExtResource("2_nrb3i")
+
+[node name="GK_outer" type="CSGBox3D" parent="Map/Shell/Walls_Z06" unique_id=563610118]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 148, 13.5, 94)
+size = Vector3(6, 5, 78)
+material = ExtResource("2_nrb3i")
+
+[node name="GT_outer" type="CSGBox3D" parent="Map/Shell/Walls_Z06" unique_id=1756036772]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 119, 19, 51)
+size = Vector3(8, 6, 8)
+material = ExtResource("2_nrb3i")
+
+[node name="G6_outer" type="CSGBox3D" parent="Map/Shell/Walls_Z06" unique_id=79246692]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 136, 14, 130)
+size = Vector3(22, 6, 6)
+material = ExtResource("2_nrb3i")
+
+[node name="R0_outer" type="CSGBox3D" parent="Map/Shell/Walls_Z06" unique_id=1436943869]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 95, 11, 131)
+size = Vector3(64, 24, 32)
+material = ExtResource("2_nrb3i")
+
+[node name="Walls_Z07" type="CSGCombiner3D" parent="Map/Shell" unique_id=865349884]
+
+[node name="UD_outer" type="CSGBox3D" parent="Map/Shell/Walls_Z07" unique_id=28901650]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 66, 12, 112)
+size = Vector3(6, 6, 10)
+material = ExtResource("2_nrb3i")
+
+[node name="UX_outer" type="CSGBox3D" parent="Map/Shell/Walls_Z07" unique_id=1706550158]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 38, 12, 98)
+size = Vector3(18, 6, 6)
+material = ExtResource("2_nrb3i")
+
+[node name="UV_outer" type="CSGBox3D" parent="Map/Shell/Walls_Z07" unique_id=513543533]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 32, 12, 103)
+size = Vector3(6, 6, 8)
+material = ExtResource("2_nrb3i")
+
+[node name="Walls_Z08" type="CSGCombiner3D" parent="Map/Shell" unique_id=884889365]
+
+[node name="Q0_outer" type="CSGBox3D" parent="Map/Shell/Walls_Z08" unique_id=188124392]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24, 20, 126)
+size = Vector3(42, 22, 42)
+material = ExtResource("2_nrb3i")
+
+[node name="Walls_Z09" type="CSGCombiner3D" parent="Map/Shell" unique_id=484222093]
+
+[node name="U0_outer" type="CSGBox3D" parent="Map/Shell/Walls_Z09" unique_id=984557922]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 53, 21, 119)
+size = Vector3(16, 12, 16)
+material = ExtResource("2_nrb3i")
+
+[node name="Walls_Z10" type="CSGCombiner3D" parent="Map/Shell" unique_id=1379262603]
+
+[node name="PC_outer" type="CSGBox3D" parent="Map/Shell/Walls_Z10" unique_id=1773427360]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 120, 32, 43)
+size = Vector3(14, 6, 8)
+material = ExtResource("2_nrb3i")
+
+[node name="PC2_outer" type="CSGBox3D" parent="Map/Shell/Walls_Z10" unique_id=703103913]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 123, 32, 38)
+size = Vector3(8, 6, 6)
+material = ExtResource("2_nrb3i")
+
+[node name="P0_outer" type="CSGBox3D" parent="Map/Shell/Walls_Z10" unique_id=141179261]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 131, 17, 20)
+size = Vector3(32, 64, 34)
+material = ExtResource("2_nrb3i")
+
+[node name="PX_outer" type="CSGBox3D" parent="Map/Shell/Walls_Z10" unique_id=1221554013]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 82, -3, 32)
+size = Vector3(70, 6, 6)
+material = ExtResource("2_nrb3i")
+
+[node name="PZ_outer" type="CSGBox3D" parent="Map/Shell/Walls_Z10" unique_id=1425226517]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 42, -2, 30)
+size = Vector3(14, 8, 18)
+material = ExtResource("2_nrb3i")
+
+[node name="Air_Z01" type="CSGCombiner3D" parent="Map/Shell" unique_id=1445663595]
+operation = 2
+
+[node name="H1_air" type="CSGBox3D" parent="Map/Shell/Air_Z01" unique_id=931856471]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14, 47.5, 11)
+size = Vector3(11, 5, 9)
+material = ExtResource("2_nrb3i")
+
+[node name="H2_air" type="CSGBox3D" parent="Map/Shell/Air_Z01" unique_id=1422921390]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 28, 47, 10)
+size = Vector3(15, 4, 3)
+material = ExtResource("2_nrb3i")
+
+[node name="Air_Z02" type="CSGCombiner3D" parent="Map/Shell" unique_id=1073119530]
+operation = 2
+
+[node name="F0_air" type="CSGBox3D" parent="Map/Shell/Air_Z02" unique_id=319367780]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 75, 37, 17)
+size = Vector3(77, 26, 29)
+material = ExtResource("2_nrb3i")
+
+[node name="FD_air" type="CSGBox3D" parent="Map/Shell/Air_Z02" unique_id=1653501167]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 34, 39.5, 28)
+size = Vector3(3, 3, 3)
+material = ExtResource("2_nrb3i")
+
+[node name="Air_Z03" type="CSGCombiner3D" parent="Map/Shell" unique_id=859979641]
+operation = 2
+
+[node name="V0_air" type="CSGBox3D" parent="Map/Shell/Air_Z03" unique_id=158195768]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 18, 35, 39)
+size = Vector3(27, 30, 27)
+material = ExtResource("2_nrb3i")
+
+[node name="Air_Z04" type="CSGCombiner3D" parent="Map/Shell" unique_id=1546197287]
+operation = 2
+
+[node name="C0_air" type="CSGBox3D" parent="Map/Shell/Air_Z04" unique_id=1583036969]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 32, 76.5)
+size = Vector3(3, 4, 46)
+material = ExtResource("2_nrb3i")
+
+[node name="CA_air" type="CSGBox3D" parent="Map/Shell/Air_Z04" unique_id=2018253715]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9, 32, 63)
+size = Vector3(9, 4, 9)
+material = ExtResource("2_nrb3i")
+
+[node name="CK_air" type="CSGBox3D" parent="Map/Shell/Air_Z04" unique_id=1465373326]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 31.1, 77)
+size = Vector3(3, 2.2, 17)
+material = ExtResource("2_nrb3i")
+
+[node name="CD_air" type="CSGBox3D" parent="Map/Shell/Air_Z04" unique_id=2140509354]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9, 32, 92)
+size = Vector3(9, 4, 11)
+material = ExtResource("2_nrb3i")
+
+[node name="CB_air" type="CSGBox3D" parent="Map/Shell/Air_Z04" unique_id=80981159]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 25.5, 32, 62)
+size = Vector3(14, 4, 7)
+material = ExtResource("2_nrb3i")
+
+[node name="CX_air" type="CSGBox3D" parent="Map/Shell/Air_Z04" unique_id=2011982792]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 20, 32, 77)
+size = Vector3(3, 4, 3)
+material = ExtResource("2_nrb3i")
+
+[node name="CC_air" type="CSGBox3D" parent="Map/Shell/Air_Z04" unique_id=493329825]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 33, 33, 77)
+size = Vector3(21, 6, 13)
+material = ExtResource("2_nrb3i")
+
+[node name="SC1_air" type="CSGBox3D" parent="Map/Shell/Air_Z04" unique_id=519012195]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 35, 32, 51)
+size = Vector3(3, 4, 17)
+material = ExtResource("2_nrb3i")
+
+[node name="SC2_air" type="CSGBox3D" parent="Map/Shell/Air_Z04" unique_id=154824046]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 40.5, 32, 44)
+size = Vector3(6, 4, 3)
+material = ExtResource("2_nrb3i")
+
+[node name="Air_Z05" type="CSGCombiner3D" parent="Map/Shell" unique_id=1630389132]
+operation = 2
+
+[node name="T0_air" type="CSGBox3D" parent="Map/Shell/Air_Z05" unique_id=304244352]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 79, 25, 75)
+size = Vector3(69, 46, 69)
+material = ExtResource("2_nrb3i")
+
+[node name="NK_air" type="CSGBox3D" parent="Map/Shell/Air_Z05" unique_id=859263009]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 79, 32, 37)
+size = Vector3(9, 4, 5)
+material = ExtResource("2_nrb3i")
+
+[node name="TA_air" type="CSGBox3D" parent="Map/Shell/Air_Z05" unique_id=1682672278]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 116, 38, 95)
+size = Vector3(3, 4, 5)
+material = ExtResource("2_nrb3i")
+
+[node name="Air_Z06" type="CSGCombiner3D" parent="Map/Shell" unique_id=283384053]
+operation = 2
+
+[node name="G0_air" type="CSGBox3D" parent="Map/Shell/Air_Z06" unique_id=819946726]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 131, 15, 78)
+size = Vector3(29, 30, 43)
+material = ExtResource("2_nrb3i")
+
+[node name="GK_air" type="CSGBox3D" parent="Map/Shell/Air_Z06" unique_id=194021142]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 148, 13.5, 94)
+size = Vector3(3, 3, 75)
+material = ExtResource("2_nrb3i")
+
+[node name="GT_air" type="CSGBox3D" parent="Map/Shell/Air_Z06" unique_id=342713801]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 119, 19, 51)
+size = Vector3(5, 4, 5)
+material = ExtResource("2_nrb3i")
+
+[node name="G6_air" type="CSGBox3D" parent="Map/Shell/Air_Z06" unique_id=714357742]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 136, 14, 130)
+size = Vector3(19, 4, 3)
+material = ExtResource("2_nrb3i")
+
+[node name="R0_air" type="CSGBox3D" parent="Map/Shell/Air_Z06" unique_id=1730858836]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 95, 11, 131)
+size = Vector3(61, 22, 29)
+material = ExtResource("2_nrb3i")
+
+[node name="Air_Z07" type="CSGCombiner3D" parent="Map/Shell" unique_id=1191534373]
+operation = 2
+
+[node name="UD_air" type="CSGBox3D" parent="Map/Shell/Air_Z07" unique_id=752366425]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 66, 12, 112)
+size = Vector3(3, 4, 7)
+material = ExtResource("2_nrb3i")
+
+[node name="UX_air" type="CSGBox3D" parent="Map/Shell/Air_Z07" unique_id=1319631849]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 38, 12, 98)
+size = Vector3(15, 4, 3)
+material = ExtResource("2_nrb3i")
+
+[node name="UV_air" type="CSGBox3D" parent="Map/Shell/Air_Z07" unique_id=1121056044]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 32, 12, 103)
+size = Vector3(3, 4, 5)
+material = ExtResource("2_nrb3i")
+
+[node name="Air_Z08" type="CSGCombiner3D" parent="Map/Shell" unique_id=1347904318]
+operation = 2
+
+[node name="Q0_air" type="CSGBox3D" parent="Map/Shell/Air_Z08" unique_id=1124285494]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24, 20, 126)
+size = Vector3(39, 20, 39)
+material = ExtResource("2_nrb3i")
+
+[node name="Air_Z09" type="CSGCombiner3D" parent="Map/Shell" unique_id=841337912]
+operation = 2
+
+[node name="U0_air" type="CSGBox3D" parent="Map/Shell/Air_Z09" unique_id=402900657]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 53, 21, 119)
+size = Vector3(13, 10, 13)
+material = ExtResource("2_nrb3i")
+
+[node name="Air_Z10" type="CSGCombiner3D" parent="Map/Shell" unique_id=1823311788]
+operation = 2
+
+[node name="PC_air" type="CSGBox3D" parent="Map/Shell/Air_Z10" unique_id=1257347399]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 120, 32, 43)
+size = Vector3(11, 4, 5)
+material = ExtResource("2_nrb3i")
+
+[node name="PC2_air" type="CSGBox3D" parent="Map/Shell/Air_Z10" unique_id=130648502]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 123, 32, 38)
+size = Vector3(5, 4, 3)
+material = ExtResource("2_nrb3i")
+
+[node name="P0_air" type="CSGBox3D" parent="Map/Shell/Air_Z10" unique_id=554220982]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 131, 17, 20)
+size = Vector3(29, 62, 31)
+material = ExtResource("2_nrb3i")
+
+[node name="PX_air" type="CSGBox3D" parent="Map/Shell/Air_Z10" unique_id=744137941]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 82, -3, 32)
+size = Vector3(67, 4, 3)
+material = ExtResource("2_nrb3i")
+
+[node name="PZ_air" type="CSGBox3D" parent="Map/Shell/Air_Z10" unique_id=546334326]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 42, -2, 30)
+size = Vector3(11, 6, 15)
+material = ExtResource("2_nrb3i")
+
+[node name="Nested_Walls" type="CSGCombiner3D" parent="Map/Shell" unique_id=781071507]
+
+[node name="GV_outer" type="CSGBox3D" parent="Map/Shell/Nested_Walls" unique_id=572793394]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 138, 18, 60)
+size = Vector3(18, 14, 10)
+material = ExtResource("2_nrb3i")
+
+[node name="Nested_Air" type="CSGCombiner3D" parent="Map/Shell" unique_id=1756573540]
+operation = 2
+
+[node name="GV_air" type="CSGBox3D" parent="Map/Shell/Nested_Air" unique_id=397876099]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 138, 18, 60)
+size = Vector3(15, 12, 7)
+material = ExtResource("2_nrb3i")
+
+[node name="Doors" type="CSGCombiner3D" parent="Map/Shell" unique_id=1151015310]
+operation = 2
+
+[node name="d_hatch" type="CSGBox3D" parent="Map/Shell/Doors" unique_id=974578165]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 20, 46.5, 10)
+size = Vector3(5, 3, 4)
+material = ExtResource("2_nrb3i")
+
+[node name="d_fan" type="CSGBox3D" parent="Map/Shell/Doors" unique_id=16595607]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 36, 46.5, 10)
+size = Vector3(5, 3, 4)
+material = ExtResource("2_nrb3i")
+
+[node name="d_duct_f" type="CSGBox3D" parent="Map/Shell/Doors" unique_id=1402833598]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 36, 39.25, 28)
+size = Vector3(5, 2.5, 4)
+material = ExtResource("2_nrb3i")
+
+[node name="d_duct_v" type="CSGBox3D" parent="Map/Shell/Doors" unique_id=810608162]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 32, 39.25, 28)
+size = Vector3(5, 2.5, 4)
+material = ExtResource("2_nrb3i")
+
+[node name="d_spine" type="CSGBox3D" parent="Map/Shell/Doors" unique_id=611324845]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 31.5, 53)
+size = Vector3(4, 3, 5)
+material = ExtResource("2_nrb3i")
+
+[node name="d_ca" type="CSGBox3D" parent="Map/Shell/Doors" unique_id=340443001]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14, 31.5, 63)
+size = Vector3(5, 3, 4)
+material = ExtResource("2_nrb3i")
+
+[node name="d_cb" type="CSGBox3D" parent="Map/Shell/Doors" unique_id=1526320677]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 18, 31.5, 62)
+size = Vector3(5, 3, 4)
+material = ExtResource("2_nrb3i")
+
+[node name="d_cd" type="CSGBox3D" parent="Map/Shell/Doors" unique_id=981657709]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14, 31.5, 92)
+size = Vector3(5, 3, 4)
+material = ExtResource("2_nrb3i")
+
+[node name="d_cx" type="CSGBox3D" parent="Map/Shell/Doors" unique_id=2003140792]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 18, 31.5, 77)
+size = Vector3(5, 3, 4)
+material = ExtResource("2_nrb3i")
+
+[node name="d_cc" type="CSGBox3D" parent="Map/Shell/Doors" unique_id=174882503]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 22, 31.5, 77)
+size = Vector3(5, 3, 4)
+material = ExtResource("2_nrb3i")
+
+[node name="d_ck1" type="CSGBox3D" parent="Map/Shell/Doors" unique_id=2107666553]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 31.1, 68)
+size = Vector3(4, 2.2, 5)
+material = ExtResource("2_nrb3i")
+
+[node name="d_ck2" type="CSGBox3D" parent="Map/Shell/Doors" unique_id=1526356190]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 31.1, 86)
+size = Vector3(4, 2.2, 5)
+material = ExtResource("2_nrb3i")
+
+[node name="d_shutter" type="CSGBox3D" parent="Map/Shell/Doors" unique_id=50687080]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 32, 70)
+size = Vector3(4, 4, 5)
+material = ExtResource("2_nrb3i")
+
+[node name="d_sc0" type="CSGBox3D" parent="Map/Shell/Doors" unique_id=647678623]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 33, 31.5, 59)
+size = Vector3(5, 3, 2)
+material = ExtResource("2_nrb3i")
+
+[node name="d_sc1" type="CSGBox3D" parent="Map/Shell/Doors" unique_id=208323818]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 37, 31.5, 44)
+size = Vector3(5, 3, 4)
+material = ExtResource("2_nrb3i")
+
+[node name="d_sc2" type="CSGBox3D" parent="Map/Shell/Doors" unique_id=553311215]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 44, 31.5, 44)
+size = Vector3(5, 3, 4)
+material = ExtResource("2_nrb3i")
+
+[node name="d_window" type="CSGBox3D" parent="Map/Shell/Doors" unique_id=1094532778]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 44, 32.5, 77)
+size = Vector3(5, 5, 10)
+material = ExtResource("2_nrb3i")
+
+[node name="d_nk" type="CSGBox3D" parent="Map/Shell/Doors" unique_id=1007004262]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 79, 31.75, 40)
+size = Vector3(8, 3.5, 5)
+material = ExtResource("2_nrb3i")
+
+[node name="d_ta" type="CSGBox3D" parent="Map/Shell/Doors" unique_id=888239119]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 114, 38, 95)
+size = Vector3(5, 4, 6)
+material = ExtResource("2_nrb3i")
+
+[node name="d_te" type="CSGBox3D" parent="Map/Shell/Doors" unique_id=997800803]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 115, 19.5, 77)
+size = Vector3(5, 3, 4)
+material = ExtResource("2_nrb3i")
+
+[node name="d_pc" type="CSGBox3D" parent="Map/Shell/Doors" unique_id=2039342332]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 114, 31.5, 43)
+size = Vector3(5, 3, 4)
+material = ExtResource("2_nrb3i")
+
+[node name="d_pc2" type="CSGBox3D" parent="Map/Shell/Doors" unique_id=72975339]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 123, 31.5, 40)
+size = Vector3(6, 3, 5)
+material = ExtResource("2_nrb3i")
+
+[node name="d_press" type="CSGBox3D" parent="Map/Shell/Doors" unique_id=1858773475]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 123, 31.5, 36)
+size = Vector3(6, 3, 5)
+material = ExtResource("2_nrb3i")
+
+[node name="d_gt" type="CSGBox3D" parent="Map/Shell/Doors" unique_id=550841414]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 119, 19, 55)
+size = Vector3(6, 4, 5)
+material = ExtResource("2_nrb3i")
+
+[node name="d_gv" type="CSGBox3D" parent="Map/Shell/Doors" unique_id=154099325]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 146, 13.5, 60.5)
+size = Vector3(5, 3, 3)
+material = ExtResource("2_nrb3i")
+
+[node name="d_gv2" type="CSGBox3D" parent="Map/Shell/Doors" unique_id=599134415]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 143, 13.5, 64)
+size = Vector3(6, 3, 5)
+material = ExtResource("2_nrb3i")
+
+[node name="d_gk" type="CSGBox3D" parent="Map/Shell/Doors" unique_id=959350]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 146, 13.5, 130)
+size = Vector3(5, 3, 4)
+material = ExtResource("2_nrb3i")
+
+[node name="d_g6" type="CSGBox3D" parent="Map/Shell/Doors" unique_id=1346154194]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 126, 13.5, 130)
+size = Vector3(5, 3, 4)
+material = ExtResource("2_nrb3i")
+
+[node name="d_udn" type="CSGBox3D" parent="Map/Shell/Doors" unique_id=1570041142]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 66, 11.5, 110)
+size = Vector3(4, 3, 5)
+material = ExtResource("2_nrb3i")
+
+[node name="d_ud" type="CSGBox3D" parent="Map/Shell/Doors" unique_id=1254982616]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 66, 11.5, 116)
+size = Vector3(4, 3, 5)
+material = ExtResource("2_nrb3i")
+
+[node name="d_uxw" type="CSGBox3D" parent="Map/Shell/Doors" unique_id=713322986]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 44, 11.5, 98)
+size = Vector3(5, 3, 4)
+material = ExtResource("2_nrb3i")
+
+[node name="d_ux" type="CSGBox3D" parent="Map/Shell/Doors" unique_id=1754676397]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 32, 11.5, 100)
+size = Vector3(4, 3, 5)
+material = ExtResource("2_nrb3i")
+
+[node name="d_uv" type="CSGBox3D" parent="Map/Shell/Doors" unique_id=591755308]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 32, 11.5, 106)
+size = Vector3(4, 3, 5)
+material = ExtResource("2_nrb3i")
+
+[node name="d_lip" type="CSGBox3D" parent="Map/Shell/Doors" unique_id=17839012]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 45, 17.5, 116)
+size = Vector3(5, 3, 4)
+material = ExtResource("2_nrb3i")
+
+[node name="d_riser" type="CSGBox3D" parent="Map/Shell/Doors" unique_id=1016194354]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 53, 23.5, 111)
+size = Vector3(4, 3, 5)
+material = ExtResource("2_nrb3i")
+
+[node name="d_px" type="CSGBox3D" parent="Map/Shell/Doors" unique_id=1707985770]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 116, -3.5, 32)
+size = Vector3(5, 3, 4)
+material = ExtResource("2_nrb3i")
+
+[node name="d_pz" type="CSGBox3D" parent="Map/Shell/Doors" unique_id=1115185364]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 48, -3.5, 32)
+size = Vector3(5, 3, 4)
+material = ExtResource("2_nrb3i")
+
+[node name="Z01_ServiceHatch" type="Node3D" parent="Map" unique_id=2023833985]
+
+[node name="H1_light0" type="OmniLight3D" parent="Map/Z01_ServiceHatch" unique_id=1928349202]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14, 49, 11)
+light_color = Color(1, 0.86, 0.7, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="H2_light0" type="OmniLight3D" parent="Map/Z01_ServiceHatch" unique_id=140503052]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 28, 48, 10)
+light_color = Color(1, 0.86, 0.7, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="Z02_FanHall" type="Node3D" parent="Map" unique_id=1364785376]
+
+[node name="F0_light0" type="OmniLight3D" parent="Map/Z02_FanHall" unique_id=1848998336]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 45.75, 42.2, 17)
+light_color = Color(0.62, 0.86, 1, 1)
+light_energy = 4.0
+omni_range = 38.6
+
+[node name="F0_light1" type="OmniLight3D" parent="Map/Z02_FanHall" unique_id=423875473]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 65.25, 42.2, 17)
+light_color = Color(0.62, 0.86, 1, 1)
+light_energy = 4.0
+omni_range = 38.6
+
+[node name="F0_light2" type="OmniLight3D" parent="Map/Z02_FanHall" unique_id=838162616]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 84.75, 42.2, 17)
+light_color = Color(0.62, 0.86, 1, 1)
+light_energy = 4.0
+omni_range = 38.6
+
+[node name="F0_light3" type="OmniLight3D" parent="Map/Z02_FanHall" unique_id=1886519587]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 104.25, 42.2, 17)
+light_color = Color(0.62, 0.86, 1, 1)
+light_energy = 4.0
+omni_range = 38.6
+
+[node name="FL" type="CSGBox3D" parent="Map/Z02_FanHall" unique_id=529558954]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 39, 44.75, 7)
+use_collision = true
+size = Vector3(6, 0.5, 10)
+material = ExtResource("3_08j2o")
+
+[node name="FL_label" type="Label3D" parent="Map/Z02_FanHall" unique_id=252725800]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 39, 45.05, 7)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "FL"
+font_size = 48
+outline_size = 0
+
+[node name="FN1" type="CSGBox3D" parent="Map/Z02_FanHall" unique_id=1227864798]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 49, 44.75, 4)
+use_collision = true
+size = Vector3(14, 0.5, 4)
+material = ExtResource("3_08j2o")
+
+[node name="FN1_label" type="Label3D" parent="Map/Z02_FanHall" unique_id=1826052060]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 49, 45.05, 4)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "FN1"
+font_size = 48
+outline_size = 0
+
+[node name="FN2" type="CSGBox3D" parent="Map/Z02_FanHall" unique_id=401536961]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 72, 44.75, 4)
+use_collision = true
+size = Vector3(20, 0.5, 4)
+material = ExtResource("3_08j2o")
+
+[node name="FN2_label" type="Label3D" parent="Map/Z02_FanHall" unique_id=400583659]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 72, 45.05, 4)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "FN2"
+font_size = 48
+outline_size = 0
+
+[node name="FN3" type="CSGBox3D" parent="Map/Z02_FanHall" unique_id=1053860770]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 97, 43.75, 4)
+use_collision = true
+size = Vector3(18, 0.5, 4)
+material = ExtResource("3_08j2o")
+
+[node name="FN3_label" type="Label3D" parent="Map/Z02_FanHall" unique_id=1147663089]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 97, 44.05, 4)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "FN3"
+font_size = 48
+outline_size = 0
+
+[node name="FE" type="CSGBox3D" parent="Map/Z02_FanHall" unique_id=1942925783]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 110, 42.75, 16)
+use_collision = true
+size = Vector3(8, 0.5, 28)
+material = ExtResource("3_08j2o")
+
+[node name="FE_label" type="Label3D" parent="Map/Z02_FanHall" unique_id=1164149369]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 110, 43.05, 16)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "FE"
+font_size = 48
+outline_size = 0
+
+[node name="F3" type="CSGBox3D" parent="Map/Z02_FanHall" unique_id=1552559774]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 93, 32.5, 25)
+use_collision = true
+size = Vector3(14, 17, 10)
+material = ExtResource("4_fjohw")
+
+[node name="F3_label" type="Label3D" parent="Map/Z02_FanHall" unique_id=299725599]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 93, 41.05, 25)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "F3"
+font_size = 48
+outline_size = 0
+
+[node name="F2" type="CSGBox3D" parent="Map/Z02_FanHall" unique_id=1593180943]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 73, 32, 25)
+use_collision = true
+size = Vector3(14, 16, 10)
+material = ExtResource("4_fjohw")
+
+[node name="F2_label" type="Label3D" parent="Map/Z02_FanHall" unique_id=597547927]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 73, 40.05, 25)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "F2"
+font_size = 48
+outline_size = 0
+
+[node name="F1" type="CSGBox3D" parent="Map/Z02_FanHall" unique_id=345172373]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 53, 31.5, 25)
+use_collision = true
+size = Vector3(14, 15, 10)
+material = ExtResource("4_fjohw")
+
+[node name="F1_label" type="Label3D" parent="Map/Z02_FanHall" unique_id=288113621]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 53, 39.05, 25)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "F1"
+font_size = 48
+outline_size = 0
+
+[node name="FS" type="CSGBox3D" parent="Map/Z02_FanHall" unique_id=2121214466]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 41, 37.75, 28)
+use_collision = true
+size = Vector3(10, 0.5, 4)
+material = ExtResource("3_08j2o")
+
+[node name="FS_label" type="Label3D" parent="Map/Z02_FanHall" unique_id=445249077]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 41, 38.05, 28)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "FS"
+font_size = 48
+outline_size = 0
+
+[node name="FD_light0" type="OmniLight3D" parent="Map/Z02_FanHall" unique_id=260179217]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 34, 40, 28)
+light_color = Color(0.62, 0.86, 1, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="KF" type="Area3D" parent="Map/Z02_FanHall" unique_id=138810697]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 75, 23.5, 17)
+script = ExtResource("5_lrcog")
+
+[node name="Shape" type="CollisionShape3D" parent="Map/Z02_FanHall/KF" unique_id=1148183841]
+shape = SubResource("BoxShape3D_f8w3e")
+
+[node name="Z03_VentStack" type="Node3D" parent="Map" unique_id=637245948]
+
+[node name="V0_light0" type="OmniLight3D" parent="Map/Z03_VentStack" unique_id=672169437]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 18, 41, 39)
+light_color = Color(0.5, 0.9, 1, 1)
+light_energy = 4.0
+omni_range = 43.0
+
+[node name="V2" type="CSGBox3D" parent="Map/Z03_VentStack" unique_id=1940991183]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 29.5, 37.75, 34)
+use_collision = true
+size = Vector3(5, 0.5, 16)
+material = ExtResource("3_08j2o")
+
+[node name="V2_label" type="Label3D" parent="Map/Z03_VentStack" unique_id=933674744]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 29.5, 38.05, 34)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "V2"
+font_size = 48
+outline_size = 0
+
+[node name="V3" type="CSGBox3D" parent="Map/Z03_VentStack" unique_id=1441163733]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 18, 27.5, 39)
+use_collision = true
+size = Vector3(8, 15, 8)
+material = ExtResource("4_fjohw")
+
+[node name="V3_label" type="Label3D" parent="Map/Z03_VentStack" unique_id=1013509838]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 18, 35.05, 39)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "V3"
+font_size = 48
+outline_size = 0
+
+[node name="V4" type="CSGBox3D" parent="Map/Z03_VentStack" unique_id=1974068215]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.5, 32.75, 38.5)
+use_collision = true
+size = Vector3(5, 0.5, 17)
+material = ExtResource("3_08j2o")
+
+[node name="V4_label" type="Label3D" parent="Map/Z03_VentStack" unique_id=2042639337]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 6.5, 33.05, 38.5)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "V4"
+font_size = 48
+outline_size = 0
+
+[node name="V5" type="CSGBox3D" parent="Map/Z03_VentStack" unique_id=1476833123]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.5, 27.4, 39)
+use_collision = true
+size = Vector3(5, 14.8, 2)
+material = ExtResource("4_fjohw")
+
+[node name="V5_label" type="Label3D" parent="Map/Z03_VentStack" unique_id=224605155]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 6.5, 34.85, 39)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "V5"
+font_size = 48
+outline_size = 0
+
+[node name="V6" type="CSGBox3D" parent="Map/Z03_VentStack" unique_id=1726002263]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 18, 29.75, 50)
+use_collision = true
+size = Vector3(28, 0.5, 6)
+material = ExtResource("3_08j2o")
+
+[node name="V6_label" type="Label3D" parent="Map/Z03_VentStack" unique_id=1169647825]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 18, 30.05, 50)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "V6"
+font_size = 48
+outline_size = 0
+
+[node name="KV" type="Area3D" parent="Map/Z03_VentStack" unique_id=1418396663]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 18, 19.5, 39)
+script = ExtResource("5_lrcog")
+
+[node name="Shape" type="CollisionShape3D" parent="Map/Z03_VentStack/KV" unique_id=506971362]
+shape = SubResource("BoxShape3D_uuo4d")
+
+[node name="Z04_ControlBlock" type="Node3D" parent="Map" unique_id=889147670]
+
+[node name="C0_light0" type="OmniLight3D" parent="Map/Z04_ControlBlock" unique_id=1237634429]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 33, 58.875)
+light_color = Color(1, 0.66, 0.3, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="C0_light1" type="OmniLight3D" parent="Map/Z04_ControlBlock" unique_id=1873786115]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 33, 70.625)
+light_color = Color(1, 0.66, 0.3, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="C0_light2" type="OmniLight3D" parent="Map/Z04_ControlBlock" unique_id=1988526777]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 33, 82.375)
+light_color = Color(1, 0.66, 0.3, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="C0_light3" type="OmniLight3D" parent="Map/Z04_ControlBlock" unique_id=454639931]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 33, 94.125)
+light_color = Color(1, 0.66, 0.3, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="CA_light0" type="OmniLight3D" parent="Map/Z04_ControlBlock" unique_id=1875678138]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9, 33, 63)
+light_color = Color(1, 0.66, 0.3, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="CK_light0" type="OmniLight3D" parent="Map/Z04_ControlBlock" unique_id=880736749]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 31.2, 72.5)
+light_color = Color(1, 0.66, 0.3, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="CK_light1" type="OmniLight3D" parent="Map/Z04_ControlBlock" unique_id=1903715980]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 31.2, 81.5)
+light_color = Color(1, 0.66, 0.3, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="CD_light0" type="OmniLight3D" parent="Map/Z04_ControlBlock" unique_id=526703744]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9, 33, 92)
+light_color = Color(1, 0.66, 0.3, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="CB_light0" type="OmniLight3D" parent="Map/Z04_ControlBlock" unique_id=146293892]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 25.5, 33, 62)
+light_color = Color(1, 0.66, 0.3, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="CX_light0" type="OmniLight3D" parent="Map/Z04_ControlBlock" unique_id=42417129]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 20, 33, 77)
+light_color = Color(1, 0.66, 0.3, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="CC_light0" type="OmniLight3D" parent="Map/Z04_ControlBlock" unique_id=1641556363]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 27.5, 35, 77)
+light_color = Color(1, 0.66, 0.3, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="CC_light1" type="OmniLight3D" parent="Map/Z04_ControlBlock" unique_id=1626979868]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 38.5, 35, 77)
+light_color = Color(1, 0.66, 0.3, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="SC1_light0" type="OmniLight3D" parent="Map/Z04_ControlBlock" unique_id=1431483907]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 35, 33, 46.5)
+light_color = Color(1, 0.66, 0.3, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="SC1_light1" type="OmniLight3D" parent="Map/Z04_ControlBlock" unique_id=406324004]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 35, 33, 55.5)
+light_color = Color(1, 0.66, 0.3, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="SC2_light0" type="OmniLight3D" parent="Map/Z04_ControlBlock" unique_id=631191156]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 40.5, 33, 44)
+light_color = Color(1, 0.66, 0.3, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="Z05_TurbineHall" type="Node3D" parent="Map" unique_id=1197048669]
+
+[node name="T0_light0" type="OmniLight3D" parent="Map/Z05_TurbineHall" unique_id=1321578882]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 55.666668, 34.2, 51.666668)
+light_color = Color(0.45, 0.62, 1, 1)
+light_energy = 4.0
+omni_range = 60.6
+
+[node name="T0_light1" type="OmniLight3D" parent="Map/Z05_TurbineHall" unique_id=1924132739]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 55.666668, 34.2, 75)
+light_color = Color(0.45, 0.62, 1, 1)
+light_energy = 4.0
+omni_range = 60.6
+
+[node name="T0_light2" type="OmniLight3D" parent="Map/Z05_TurbineHall" unique_id=429943360]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 55.666668, 34.2, 98.333336)
+light_color = Color(0.45, 0.62, 1, 1)
+light_energy = 4.0
+omni_range = 60.6
+
+[node name="T0_light3" type="OmniLight3D" parent="Map/Z05_TurbineHall" unique_id=2141485123]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 79, 34.2, 51.666668)
+light_color = Color(0.45, 0.62, 1, 1)
+light_energy = 4.0
+omni_range = 60.6
+
+[node name="T0_light4" type="OmniLight3D" parent="Map/Z05_TurbineHall" unique_id=1977194088]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 79, 34.2, 75)
+light_color = Color(0.45, 0.62, 1, 1)
+light_energy = 4.0
+omni_range = 60.6
+
+[node name="T0_light5" type="OmniLight3D" parent="Map/Z05_TurbineHall" unique_id=1817790955]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 79, 34.2, 98.333336)
+light_color = Color(0.45, 0.62, 1, 1)
+light_energy = 4.0
+omni_range = 60.6
+
+[node name="T0_light6" type="OmniLight3D" parent="Map/Z05_TurbineHall" unique_id=1685948647]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 102.333336, 34.2, 51.666668)
+light_color = Color(0.45, 0.62, 1, 1)
+light_energy = 4.0
+omni_range = 60.6
+
+[node name="T0_light7" type="OmniLight3D" parent="Map/Z05_TurbineHall" unique_id=1224376117]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 102.333336, 34.2, 75)
+light_color = Color(0.45, 0.62, 1, 1)
+light_energy = 4.0
+omni_range = 60.6
+
+[node name="T0_light8" type="OmniLight3D" parent="Map/Z05_TurbineHall" unique_id=392623652]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 102.333336, 34.2, 98.333336)
+light_color = Color(0.45, 0.62, 1, 1)
+light_energy = 4.0
+omni_range = 60.6
+
+[node name="TW" type="CSGBox3D" parent="Map/Z05_TurbineHall" unique_id=2010714617]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 48, 29.75, 77)
+use_collision = true
+size = Vector3(8, 0.5, 14)
+material = ExtResource("3_08j2o")
+
+[node name="TW_label" type="Label3D" parent="Map/Z05_TurbineHall" unique_id=934770641]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 48, 30.05, 77)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "TW"
+font_size = 48
+outline_size = 0
+
+[node name="TB" type="CSGBox3D" parent="Map/Z05_TurbineHall" unique_id=393726345]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 54, 29.75, 77)
+use_collision = true
+size = Vector3(4, 0.5, 4)
+material = ExtResource("3_08j2o")
+
+[node name="TB_label" type="Label3D" parent="Map/Z05_TurbineHall" unique_id=1858827318]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 54, 30.05, 77)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "TB"
+font_size = 48
+outline_size = 0
+
+[node name="T1" type="CSGBox3D" parent="Map/Z05_TurbineHall" unique_id=1366913885]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 62, 14, 77)
+use_collision = true
+size = Vector3(12, 24, 12)
+material = ExtResource("4_fjohw")
+
+[node name="T1_label" type="Label3D" parent="Map/Z05_TurbineHall" unique_id=1917640293]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 62, 26.05, 77)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "T1"
+font_size = 48
+outline_size = 0
+
+[node name="T2" type="CSGBox3D" parent="Map/Z05_TurbineHall" unique_id=990343868]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 80, 13, 77)
+use_collision = true
+size = Vector3(12, 22, 12)
+material = ExtResource("4_fjohw")
+
+[node name="T2_label" type="Label3D" parent="Map/Z05_TurbineHall" unique_id=1218118756]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 80, 24.05, 77)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "T2"
+font_size = 48
+outline_size = 0
+
+[node name="T3" type="CSGBox3D" parent="Map/Z05_TurbineHall" unique_id=518551913]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 98, 11.5, 77)
+use_collision = true
+size = Vector3(12, 19, 12)
+material = ExtResource("4_fjohw")
+
+[node name="T3_label" type="Label3D" parent="Map/Z05_TurbineHall" unique_id=120739441]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 98, 21.05, 77)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "T3"
+font_size = 48
+outline_size = 0
+
+[node name="TE" type="CSGBox3D" parent="Map/Z05_TurbineHall" unique_id=1405214811]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 111, 17.75, 77)
+use_collision = true
+size = Vector3(6, 0.5, 14)
+material = ExtResource("3_08j2o")
+
+[node name="TE_label" type="Label3D" parent="Map/Z05_TurbineHall" unique_id=1159680560]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 111, 18.05, 77)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "TE"
+font_size = 48
+outline_size = 0
+
+[node name="N1" type="CSGBox3D" parent="Map/Z05_TurbineHall" unique_id=38782406]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 82, 16, 67)
+use_collision = true
+size = Vector3(8, 28, 8)
+material = ExtResource("4_fjohw")
+
+[node name="N1_label" type="Label3D" parent="Map/Z05_TurbineHall" unique_id=965589159]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 82, 30.05, 67)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "N1"
+font_size = 48
+outline_size = 0
+
+[node name="N2" type="CSGBox3D" parent="Map/Z05_TurbineHall" unique_id=1119924297]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 82, 16, 53)
+use_collision = true
+size = Vector3(8, 28, 6)
+material = ExtResource("4_fjohw")
+
+[node name="N2_label" type="Label3D" parent="Map/Z05_TurbineHall" unique_id=547151971]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 82, 30.05, 53)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "N2"
+font_size = 48
+outline_size = 0
+
+[node name="NG" type="CSGBox3D" parent="Map/Z05_TurbineHall" unique_id=263218727]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 79, 29.75, 43)
+use_collision = true
+size = Vector3(70, 0.5, 6)
+material = ExtResource("3_08j2o")
+
+[node name="NG_label" type="Label3D" parent="Map/Z05_TurbineHall" unique_id=904914877]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 79, 30.05, 43)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "NG"
+font_size = 48
+outline_size = 0
+
+[node name="NK_light0" type="OmniLight3D" parent="Map/Z05_TurbineHall" unique_id=1300748106]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 79, 33, 37)
+light_color = Color(0.45, 0.62, 1, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="TA" type="CSGBox3D" parent="Map/Z05_TurbineHall" unique_id=2067603472]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 116, 35.75, 95)
+use_collision = true
+size = Vector3(4, 0.5, 6)
+material = ExtResource("3_08j2o")
+
+[node name="TA_label" type="Label3D" parent="Map/Z05_TurbineHall" unique_id=1359539064]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 116, 36.05, 95)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "TA"
+font_size = 48
+outline_size = 0
+
+[node name="KT" type="Area3D" parent="Map/Z05_TurbineHall" unique_id=79837585]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 79, 1.5, 75)
+script = ExtResource("5_lrcog")
+
+[node name="Shape" type="CollisionShape3D" parent="Map/Z05_TurbineHall/KT" unique_id=1146987599]
+shape = SubResource("BoxShape3D_c33vb")
+
+[node name="Z06_CoolantGalleries" type="Node3D" parent="Map" unique_id=343133783]
+
+[node name="G0_light0" type="OmniLight3D" parent="Map/Z06_CoolantGalleries" unique_id=1003724013]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 131, 21, 67)
+light_color = Color(0.45, 1, 0.6, 1)
+light_energy = 4.0
+omni_range = 43.0
+
+[node name="G0_light1" type="OmniLight3D" parent="Map/Z06_CoolantGalleries" unique_id=1000319481]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 131, 21, 89)
+light_color = Color(0.45, 1, 0.6, 1)
+light_energy = 4.0
+omni_range = 43.0
+
+[node name="G1" type="CSGBox3D" parent="Map/Z06_CoolantGalleries" unique_id=399310522]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 122, 17.75, 77)
+use_collision = true
+size = Vector3(12, 0.5, 10)
+material = ExtResource("3_08j2o")
+
+[node name="G1_label" type="Label3D" parent="Map/Z06_CoolantGalleries" unique_id=449471995]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 122, 18.05, 77)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "G1"
+font_size = 48
+outline_size = 0
+
+[node name="G2" type="CSGBox3D" parent="Map/Z06_CoolantGalleries" unique_id=953752922]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 121, 8.25, 89)
+use_collision = true
+size = Vector3(6, 16.5, 6)
+material = ExtResource("4_fjohw")
+
+[node name="G2_label" type="Label3D" parent="Map/Z06_CoolantGalleries" unique_id=845399972]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 121, 16.55, 89)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "G2"
+font_size = 48
+outline_size = 0
+
+[node name="G4" type="CSGBox3D" parent="Map/Z06_CoolantGalleries" unique_id=59299177]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 128, 13.75, 97)
+use_collision = true
+size = Vector3(24, 0.5, 6)
+material = ExtResource("3_08j2o")
+
+[node name="G4_roof" type="CSGBox3D" parent="Map/Z06_CoolantGalleries" unique_id=1992653848]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 128, 16.45, 97)
+use_collision = true
+size = Vector3(16, 0.5, 6)
+material = ExtResource("4_fjohw")
+
+[node name="G4_label" type="Label3D" parent="Map/Z06_CoolantGalleries" unique_id=1251802217]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 128, 14.05, 97)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "G4"
+font_size = 48
+outline_size = 0
+
+[node name="GL" type="CSGBox3D" parent="Map/Z06_CoolantGalleries" unique_id=123904745]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 143, 11.75, 82)
+use_collision = true
+size = Vector3(6, 0.5, 36)
+material = ExtResource("3_08j2o")
+
+[node name="GL_label" type="Label3D" parent="Map/Z06_CoolantGalleries" unique_id=1789227680]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 143, 12.05, 82)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "GL"
+font_size = 48
+outline_size = 0
+
+[node name="GV_light0" type="OmniLight3D" parent="Map/Z06_CoolantGalleries" unique_id=739786098]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 138, 23, 60)
+light_color = Color(0.45, 1, 0.6, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="GK_light0" type="OmniLight3D" parent="Map/Z06_CoolantGalleries" unique_id=1868652851]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 148, 14, 62.333332)
+light_color = Color(0.45, 1, 0.6, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="GK_light1" type="OmniLight3D" parent="Map/Z06_CoolantGalleries" unique_id=529092681]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 148, 14, 75)
+light_color = Color(0.45, 1, 0.6, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="GK_light2" type="OmniLight3D" parent="Map/Z06_CoolantGalleries" unique_id=483851632]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 148, 14, 87.666664)
+light_color = Color(0.45, 1, 0.6, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="GK_light3" type="OmniLight3D" parent="Map/Z06_CoolantGalleries" unique_id=132235051]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 148, 14, 100.333336)
+light_color = Color(0.45, 1, 0.6, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="GK_light4" type="OmniLight3D" parent="Map/Z06_CoolantGalleries" unique_id=1942527362]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 148, 14, 113)
+light_color = Color(0.45, 1, 0.6, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="GK_light5" type="OmniLight3D" parent="Map/Z06_CoolantGalleries" unique_id=1030866877]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 148, 14, 125.666664)
+light_color = Color(0.45, 1, 0.6, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="GT" type="CSGBox3D" parent="Map/Z06_CoolantGalleries" unique_id=577238866]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 119, 16.75, 51)
+use_collision = true
+size = Vector3(6, 0.5, 6)
+material = ExtResource("3_08j2o")
+
+[node name="GT_label" type="Label3D" parent="Map/Z06_CoolantGalleries" unique_id=808644694]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 119, 17.05, 51)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "GT"
+font_size = 48
+outline_size = 0
+
+[node name="KG" type="Area3D" parent="Map/Z06_CoolantGalleries" unique_id=1691107855]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 131, -0.5, 78)
+script = ExtResource("5_lrcog")
+
+[node name="Shape" type="CollisionShape3D" parent="Map/Z06_CoolantGalleries/KG" unique_id=1121252256]
+shape = SubResource("BoxShape3D_lbce2")
+
+[node name="G6_light0" type="OmniLight3D" parent="Map/Z06_CoolantGalleries" unique_id=109866414]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 131, 15, 130)
+light_color = Color(0.45, 1, 0.6, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="G6_light1" type="OmniLight3D" parent="Map/Z06_CoolantGalleries" unique_id=141433250]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 141, 15, 130)
+light_color = Color(0.45, 1, 0.6, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="R0_light0" type="OmniLight3D" parent="Map/Z06_CoolantGalleries" unique_id=1006172111]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 74.333336, 15.4, 131)
+light_color = Color(0.45, 1, 0.6, 1)
+light_energy = 4.0
+omni_range = 34.2
+
+[node name="R0_light1" type="OmniLight3D" parent="Map/Z06_CoolantGalleries" unique_id=854132449]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 95, 15.4, 131)
+light_color = Color(0.45, 1, 0.6, 1)
+light_energy = 4.0
+omni_range = 34.2
+
+[node name="R0_light2" type="OmniLight3D" parent="Map/Z06_CoolantGalleries" unique_id=20870638]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 115.666664, 15.4, 131)
+light_color = Color(0.45, 1, 0.6, 1)
+light_energy = 4.0
+omni_range = 34.2
+
+[node name="RE" type="CSGBox3D" parent="Map/Z06_CoolantGalleries" unique_id=2100362470]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 123, 11.75, 132)
+use_collision = true
+size = Vector3(6, 0.5, 8)
+material = ExtResource("3_08j2o")
+
+[node name="RE_label" type="Label3D" parent="Map/Z06_CoolantGalleries" unique_id=1600675361]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 123, 12.05, 132)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "RE"
+font_size = 48
+outline_size = 0
+
+[node name="RC1" type="CSGBox3D" parent="Map/Z06_CoolantGalleries" unique_id=504749077]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 113, 6, 132)
+use_collision = true
+size = Vector3(6, 12, 8)
+material = ExtResource("4_fjohw")
+
+[node name="RC1_label" type="Label3D" parent="Map/Z06_CoolantGalleries" unique_id=682402588]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 113, 12.05, 132)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "RC1"
+font_size = 48
+outline_size = 0
+
+[node name="RC2" type="CSGBox3D" parent="Map/Z06_CoolantGalleries" unique_id=101093568]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 101, 6, 132)
+use_collision = true
+size = Vector3(6, 12, 8)
+material = ExtResource("4_fjohw")
+
+[node name="RC2_label" type="Label3D" parent="Map/Z06_CoolantGalleries" unique_id=1553777236]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 101, 12.05, 132)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "RC2"
+font_size = 48
+outline_size = 0
+
+[node name="RC3" type="CSGBox3D" parent="Map/Z06_CoolantGalleries" unique_id=1615896411]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 89, 5.5, 132)
+use_collision = true
+size = Vector3(6, 11, 8)
+material = ExtResource("4_fjohw")
+
+[node name="RC3_label" type="Label3D" parent="Map/Z06_CoolantGalleries" unique_id=1213443718]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 89, 11.05, 132)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "RC3"
+font_size = 48
+outline_size = 0
+
+[node name="RC4" type="CSGBox3D" parent="Map/Z06_CoolantGalleries" unique_id=944395430]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 77, 5.5, 132)
+use_collision = true
+size = Vector3(6, 11, 8)
+material = ExtResource("4_fjohw")
+
+[node name="RC4_label" type="Label3D" parent="Map/Z06_CoolantGalleries" unique_id=503336988]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 77, 11.05, 132)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "RC4"
+font_size = 48
+outline_size = 0
+
+[node name="RW" type="CSGBox3D" parent="Map/Z06_CoolantGalleries" unique_id=1948099702]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 67, 9.75, 128)
+use_collision = true
+size = Vector3(6, 0.5, 24)
+material = ExtResource("3_08j2o")
+
+[node name="RW_label" type="Label3D" parent="Map/Z06_CoolantGalleries" unique_id=2134243389]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 67, 10.05, 128)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "RW"
+font_size = 48
+outline_size = 0
+
+[node name="RK" type="CSGBox3D" parent="Map/Z06_CoolantGalleries" unique_id=639602952]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 78, 9.75, 120.5)
+use_collision = true
+size = Vector3(8, 0.5, 5)
+material = ExtResource("3_08j2o")
+
+[node name="RK_label" type="Label3D" parent="Map/Z06_CoolantGalleries" unique_id=815871314]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 78, 10.05, 120.5)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "RK"
+font_size = 48
+outline_size = 0
+
+[node name="KR" type="Area3D" parent="Map/Z06_CoolantGalleries" unique_id=2080586543]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 95, -0.5, 131)
+script = ExtResource("5_lrcog")
+
+[node name="Shape" type="CollisionShape3D" parent="Map/Z06_CoolantGalleries/KR" unique_id=1501018855]
+shape = SubResource("BoxShape3D_84ep4")
+
+[node name="Z07_Undercroft" type="Node3D" parent="Map" unique_id=1845266948]
+
+[node name="UD_light0" type="OmniLight3D" parent="Map/Z07_Undercroft" unique_id=550136569]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 66, 13, 112)
+light_color = Color(0.3, 0.85, 0.8, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="U0F" type="CSGBox3D" parent="Map/Z07_Undercroft" unique_id=1232609379]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 69, 9.75, 104)
+use_collision = true
+size = Vector3(10, 0.5, 8)
+material = ExtResource("3_08j2o")
+
+[node name="U0F_label" type="Label3D" parent="Map/Z07_Undercroft" unique_id=1561121256]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 69, 10.05, 104)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "U0F"
+font_size = 48
+outline_size = 0
+
+[node name="UA" type="CSGBox3D" parent="Map/Z07_Undercroft" unique_id=1575821156]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 72, 9.75, 80)
+use_collision = true
+size = Vector3(4, 0.5, 40)
+material = ExtResource("3_08j2o")
+
+[node name="UA_label" type="Label3D" parent="Map/Z07_Undercroft" unique_id=898214111]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 72, 10.05, 80)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "UA"
+font_size = 48
+outline_size = 0
+
+[node name="UN" type="CSGBox3D" parent="Map/Z07_Undercroft" unique_id=2055691775]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 62, 9.75, 58)
+use_collision = true
+size = Vector3(24, 0.5, 4)
+material = ExtResource("3_08j2o")
+
+[node name="UN_label" type="Label3D" parent="Map/Z07_Undercroft" unique_id=884190956]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 62, 10.05, 58)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "UN"
+font_size = 48
+outline_size = 0
+
+[node name="UW" type="CSGBox3D" parent="Map/Z07_Undercroft" unique_id=250939649]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 48, 9.75, 78)
+use_collision = true
+size = Vector3(4, 0.5, 44)
+material = ExtResource("3_08j2o")
+
+[node name="UW_label" type="Label3D" parent="Map/Z07_Undercroft" unique_id=751158826]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 48, 10.05, 78)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "UW"
+font_size = 48
+outline_size = 0
+
+[node name="UX_light0" type="OmniLight3D" parent="Map/Z07_Undercroft" unique_id=1490944737]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 38, 13, 98)
+light_color = Color(0.3, 0.85, 0.8, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="UV_light0" type="OmniLight3D" parent="Map/Z07_Undercroft" unique_id=297542475]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 32, 13, 103)
+light_color = Color(0.3, 0.85, 0.8, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="Z08_CapacitorVault" type="Node3D" parent="Map" unique_id=738532283]
+
+[node name="Q0_light0" type="OmniLight3D" parent="Map/Z08_CapacitorVault" unique_id=523458606]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10.666667, 29, 112.666664)
+light_color = Color(0.8, 0.6, 1, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="Q0_light1" type="OmniLight3D" parent="Map/Z08_CapacitorVault" unique_id=1310576185]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10.666667, 29, 126)
+light_color = Color(0.8, 0.6, 1, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="Q0_light2" type="OmniLight3D" parent="Map/Z08_CapacitorVault" unique_id=153244600]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10.666667, 29, 139.33333)
+light_color = Color(0.8, 0.6, 1, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="Q0_light3" type="OmniLight3D" parent="Map/Z08_CapacitorVault" unique_id=509467082]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24, 29, 112.666664)
+light_color = Color(0.8, 0.6, 1, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="Q0_light4" type="OmniLight3D" parent="Map/Z08_CapacitorVault" unique_id=12988251]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24, 29, 126)
+light_color = Color(0.8, 0.6, 1, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="Q0_light5" type="OmniLight3D" parent="Map/Z08_CapacitorVault" unique_id=2091666949]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24, 29, 139.33333)
+light_color = Color(0.8, 0.6, 1, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="Q0_light6" type="OmniLight3D" parent="Map/Z08_CapacitorVault" unique_id=1737085858]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 37.333332, 29, 112.666664)
+light_color = Color(0.8, 0.6, 1, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="Q0_light7" type="OmniLight3D" parent="Map/Z08_CapacitorVault" unique_id=1537075200]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 37.333332, 29, 126)
+light_color = Color(0.8, 0.6, 1, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="Q0_light8" type="OmniLight3D" parent="Map/Z08_CapacitorVault" unique_id=557391688]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 37.333332, 29, 139.33333)
+light_color = Color(0.8, 0.6, 1, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="QP" type="CSGBox3D" parent="Map/Z08_CapacitorVault" unique_id=510649066]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24, 10.5, 126)
+use_collision = true
+size = Vector3(6, 1, 6)
+material = ExtResource("4_fjohw")
+
+[node name="QP_label" type="Label3D" parent="Map/Z08_CapacitorVault" unique_id=484131089]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 24, 11.05, 126)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "QP"
+font_size = 48
+outline_size = 0
+
+[node name="QL" type="CSGBox3D" parent="Map/Z08_CapacitorVault" unique_id=168600867]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 41, 13, 116)
+use_collision = true
+size = Vector3(6, 6, 8)
+material = ExtResource("3_08j2o")
+
+[node name="QL_label" type="Label3D" parent="Map/Z08_CapacitorVault" unique_id=533751546]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 41, 16.05, 116)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "QL"
+font_size = 48
+outline_size = 0
+
+[node name="Z09_Returnclimb" type="Node3D" parent="Map" unique_id=264536223]
+
+[node name="U0_light0" type="OmniLight3D" parent="Map/Z09_Returnclimb" unique_id=1808960403]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 53, 23, 119)
+light_color = Color(0.5, 0.65, 1, 1)
+light_energy = 4.0
+omni_range = 21.0
+
+[node name="U1" type="CSGBox3D" parent="Map/Z09_Returnclimb" unique_id=2105047949]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 53, 21.75, 114)
+use_collision = true
+size = Vector3(14, 0.5, 4)
+material = ExtResource("3_08j2o")
+
+[node name="U1_label" type="Label3D" parent="Map/Z09_Returnclimb" unique_id=46881309]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 53, 22.05, 114)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "U1"
+font_size = 48
+outline_size = 0
+
+[node name="SL" type="CSGBox3D" parent="Map/Z09_Returnclimb" unique_id=1885886281]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 53, 21.75, 106)
+use_collision = true
+size = Vector3(14, 0.5, 8)
+material = ExtResource("3_08j2o")
+
+[node name="SL_label" type="Label3D" parent="Map/Z09_Returnclimb" unique_id=349643315]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 53, 22.05, 106)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "SL"
+font_size = 48
+outline_size = 0
+
+[node name="SW" type="CSGBox3D" parent="Map/Z09_Returnclimb" unique_id=270388865]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 58, 21.75, 93.5)
+use_collision = true
+size = Vector3(4, 0.5, 17)
+material = ExtResource("3_08j2o")
+
+[node name="SW_label" type="Label3D" parent="Map/Z09_Returnclimb" unique_id=1403125931]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 58, 22.05, 93.5)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "SW"
+font_size = 48
+outline_size = 0
+
+[node name="Z10_PressShaft" type="Node3D" parent="Map" unique_id=576063707]
+
+[node name="PC_light0" type="OmniLight3D" parent="Map/Z10_PressShaft" unique_id=417998429]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 120, 33, 43)
+light_color = Color(1, 0.32, 0.25, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="PC2_light0" type="OmniLight3D" parent="Map/Z10_PressShaft" unique_id=1044567977]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 123, 33, 38)
+light_color = Color(1, 0.32, 0.25, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="P0_light0" type="OmniLight3D" parent="Map/Z10_PressShaft" unique_id=717965554]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 131, 29.4, 20)
+light_color = Color(1, 0.32, 0.25, 1)
+light_energy = 4.0
+omni_range = 78.2
+
+[node name="PL" type="CSGBox3D" parent="Map/Z10_PressShaft" unique_id=1908406997]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 123, 29.75, 32)
+use_collision = true
+size = Vector3(14, 0.5, 8)
+material = ExtResource("3_08j2o")
+
+[node name="PL_label" type="Label3D" parent="Map/Z10_PressShaft" unique_id=448664526]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 123, 30.05, 32)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "PL"
+font_size = 48
+outline_size = 0
+
+[node name="S1" type="CSGBox3D" parent="Map/Z10_PressShaft" unique_id=1963580927]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 141, 25, 31)
+use_collision = true
+size = Vector3(10, 2, 10)
+material = ExtResource("4_fjohw")
+
+[node name="S1_label" type="Label3D" parent="Map/Z10_PressShaft" unique_id=927538243]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 141, 26.05, 31)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "S1"
+font_size = 48
+outline_size = 0
+
+[node name="S2" type="CSGBox3D" parent="Map/Z10_PressShaft" unique_id=1961782304]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 141, 23, 9)
+use_collision = true
+size = Vector3(10, 2, 10)
+material = ExtResource("4_fjohw")
+
+[node name="S2_label" type="Label3D" parent="Map/Z10_PressShaft" unique_id=1620725417]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 141, 24.05, 9)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "S2"
+font_size = 48
+outline_size = 0
+
+[node name="S3" type="CSGBox3D" parent="Map/Z10_PressShaft" unique_id=2055224633]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 120, 21, 8)
+use_collision = true
+size = Vector3(8, 2, 8)
+material = ExtResource("4_fjohw")
+
+[node name="S3_label" type="Label3D" parent="Map/Z10_PressShaft" unique_id=782406717]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 120, 22.05, 8)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "S3"
+font_size = 48
+outline_size = 0
+
+[node name="S4" type="CSGBox3D" parent="Map/Z10_PressShaft" unique_id=371547296]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 128, 11, 20)
+use_collision = true
+size = Vector3(8, 2, 8)
+material = ExtResource("4_fjohw")
+
+[node name="S4_label" type="Label3D" parent="Map/Z10_PressShaft" unique_id=638229274]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 128, 12.05, 20)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "S4"
+font_size = 48
+outline_size = 0
+
+[node name="S5" type="CSGBox3D" parent="Map/Z10_PressShaft" unique_id=1756467221]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 142, 17, 20)
+use_collision = true
+size = Vector3(8, 2, 8)
+material = ExtResource("4_fjohw")
+
+[node name="S5_label" type="Label3D" parent="Map/Z10_PressShaft" unique_id=355335178]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 142, 18.05, 20)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "S5"
+font_size = 48
+outline_size = 0
+
+[node name="S6" type="CSGBox3D" parent="Map/Z10_PressShaft" unique_id=1786277637]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 142, 5, 32)
+use_collision = true
+size = Vector3(8, 2, 8)
+material = ExtResource("4_fjohw")
+
+[node name="S6_label" type="Label3D" parent="Map/Z10_PressShaft" unique_id=733821991]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 142, 6.05, 32)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "S6"
+font_size = 48
+outline_size = 0
+
+[node name="PE" type="CSGBox3D" parent="Map/Z10_PressShaft" unique_id=875062665]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 121, -5.25, 32)
+use_collision = true
+size = Vector3(10, 0.5, 8)
+material = ExtResource("3_08j2o")
+
+[node name="PE_label" type="Label3D" parent="Map/Z10_PressShaft" unique_id=1322728890]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 121, -4.95, 32)
+visibility_range_end = 40.0
+pixel_size = 0.01
+modulate = Color(1, 1, 1, 0.35)
+text = "PE"
+font_size = 48
+outline_size = 0
+
+[node name="PX_light0" type="OmniLight3D" parent="Map/Z10_PressShaft" unique_id=1594285]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 53.666668, -2, 32)
+light_color = Color(1, 0.32, 0.25, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="PX_light1" type="OmniLight3D" parent="Map/Z10_PressShaft" unique_id=1837197503]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 65, -2, 32)
+light_color = Color(1, 0.32, 0.25, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="PX_light2" type="OmniLight3D" parent="Map/Z10_PressShaft" unique_id=573856098]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 76.333336, -2, 32)
+light_color = Color(1, 0.32, 0.25, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="PX_light3" type="OmniLight3D" parent="Map/Z10_PressShaft" unique_id=1866545041]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 87.666664, -2, 32)
+light_color = Color(1, 0.32, 0.25, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="PX_light4" type="OmniLight3D" parent="Map/Z10_PressShaft" unique_id=1585764787]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 99, -2, 32)
+light_color = Color(1, 0.32, 0.25, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="PX_light5" type="OmniLight3D" parent="Map/Z10_PressShaft" unique_id=378826284]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 110.333336, -2, 32)
+light_color = Color(1, 0.32, 0.25, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="PZ_light0" type="OmniLight3D" parent="Map/Z10_PressShaft" unique_id=145904130]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 42, 0, 30)
+light_color = Color(1, 0.32, 0.25, 1)
+light_energy = 3.0
+omni_range = 16.8
+
+[node name="KP" type="Area3D" parent="Map/Z10_PressShaft" unique_id=471246448]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 131, -14.5, 20)
+script = ExtResource("5_lrcog")
+
+[node name="Shape" type="CollisionShape3D" parent="Map/Z10_PressShaft/KP" unique_id=367718866]
+shape = SubResource("BoxShape3D_0hbws")
+
+[node name="Gate_d_shutter" type="StaticBody3D" parent="Map" unique_id=232148137]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 32, 70)
+script = ExtResource("6_akkup")
+
+[node name="Shape" type="CollisionShape3D" parent="Map/Gate_d_shutter" unique_id=1120743370]
+shape = SubResource("BoxShape3D_nm4oc")
+
+[node name="Mesh" type="MeshInstance3D" parent="Map/Gate_d_shutter" unique_id=903399995]
+material_override = ExtResource("7_aib5f")
+mesh = SubResource("BoxMesh_8d5nd")
+
+[node name="Opener" type="Area3D" parent="Map/Gate_d_shutter" unique_id=347134988]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 2)
+
+[node name="Shape" type="CollisionShape3D" parent="Map/Gate_d_shutter/Opener" unique_id=1397238081]
+shape = SubResource("BoxShape3D_r320v")
+
+[node name="Gate_d_sc2" type="StaticBody3D" parent="Map" unique_id=883493710]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 44, 31.5, 44)
+script = ExtResource("6_akkup")
+
+[node name="Shape" type="CollisionShape3D" parent="Map/Gate_d_sc2" unique_id=986877502]
+shape = SubResource("BoxShape3D_aokyf")
+
+[node name="Mesh" type="MeshInstance3D" parent="Map/Gate_d_sc2" unique_id=2005689078]
+material_override = ExtResource("7_aib5f")
+mesh = SubResource("BoxMesh_mmi08")
+
+[node name="Opener" type="Area3D" parent="Map/Gate_d_sc2" unique_id=1760662735]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2, 0, 0)
+
+[node name="Shape" type="CollisionShape3D" parent="Map/Gate_d_sc2/Opener" unique_id=2095222926]
+shape = SubResource("BoxShape3D_dibgt")
+
+[node name="Gate_d_riser" type="StaticBody3D" parent="Map" unique_id=102716507]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 53, 23.5, 111)
+script = ExtResource("6_akkup")
+
+[node name="Shape" type="CollisionShape3D" parent="Map/Gate_d_riser" unique_id=318414387]
+shape = SubResource("BoxShape3D_pynof")
+
+[node name="Mesh" type="MeshInstance3D" parent="Map/Gate_d_riser" unique_id=855815728]
+material_override = ExtResource("7_aib5f")
+mesh = SubResource("BoxMesh_tcebl")
+
+[node name="Opener" type="Area3D" parent="Map/Gate_d_riser" unique_id=455134290]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 2)
+
+[node name="Shape" type="CollisionShape3D" parent="Map/Gate_d_riser/Opener" unique_id=260136197]
+shape = SubResource("BoxShape3D_32i3a")
+
+[node name="Markers" type="Node3D" parent="Map" unique_id=748548410]
+
+[node name="Rest1" type="Area3D" parent="Map/Markers" unique_id=1640358126]
+transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, 33, 30, 77)
+script = ExtResource("8_l4r2p")
+
+[node name="Shape" type="CollisionShape3D" parent="Map/Markers/Rest1" unique_id=750838829]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
+shape = SubResource("BoxShape3D_mkeg5")
+
+[node name="Plate" type="CSGBox3D" parent="Map/Markers/Rest1" unique_id=581220425]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, 0)
+size = Vector3(3, 0.1, 3)
+material = ExtResource("9_ug32v")
+
+[node name="Pillar" type="CSGBox3D" parent="Map/Markers/Rest1" unique_id=1233817094]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.8, 1.25, 1.8)
+size = Vector3(0.3, 2.5, 0.3)
+material = ExtResource("9_ug32v")
+
+[node name="Light" type="OmniLight3D" parent="Map/Markers/Rest1" unique_id=2068538192]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.5, 0)
+light_color = Color(1, 0.9, 0.7, 1)
+light_energy = 2.0
+omni_range = 7.0
+
+[node name="Rest2" type="Area3D" parent="Map/Markers" unique_id=979423927]
+transform = Transform3D(-0.882353, 0, 0.47058818, 0, 1, 0, -0.47058818, 0, -0.882353, 32, 10, 111)
+script = ExtResource("8_l4r2p")
+index = 2
+
+[node name="Shape" type="CollisionShape3D" parent="Map/Markers/Rest2" unique_id=142549407]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
+shape = SubResource("BoxShape3D_amjvr")
+
+[node name="Plate" type="CSGBox3D" parent="Map/Markers/Rest2" unique_id=583666770]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, 0)
+size = Vector3(3, 0.1, 3)
+material = ExtResource("9_ug32v")
+
+[node name="Pillar" type="CSGBox3D" parent="Map/Markers/Rest2" unique_id=189030592]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.8, 1.25, 1.8)
+size = Vector3(0.3, 2.5, 0.3)
+material = ExtResource("9_ug32v")
+
+[node name="Light" type="OmniLight3D" parent="Map/Markers/Rest2" unique_id=1148844821]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.5, 0)
+light_color = Color(1, 0.9, 0.7, 1)
+light_energy = 2.0
+omni_range = 7.0
+
+[node name="Rest3" type="Area3D" parent="Map/Markers" unique_id=1560501718]
+transform = Transform3D(0.05547007, 0, -0.99846035, 0, 1, 0, 0.99846035, 0, 0.05547007, 123, 30, 32)
+script = ExtResource("8_l4r2p")
+index = 3
+
+[node name="Shape" type="CollisionShape3D" parent="Map/Markers/Rest3" unique_id=765111212]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
+shape = SubResource("BoxShape3D_33csx")
+
+[node name="Plate" type="CSGBox3D" parent="Map/Markers/Rest3" unique_id=16526877]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, 0)
+size = Vector3(3, 0.1, 3)
+material = ExtResource("9_ug32v")
+
+[node name="Pillar" type="CSGBox3D" parent="Map/Markers/Rest3" unique_id=748037731]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.8, 1.25, 1.8)
+size = Vector3(0.3, 2.5, 0.3)
+material = ExtResource("9_ug32v")
+
+[node name="Light" type="OmniLight3D" parent="Map/Markers/Rest3" unique_id=1174706271]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.5, 0)
+light_color = Color(1, 0.9, 0.7, 1)
+light_energy = 2.0
+omni_range = 7.0
+
+[node name="DoubleJump" type="Area3D" parent="Map/Markers" unique_id=260870399]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24, 12.2, 126)
+script = ExtResource("10_ep8u5")
+
+[node name="Shape" type="CollisionShape3D" parent="Map/Markers/DoubleJump" unique_id=985292575]
+shape = SubResource("BoxShape3D_ttita")
+
+[node name="Core" type="CSGBox3D" parent="Map/Markers/DoubleJump" unique_id=1007849653]
+size = Vector3(0.8, 0.8, 0.8)
+material = ExtResource("11_g4ear")
+
+[node name="Light" type="OmniLight3D" parent="Map/Markers/DoubleJump" unique_id=621223110]
+light_color = Color(0.3, 0.95, 1, 1)
+light_energy = 3.0
+omni_range = 10.0
+
+[node name="Chest1" type="CSGBox3D" parent="Map/Markers" unique_id=1488070130]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6, 30.4, 96)
+use_collision = true
+size = Vector3(1.2, 0.8, 0.8)
+material = ExtResource("12_oejuo")
+
+[node name="Chest2" type="CSGBox3D" parent="Map/Markers" unique_id=1520168819]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 79, 30.4, 37)
+use_collision = true
+size = Vector3(1.2, 0.8, 0.8)
+material = ExtResource("12_oejuo")
+
+[node name="Chest3" type="CSGBox3D" parent="Map/Markers" unique_id=258009119]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 78, 10.4, 120)
+use_collision = true
+size = Vector3(1.2, 0.8, 0.8)
+material = ExtResource("12_oejuo")
+
+[node name="Exit" type="Area3D" parent="Map/Markers" unique_id=8996959]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 42, -5, 30)
+script = ExtResource("13_a27to")
+
+[node name="Shape" type="CollisionShape3D" parent="Map/Markers/Exit" unique_id=1669975835]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2, 0)
+shape = SubResource("BoxShape3D_c203j")
+
+[node name="Label" type="Label3D" parent="Map/Markers/Exit" unique_id=199299228]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3, 0)
+pixel_size = 0.01
+billboard = 1
+text = "EXIT"
+font_size = 160
+
+[node name="spawn" type="Marker3D" parent="Map" unique_id=1581333906]
+transform = Transform3D(0.07124708, 0, -0.9974587, 0, 1, 0, 0.9974587, 0, 0.07124708, 14, 45, 11)
+
+[node name="Pilot9" parent="." unique_id=1913778194 instance=ExtResource("14_fxefd")]
+air_jumps = 0
+can_dash = false
+can_wall_run = false
+can_wall_climb = false
+can_rail_grind = false
+can_rail_switch = false
+
+[node name="MissionHud" type="CanvasLayer" parent="." unique_id=970133904]
+script = ExtResource("15_8ftam")
+
+[node name="ApplyCelPilot9" type="Node" parent="." unique_id=2010225909]
+script = ExtResource("16_pjc7d")
+material = ExtResource("17_mk3nn")
+targets = Array[NodePath]([NodePath("../Pilot9")])
+derive_from_surfaces = true
+
+[node name="PixelWorld" type="CanvasLayer" parent="." unique_id=678833966]
+process_mode = 3
+process_priority = 10000
+layer = -100
+script = ExtResource("18_r3fbt")
+
+[node name="PixelLook" type="Node" parent="." unique_id=685529781]
+process_mode = 3
+script = ExtResource("19_hj5we")
+
+[node name="RetroLook" type="Node" parent="." unique_id=87320013]
+process_mode = 3
+script = ExtResource("20_7e8ay")

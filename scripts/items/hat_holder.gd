@@ -2,9 +2,10 @@
 ## Built at runtime by pilot9.gd::_setup_hat() rather than saved into pilot9.tscn, so a rig swap
 ## by scripts/pilot9_build_scene.gd cannot drop it. See docs/specs/pilot9-cowboy-hat.md.
 ##
-## While it is on, his head wears a "hatted" copy of its mesh with everything above the hatband cut
-## away: his ear fins are part of the head mesh (no bone of their own), and the skull top that goes
-## with them is under the crown anyway. The dash ghosts copy whichever mesh he is wearing.
+## While it is on, his head wears a "hatted" copy of its mesh with the skull top above the hatband
+## cut away, so it cannot poke through the crown. His ears (pilot9's fins, the decimate pilot's
+## antennae) are left whole and come out through the hat - user, 2026-10-23. The dash ghosts copy
+## whichever mesh he is wearing.
 extends Node
 
 const _CowboyHatMesh := preload("res://scripts/items/cowboy_hat_mesh.gd")
@@ -15,9 +16,6 @@ const FELT_COLOR := Color(0.27, 0.16, 0.09)
 const BAND_COLOR := Color(0.11, 0.065, 0.04)
 ## A head triangle goes when its centre is this far above the brim's underside, in hat space.
 const CUT_HEIGHT := 0.02
-## A separate head piece (ear fin, antenna) goes whole if it reaches within this of CUT_HEIGHT -
-## the second pilot's antennae come in two pieces, the lower one stopping just under the band.
-const PIECE_REACH := 0.05
 ## How much of a vertex has to ride the Head bone to count as head.
 const HEAD_WEIGHT := 0.5
 
@@ -31,8 +29,9 @@ var hatted: Dictionary = {}
 var _skeleton: Skeleton3D = null
 
 
-## `offset` places the hat in Head-bone space; `tilt` tips it back, in degrees.
-func setup(skeleton: Skeleton3D, offset: Vector3, tilt: float) -> void:
+## `offset` places the hat in Head-bone space; `tilt` tips it back, in degrees; `size` scales it
+## evenly.
+func setup(skeleton: Skeleton3D, offset: Vector3, tilt: float, size: float = 1.0) -> void:
 	if skeleton == null:
 		push_error("hat_holder: no skeleton - pilot9 will not be able to wear the hat")
 		return
@@ -49,15 +48,15 @@ func setup(skeleton: Skeleton3D, offset: Vector3, tilt: float) -> void:
 	head_socket.add_child(hat)
 	_part(&"Felt", _CowboyHatMesh.build_felt(), FELT_COLOR)
 	_part(&"Band", _CowboyHatMesh.build_band(), BAND_COLOR)
-	place(offset, tilt)
+	place(offset, tilt, size)
 	set_on(false)
 
 
 ## Moves the hat and recuts the head to match.
-func place(offset: Vector3, tilt: float) -> void:
+func place(offset: Vector3, tilt: float, size: float = 1.0) -> void:
 	if hat == null:
 		return
-	hat.transform = Transform3D(Basis(Vector3.RIGHT, deg_to_rad(-tilt)), offset)
+	hat.transform = Transform3D(Basis(Vector3.RIGHT, deg_to_rad(-tilt)).scaled_local(Vector3.ONE * size), offset)
 	_build_hatted()
 	_wear_meshes()
 
@@ -114,8 +113,9 @@ func _build_hatted() -> void:
 			hatted[mi] = [mi.mesh, cut]
 
 
-## `mesh` without the triangles that are head (mostly `head_bone`) and whose centre is above
-## CUT_HEIGHT in hat space. `to_hat` takes Head-bone space to hat space. null if nothing goes.
+## `mesh` without the triangles that are head (mostly `head_bone`), whose centre is above
+## CUT_HEIGHT in hat space, and whose piece wraps round the head - pieces off to one side (ears)
+## stay whole. `to_hat` takes Head-bone space to hat space. null if nothing goes.
 static func cut_above(mesh: ArrayMesh, skin: Skin, head_bone: int, to_hat: Transform3D) -> ArrayMesh:
 	if mesh == null:
 		return null
@@ -143,40 +143,32 @@ static func cut_above(mesh: ArrayMesh, skin: Skin, head_bone: int, to_hat: Trans
 		# Per vertex: its hat-space height if it is head, else -INF.
 		var height := PackedFloat32Array()
 		height.resize(verts.size())
+		# Per vertex: its hat-space x/z, for which side of the head a piece is on.
+		var flat := PackedVector2Array()
+		flat.resize(verts.size())
 		for i in verts.size():
 			height[i] = -INF
 			for j in per:
 				var bind: int = bones[i * per + j]
 				if head_binds.has(bind) and float(weights[i * per + j]) > HEAD_WEIGHT:
-					height[i] = (to_hat * ((head_binds[bind] as Transform3D) * verts[i])).y
+					var hp := to_hat * ((head_binds[bind] as Transform3D) * verts[i])
+					height[i] = hp.y
+					flat[i] = Vector2(hp.x, hp.z)
 		var island := _islands(verts, index)
-		var below := {}
-		var top := {}
+		# Per piece: its hat-space x range, for which side of the head it is on.
+		var span := {}
 		for t in (index as PackedInt32Array).size() / 3:
-			var a: int = index[t * 3]
-			var b: int = index[t * 3 + 1]
-			var c: int = index[t * 3 + 2]
-			var h := maxf(height[a], maxf(height[b], height[c]))
-			if h == -INF:
-				continue
-			var id: int = island[a]
-			if (height[a] + height[b] + height[c]) / 3.0 <= CUT_HEIGHT:
-				below[id] = int(below.get(id, 0)) + 1
-			top[id] = maxf(float(top.get(id, -INF)), h)
-		info.merge({"index": index, "height": height, "island": island, "below": below, "top": top})
-	# The skull is the head piece with the most triangles under the band, across every surface -
-	# not the biggest piece (pilot9's ear fins outweigh his skull), and not one per surface (the
-	# second pilot's antennae are a surface of their own). It is cut at the band. Every other head
-	# piece that reaches up near the band goes whole, so no stub shows under the brim.
-	var skull_surface := -1
-	var skull := -1
-	for s in surfaces.size():
-		var below: Dictionary = surfaces[s].get("below", {})
-		for id in below:
-			if skull < 0 or below[id] > surfaces[skull_surface]["below"][skull]:
-				skull_surface = s
-				skull = id
-	# Pass 2: the cut.
+			for k in 3:
+				var v: int = index[t * 3 + k]
+				if height[v] == -INF:
+					continue
+				var id: int = island[v]
+				var x: Vector2 = span.get(id, Vector2(INF, -INF))
+				span[id] = Vector2(minf(x.x, flat[v].x), maxf(x.y, flat[v].x))
+		info.merge({"index": index, "height": height, "flat": flat, "island": island, "span": span})
+	# Pass 2: the cut. Pieces off to one side of the head - ear fins, antennae - are never touched:
+	# they come out through the hat. Everything that wraps round it (the skull, the visor seam) is
+	# cut at the band.
 	var out := ArrayMesh.new()
 	var dropped := 0
 	for s in surfaces.size():
@@ -190,16 +182,16 @@ static func cut_above(mesh: ArrayMesh, skin: Skin, head_bone: int, to_hat: Trans
 		var index: PackedInt32Array = info["index"]
 		var height: PackedFloat32Array = info["height"]
 		var island: PackedInt32Array = info["island"]
-		var top: Dictionary = info["top"]
+		var span: Dictionary = info["span"]
 		var kept := PackedInt32Array()
 		for t in index.size() / 3:
 			var a: int = index[t * 3]
 			var b: int = index[t * 3 + 1]
 			var c: int = index[t * 3 + 2]
 			var id: int = island[a]
-			var is_skull := s == skull_surface and id == skull
-			var whole := not is_skull and float(top.get(id, -INF)) > CUT_HEIGHT - PIECE_REACH
-			if whole or (height[a] + height[b] + height[c]) / 3.0 > CUT_HEIGHT:
+			var x: Vector2 = span.get(id, Vector2.ZERO)
+			var to_one_side := x.x > 0.0 or x.y < 0.0
+			if not to_one_side and (height[a] + height[b] + height[c]) / 3.0 > CUT_HEIGHT:
 				dropped += 1
 				continue
 			kept.append_array([a, b, c])

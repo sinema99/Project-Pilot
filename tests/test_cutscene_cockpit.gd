@@ -508,7 +508,7 @@ func test_jolts_flare_fire_lamps_and_sparks() -> void:
 	approx(fire.flare, 0.0, 1e-6, "no flare before")
 	re.apply(1.25)
 	check(fire.flare > 0.4, "flare on the jolt (%.2f)" % fire.flare)
-	var lamp := (_seat(s).get_node("LegButtonL2") as MeshInstance3D).material_override as StandardMaterial3D
+	var lamp := (_seat(s).get_node("GripButtonL") as MeshInstance3D).material_override as StandardMaterial3D
 	check(lamp != null and lamp.albedo_color.r > 0.6, "alarm lamp lit")
 	re.apply(2.4)
 	check(lamp.albedo_color.r < 0.4, "alarm lamp dark between jolts")
@@ -517,6 +517,20 @@ func test_jolts_flare_fire_lamps_and_sparks() -> void:
 	check(not re.sparks.emitting, "not on a medium jolt")
 	re.jolt(1.0)
 	check(re.sparks.emitting, "sparks on the big jolt")
+	s.free()
+
+
+# The headrest strips, the pod band and the third leg button are dark shell, lit like the rest (not
+# lamps): the user didn't want them glowing red (2026-10-26).
+func test_former_red_trim_is_dark_and_lit() -> void:
+	var s := _shot()
+	for part in ["HeadCheekL", "HeadCheekR", "PodLBand", "LegButtonL2"]:
+		var mi := _seat(s).get_node(part) as MeshInstance3D
+		check(mi.material_override == null, "%s has no lamp material" % part)
+		var m := mi.mesh.surface_get_material(0) as ShaderMaterial
+		check(m != null, "%s is cel shaded" % part)
+		var c: Color = m.get_shader_parameter(&"color")
+		check(c.is_equal_approx(CockpitSeat.SHELL_DARK), "%s is SHELL_DARK" % part)
 	s.free()
 
 

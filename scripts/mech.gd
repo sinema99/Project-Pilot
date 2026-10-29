@@ -17,43 +17,33 @@ extends CharacterBody3D
 # mech's camera, and the view goes back to hers on the last frame of it. See the disembark
 # section, and the spec's Disembarking.
 #
-# The mech has no jump - Space and C are dead while piloting. The export also carries
-# MECH_turning_L and MECH_turning_R. The 2026-09-02 re-export animated both - the previous one
-# had turning_L as a single keyed frame and no turning_R at all - but they are a foot shuffle on
-# the spot rather than a turn: the legs and toes move, no yaw reaches the skeleton, and neither
-# covers any ground. The machine is still swung round by the ROTATE_SPEED lerp below, so both
-# clips are imported and left unplayed and nothing below refers to them.
+# Driving it is docs/specs/exia-movement.md: a run (9 m/s) and a sprint (14 m/s), a heavy leg
+# jump on Space, a step-turn on the spot, a stop that settles, a breathing idle. Every one of those
+# clips is built in code at boot (mech_gait.gd, mech_moves.gd) with solved legs, so a planted foot
+# stays planted. The exported MECH_walk / MECH_walk_start / MECH_turning_L / _R are still imported
+# and never played. What the mech is doing is one locomotion state, `loco` - see the movement
+# section - and each state picks its clip.
 # Gravity applies throughout: MECH_launch is a boot-up sequence, not lift, and the mech walks on
 # the ground. It is not, however, played on the spot - it steps the mech forward, which is what
-# the root motion section at the bottom of this file exists to carry.
+# the root motion section at the bottom of this file exists to carry. Off the floor with a pilot
+# aboard, gravity is MECH_GRAVITY_SCALE heavier: an 8.4 m machine falls like one.
 #
-# The clips chain by pose, which is what drives the whole animation section below:
+# The exported clips chain by pose:
 #
 #   MECH_idle ends crouched -> MECH_launch starts crouched, ends standing -> MECH_standing
 #
 # So MECH_idle is EXIA powering down, not a resting loop. It is played once when nobody is
 # aboard and *held* on its last frame, which is how a parked mech stays crouched. MECH_standing
-# is the resting pose for a mech with a pilot in it.
-#
-# Setting off takes exactly as long as MECH_walk_start does. That clip is the mech planting a
-# foot and leaning 8.4 m of machine into its first stride, and it is authored on the spot, so
-# the ground it should have covered is the ramp: the body accelerates from a standstill to SPEED
-# over precisely the clip's own length, and reaches it on the frame the queue hands over to
-# MECH_walk. The walk loop therefore only ever plays at one speed, which is the speed its stride
-# was authored for. That is why the ramp is derived from the clip rather than dialled in - see
-# ramp_rate - and why a re-exported walk start retunes the acceleration on its own.
-#
-# Stopping is still immediate: see clip_for on why letting go has to win instantly.
+# is the pose the boot-up ends on, and the built MECH_stand_idle starts on exactly that pose.
 #
 # The mech travels along its own nose and nowhere else. The input direction is a heading to turn
 # towards, never a direction to move in, so a change of direction is a turn the machine has to
 # make rather than a drift into the new heading with the model swinging round to catch up.
 
-# 5.0 was the speed the walk was tuned to when EXIA was 5.87 m tall. The 2026-09-01 export made
-# it 8.40 m, and a stride 1.43x longer covers 1.43x the ground per cycle, so the speed the loop
-# was authored for went up with it. 10.0 read as a skate on the smaller mech; 7.0 is the
-# re-tuned number for this one.
-const SPEED = 7.0
+# The run. 7.0 was the old walk's speed; the 2026-10-27 pass made the base gait a heavy jog.
+const SPEED = 9.0
+# From a standstill to SPEED. Replaces the old walk start, whose clip set the ramp.
+const RUN_RAMP_TIME := 0.6
 const ROTATE_SPEED = 10.0
 # A var, not a const: Settings.mouse_sensitivity scales it at the point of use
 # (see _unhandled_input below). The authored 0.0025 stays what it means -
@@ -66,28 +56,42 @@ const PITCH_MAX = 1.3
 const ANIM_IDLE := "MECH_idle"
 const ANIM_LAUNCH := "MECH_launch"
 const ANIM_STANDING := "MECH_standing"
+# Imported, never played since the 2026-10-27 movement pass. Still named so their loop modes are
+# pinned the way they always were.
 const ANIM_WALK_START := "MECH_walk_start"
 const ANIM_WALK := "MECH_walk"
+# Built in code at boot. See scripts/mech_gait.gd and scripts/mech_moves.gd.
+const ANIM_RUN := "MECH_run"
 const ANIM_SPRINT := "MECH_sprint"
+const ANIM_STAND_IDLE := "MECH_stand_idle"
+const ANIM_TURN_STEP := "MECH_turn_step"
+const ANIM_STOP_L := "MECH_stop_L"
+const ANIM_STOP_R := "MECH_stop_R"
+const ANIM_JUMP_CROUCH := "MECH_jump_crouch"
+const ANIM_JUMP_AIR := "MECH_jump_air"
+const ANIM_LAND := "MECH_land"
 
-# The sprint. See docs/specs/exia-sprint.md and scripts/mech_sprint.gd, which builds its clip.
+# The sprint. See docs/specs/exia-movement.md and docs/specs/exia-sprint.md.
 #
-# A tier on top of the walk, toggled on the `sprint` action. The clip is a grounded titan run
-# authored for exactly SPRINT_SPEED - 2 steps a second, 7 m a step, each planted foot moving back
-# through the mech at 14 m/s. Below that speed the clip plays slower in proportion (sprint_rate),
-# so a planted foot keeps pace with the body through the ramp and the brake too.
+# A tier on top of the run, toggled on the `sprint` action. Both clips are grounded titan runs
+# authored for exactly their speed, every planted foot moving back through the mech at that speed.
+# Off it the clip plays slower in proportion (gait_rate), so a planted foot keeps pace with the body
+# through the ramps and the brakes too.
 const SPRINT_SPEED := 14.0
 const SPRINT_RAMP_TIME := 0.5
 const SPRINT_BRAKE_TIME := 0.25
-# The crossfade between the walk and the run, either way, and from the run to a stand. Short, so the
-# run takes over almost at once and its speed-matched rate keeps the feet planted through the rest
-# of the ramp and the brake; phase-matched so the same foot is down in both clips.
+# Letting go of the keys at a sprint: down to the run speed this fast, then the stop.
+const SPRINT_RELEASE_TIME := 0.2
+# The crossfade between the run and the sprint, either way. Short, and both clips put the left plant
+# at the same phase, so the same foot is down in both.
 const SPRINT_BLEND_TIME := 0.15
 # A heavy machine on a ~12 m circle at full speed, blended in by speed so the rate does not step on
 # the frame the sprint starts.
 const ROTATE_SPEED_SPRINT := 4.0
-# The slowest the sprint clip plays, as a share of its authored rate: the walk speed's share.
+# The slowest each gait clip plays, as a share of its authored rate. The sprint's floor is the run
+# speed's share; the run's is what keeps the first step out of a standstill from crawling.
 const SPRINT_RATE_MIN := SPEED / SPRINT_SPEED
+const RUN_RATE_MIN := 0.4
 # Above this horizontal speed the mech plays the sprint clip.
 const SPRINT_GAIT_SPEED := SPEED + 0.1
 # The bank: a roll of the model about the nose, pivoting at the feet, into the turn.
@@ -95,20 +99,64 @@ const BANK_MAX_DEG := 12.0
 const BANK_FULL_ACCEL := 16.33   # 14 m/s on a ~12 m circle: 14^2 / 12
 const BANK_EASE := 8.0
 # The camera on a bound: a damped share of the hip's bounce, a dip and a shake on every footfall.
+# The run takes RUN_CAMERA_SHARE of the sprint's dip and bounce, and no shake.
 const BOUNCE_SHARE := 0.35
 const BOUNCE_SMOOTH := 0.05
 const FOOTFALL_DIP := 0.25
 const DIP_OMEGA := 26.0
 const FOOTFALL_SHAKE_DEG := 0.6
 const FOOTFALL_SHAKE_TIME := 0.12
+const RUN_CAMERA_SHARE := 0.4
+const RUN_DUST_SCALE := 0.6
 const SPRINT_FOV_BOOST := 10.0
 const FOV_EASE := 8.0
 
-const MechSprint := preload("res://scripts/mech_sprint.gd")
+# The locomotion state while a pilot drives. See the movement section and the spec's table.
+enum Loco { STAND, TURN, RUN, STOP, CROUCH, AIR, LAND }
+
+# The step-turn: asked to go further than this off the nose from a standstill, the mech steps round
+# on the spot first, pivoting about its planted foot, and runs once it is within TURN_DONE_ANGLE.
+const TURN_STEP_ANGLE := deg_to_rad(30.0)
+const TURN_DONE_ANGLE := deg_to_rad(8.0)
+const TURN_STEP_RATE := deg_to_rad(200.0)
+# Let go below this and the mech just stands; above it, it plays the stop.
+const STOP_MIN_SPEED := 4.5
+
+# The jump. 3 m apex under a heavier gravity: ~1.25 s in the air.
+const MECH_GRAVITY_SCALE := 1.6
+const JUMP_HEIGHT := 3.0
+# Grace after leaving the floor: still counts as grounded for a jump, and is not yet a fall.
+const COYOTE := 0.12
+const AIR_TURN_SHARE := 0.2
+# No second jump in the first moment of a landing.
+const LAND_JUMP_LOCK := 0.2
+const HEAVY_LANDING := 2.0
+const HEAVY_LANDING_KEEP := 0.6
+const LIGHT_LANDING := 1.5
+const LIGHT_LANDING_RATE := 1.8
+const MOVING_LANDING_RATE := 1.5
+# Camera: the crouch eases the view down, the push-off kicks the FOV, the landing dips and shakes.
+const CROUCH_CAMERA_DROP := 0.4
+const JUMP_FOV_KICK := 5.0
+const JUMP_FOV_EASE := 4.0
+const LAND_DIP := 0.6
+const LAND_SHAKE_DEG := 1.2
+const LAND_SHAKE_TIME := 0.2
+
+const MechGait := preload("res://scripts/mech_gait.gd")
+const MechMoves := preload("res://scripts/mech_moves.gd")
 const MechVfx := preload("res://scripts/mech_vfx.gd")
 
 const PROMPT_ENTER := "PILOT"
 const PROMPT_EXIT := "EXIT"
+# F pressed while it is too fast or off the floor: the exit waits for it to slow down and land.
+const PROMPT_EXIT_PENDING := "EXIT..."
+# Exiting is allowed at or below this speed, on the floor.
+const EXIT_MAX_SPEED := SPEED + 0.1
+# The capsule the exit spot has to fit, roughly pilot9's.
+const EXIT_CLEAR_RADIUS := 0.45
+const EXIT_CLEAR_HEIGHT := 1.9
+const EXIT_FLOOR_PROBE := 5.0
 
 # The camera handover. See docs/specs/mech-camera-handover.md.
 #
@@ -173,9 +221,8 @@ var _handover_from := Transform3D.IDENTITY
 var _handover_from_fov := 75.0
 var _handover_to: Camera3D = null
 
-# Metres per second per second, filled in from MECH_walk_start's length in _ready. The fallback
-# is a one-second ramp, which is what that clip currently is.
-var acceleration := SPEED
+# Metres per second per second from a standstill to the run.
+var acceleration := SPEED / RUN_RAMP_TIME
 
 # Clip name -> the travel curve split out of it, and where that curve was last sampled. Only the
 # clips that actually travel get an entry.
@@ -202,32 +249,50 @@ var travel_scale := 1.0
 # press made while standing still is kept - and getting out clears it.
 var sprint_toggled := false
 var _sprint_stop_armed := false
-# Set while a sprint stop is in progress: the 0.25 s brake runs through the walk speed to a halt
-# rather than dropping the machine dead at 7 m/s.
+# Set while keys let go above the run speed are bringing it down to the run speed for the stop.
 var _braking := false
 # The bank, in radians, and the yaw it differentiates.
 var bank := 0.0
 var _last_yaw := 0.0
 var _model_rest := Transform3D.IDENTITY
-# The animation: seconds left of the crossfade the sprint clip is blending in over, and which half
-# of the cycle the playhead was in (-1 when the sprint is not the playing clip). A footfall is a
-# playhead crossing, and only counts once the clip has its full weight.
-var _sprint_blend_left := 0.0
-var _sprint_half := -1
-var _walk_contact := 0.0
-# The sprint clip's hip height track, in metres, and its mean - the camera takes a share of it.
-var _hip_track := -1
-var _hip_mean := 0.0
-# The camera's offsets on a bound, all zero with CAMERA MOTION off: the smoothed bounce, the dip
-# spring (offset, velocity), and seconds since the last footfall for the shake.
+# The locomotion state and how long it has been in it. See the movement section.
+var loco: Loco = Loco.STAND
+var _loco_time := 0.0
+# Seconds since the floor was last under it; the highest point since it left; the stop's start speed
+# and lead clip; the horizontal speed when the stop began.
+var _air_time := 0.0
+var _air_peak := 0.0
+var _stop_clip := ANIM_STOP_L
+var _stop_v0 := 0.0
+# F was pressed while it could not let the pilot out yet. See _request_exit.
+var exit_pending := false
+# The clip the locomotion state last started, so a state's clip is started once and then left to run
+# - including a one-shot that has finished and is holding its last frame.
+var _loco_clip := ""
+# How fast the landing clip plays, set when it lands.
+var _land_rate := 1.0
+# The animation: seconds left of the crossfade the gait clip is blending in over, and which half of
+# the cycle the playhead was in (-1 when no gait is the playing clip). A footfall is a playhead
+# crossing, and only counts once the clip has its full weight.
+var _gait_blend_left := 0.0
+var _gait_half := -1
+# Each gait clip's hip height track, in metres, and its mean - the camera takes a share of it.
+var _hip_tracks: Dictionary = {}
+var _hip_means: Dictionary = {}
+# The camera's offsets, all zero with CAMERA MOTION off: the smoothed bounce, the dip spring (offset,
+# velocity), the shake (seconds since it started, its size and its length) and the crouch's drop.
 var _bounce := 0.0
 var _dip := 0.0
 var _dip_velocity := 0.0
 var _shake_age := INF
+var _shake_deg := FOOTFALL_SHAKE_DEG
+var _shake_time := FOOTFALL_SHAKE_TIME
+var _crouch_drop := 0.0
 var _sprint_fov_boost := 0.0
+var _jump_fov := 0.0
 var _vfx: Node3D = null
-# The one MECH_sprint, shared by every mech like the imported clips are.
-static var _sprint_clip: Animation = null
+# The clips built at boot, shared by every mech like the imported clips are.
+static var _built_clips: Dictionary = {}
 
 @onready var camera_pivot: Node3D = $CameraPivot
 @onready var camera_pitch_node: Node3D = $CameraPivot/CameraPitch
@@ -265,8 +330,6 @@ func _ready() -> void:
 	for one_shot in [ANIM_IDLE, ANIM_LAUNCH, ANIM_WALK_START]:
 		if anim_player.has_animation(one_shot):
 			anim_player.get_animation(one_shot).loop_mode = Animation.LOOP_NONE
-	if anim_player.has_animation(ANIM_WALK_START):
-		acceleration = ramp_rate(anim_player.get_animation(ANIM_WALK_START).length)
 	_split_travel_out_of_the_clips()
 	# The cockpit bone Setsuna rides through the launch. Looked up once: a re-export that drops or
 	# renames spine.003 leaves _cockpit_bone at -1, and the canopy carry falls back to hiding her
@@ -276,7 +339,7 @@ func _ready() -> void:
 		_skeleton = skeletons[0] as Skeleton3D
 		_cockpit_bone = _skeleton.find_bone(COCKPIT_BONE)
 	_model_rest = model.transform
-	_add_sprint_clip()
+	_add_built_clips()
 	_vfx = MechVfx.new()
 	_vfx.name = "MechVfx"
 	add_child(_vfx)
@@ -286,47 +349,55 @@ func _ready() -> void:
 	# Nobody aboard: power down, and hold the crouch.
 	_play_chain(ANIM_IDLE)
 
-# Builds MECH_sprint from the imported rig and adds it to the player's library. Built every boot
-# rather than baked, so a re-export of Mech_V1.glb cannot strand a stale clip. A rig without the
-# bones the build drives gets no sprint, and the toggle then does nothing visible but is harmless.
-func _add_sprint_clip() -> void:
+# Builds every clip in docs/specs/exia-movement.md from the imported rig and adds them to the
+# player's library. Built every boot rather than baked, so a re-export of Mech_V1.glb cannot strand a
+# stale clip. A rig without the bones the build drives gets none of them - it can still be boarded and
+# driven, the state machine simply finds no clip to play.
+func _add_built_clips() -> void:
 	if _skeleton == null or not anim_player.has_animation(ANIM_STANDING):
 		return
-	if _sprint_clip == null:
+	if _built_clips.is_empty():
 		if _skeleton.find_bone("toe.L.001") < 0 or _skeleton.find_bone("thigh.L") < 0:
 			return
-		_sprint_clip = MechSprint.build(_skeleton, anim_player.get_animation(ANIM_STANDING))
+		_built_clips = MechMoves.build_all(_skeleton, anim_player.get_animation(ANIM_STANDING))
 	var library := anim_player.get_animation_library("")
-	if library != null and not library.has_animation(ANIM_SPRINT):
-		library.add_animation(ANIM_SPRINT, _sprint_clip)
-	_hip_track = bone_track(_sprint_clip, HIP_BONE)
-	if _hip_track >= 0:
-		var total := 0.0
-		var keys := _sprint_clip.track_get_key_count(_hip_track)
-		for key in keys - 1:
-			total += (_sprint_clip.track_get_key_value(_hip_track, key) as Vector3).y
-		_hip_mean = total / maxf(keys - 1, 1)
-	if anim_player.has_animation(ANIM_WALK):
-		_walk_contact = MechSprint.left_contact_time(_skeleton, anim_player.get_animation(ANIM_WALK))
-	hold_sprint_bones(anim_player, _sprint_clip, _skeleton)
-
-# The run keys bones the exported clips never touch - `toe.L.001`, the left sole plate, has no track
-# in any of them (the right one does). An AnimationPlayer leaves an unkeyed bone wherever the last
-# clip put it, so after a run the left plate stayed at the run's last angle under every later clip.
-# This gives each clip a one-key track holding MECH_standing's value (the bone rest where standing
-# has no track, which is what the run is built from) for every bone the run keys and it does not.
-# Idempotent: the clips are shared between instances, and a clip that already has the track keeps it.
-static func hold_sprint_bones(player: AnimationPlayer, sprint: Animation, skeleton: Skeleton3D) -> void:
-	if sprint == null or not player.has_animation(ANIM_STANDING):
+	if library == null:
 		return
-	var base := MechSprint.locals_at(skeleton, player.get_animation(ANIM_STANDING), 0.0)
+	for clip_name in _built_clips:
+		if not library.has_animation(clip_name):
+			library.add_animation(clip_name, _built_clips[clip_name])
+	for clip_name in [ANIM_RUN, ANIM_SPRINT]:
+		var clip: Animation = _built_clips[clip_name]
+		var track := bone_track(clip, HIP_BONE)
+		if track < 0:
+			continue
+		var total := 0.0
+		var keys := clip.track_get_key_count(track)
+		for key in keys - 1:
+			total += (clip.track_get_key_value(track, key) as Vector3).y
+		_hip_tracks[clip_name] = track
+		_hip_means[clip_name] = total / maxf(keys - 1, 1)
+	hold_built_bones(anim_player, _built_clips[ANIM_SPRINT], _skeleton, _built_clips.keys())
+
+# The built clips key bones the exported clips never touch - `toe.L.001`, the left sole plate, has no
+# track in any of them (the right one does). An AnimationPlayer leaves an unkeyed bone wherever the
+# last clip put it, so after a run the left plate stayed at the run's last angle under every later
+# clip. This gives each exported clip a one-key track holding MECH_standing's value (the bone rest
+# where standing has no track, which is what the built clips start from) for every bone `template`
+# keys and it does not. Idempotent: the clips are shared between instances, and a clip that already
+# has the track keeps it.
+static func hold_built_bones(player: AnimationPlayer, template: Animation, skeleton: Skeleton3D,
+		built: Array) -> void:
+	if template == null or not player.has_animation(ANIM_STANDING):
+		return
+	var base := MechGait.locals_at(skeleton, player.get_animation(ANIM_STANDING), 0.0)
 	for clip_name in player.get_animation_list():
-		if clip_name == ANIM_SPRINT:
+		if built.has(clip_name):
 			continue
 		var clip := player.get_animation(clip_name)
-		for track in sprint.get_track_count():
-			var path := sprint.track_get_path(track)
-			var type := sprint.track_get_type(track)
+		for track in template.get_track_count():
+			var path := template.track_get_path(track)
+			var type := template.track_get_type(track)
 			if clip.find_track(path, type) >= 0:
 				continue
 			var b := skeleton.find_bone(String(path.get_concatenated_subnames()))
@@ -363,7 +434,7 @@ func _update_prompt() -> void:
 	if embark_left > 0.0 or seal_left > 0.0 or unseal_left > 0.0 or disembark_left > 0.0:
 		prompt.visible = false
 	elif pilot != null:
-		prompt_label.text = PROMPT_EXIT
+		prompt_label.text = PROMPT_EXIT_PENDING if exit_pending else PROMPT_EXIT
 		prompt.visible = true
 	elif player_in_range != null:
 		prompt_label.text = PROMPT_ENTER
@@ -388,7 +459,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		if pilot == null and player_in_range != null:
 			_enter_mech()
 		elif pilot != null:
-			_exit_mech()
+			_request_exit()
 		else:
 			return
 		# scripts/interact_button.gd reads an `interact` action that also binds F, so one press
@@ -497,10 +568,32 @@ static func seat_follow(cockpit_now: Transform3D, cockpit_board: Transform3D,
 #             ──> clip ends ──> _hand_back(): her body is hers again and the camera pans into
 #                               her view
 
+# F while driving. On the floor and no faster than the run, the pilot gets out now. Otherwise the
+# exit waits: the sprint is dropped so the mech brakes down, the prompt says it is waiting, and the
+# physics step lets the pilot out the moment it is down and slow enough. F again calls it off.
+func _request_exit() -> void:
+	if exit_pending:
+		exit_pending = false
+	elif can_exit_now(is_on_floor(), Vector2(velocity.x, velocity.z).length(), loco):
+		_exit_mech()
+		return
+	else:
+		exit_pending = true
+		sprint_toggled = false
+	_update_prompt()
+
+# Whether a pilot can be let out right now: on the floor, not mid-jump, no faster than the run.
+static func can_exit_now(on_floor: bool, h_speed: float, state: Loco) -> bool:
+	return on_floor and h_speed <= EXIT_MAX_SPEED and state != Loco.CROUCH and state != Loco.AIR
+
 func _exit_mech() -> void:
+	exit_pending = false
 	sprint_toggled = false
 	_braking = false
-	_sprint_half = -1
+	_gait_half = -1
+	loco = Loco.STAND
+	_loco_time = 0.0
+	_crouch_drop = 0.0
 	# Whatever it was doing when she let go of the controls, it powers down and stays crouched.
 	was_moving = false
 	# F is dead through the canopy close, so this only fires here if something else calls it - but
@@ -524,9 +617,44 @@ func _exit_mech() -> void:
 	# Whatever is on screen this instant - the mech's camera, or the handover camera itself if
 	# the pan in never finished and this is a pilot getting straight back out again.
 	var watching := get_viewport().get_camera_3d()
-	former_pilot.exit_vehicle(exit_point.global_position, rotation.y)
+	var spot := exit_spot()
+	former_pilot.exit_vehicle(spot.position, spot.yaw)
 	_begin_handover(watching, get_viewport().get_camera_3d())
 	_update_prompt()
+
+# Where the cut puts the pilot: ExitPoint (behind the mech) if it is clear, else the same distance
+# to the left, the right, then the front. Clear means a pilot-sized capsule there touches nothing
+# but this mech, and there is floor under it within EXIT_FLOOR_PROBE - the spot is dropped onto
+# that floor. Returns {position, yaw}, the yaw facing the mech. Nothing clear: ExitPoint, as before.
+func exit_spot() -> Dictionary:
+	var behind: Vector3 = exit_point.position
+	var fallback := {position = exit_point.global_position, yaw = rotation.y}
+	if not is_inside_tree():
+		return fallback
+	var space := get_world_3d().direct_space_state
+	var capsule := CapsuleShape3D.new()
+	capsule.radius = EXIT_CLEAR_RADIUS
+	capsule.height = EXIT_CLEAR_HEIGHT
+	var shape_query := PhysicsShapeQueryParameters3D.new()
+	shape_query.shape = capsule
+	shape_query.exclude = [get_rid()]
+	for turn in [0.0, PI * 0.5, -PI * 0.5, PI]:
+		var local := Basis(Vector3.UP, turn) * behind
+		var at := global_transform * local
+		var ray := PhysicsRayQueryParameters3D.create(at + Vector3.UP * 2.0,
+			at + Vector3.DOWN * EXIT_FLOOR_PROBE)
+		ray.exclude = [get_rid()]
+		var hit := space.intersect_ray(ray)
+		if hit.is_empty():
+			continue
+		var ground: Vector3 = hit.position
+		shape_query.transform = Transform3D(Basis.IDENTITY,
+			ground + Vector3.UP * (EXIT_CLEAR_HEIGHT * 0.5 + 0.05))
+		if not space.intersect_shape(shape_query, 1).is_empty():
+			continue
+		var to_mech := global_position - ground
+		return {position = ground, yaw = atan2(to_mech.x, to_mech.z)}
+	return fallback
 
 # Whether this pilot can be let out the way she came in. It needs every piece the climb needed -
 # the mark, the clip, and the cockpit bone to ride out on - plus both scripted clips: MECH_idle
@@ -638,9 +766,9 @@ func _begin_handover(watching: Camera3D, destination: Camera3D) -> void:
 func _process(delta: float) -> void:
 	_step_bound_camera(delta)
 	camera_pivot.global_position = (get_global_transform_interpolated() * CAMERA_PIVOT_OFFSET
-		+ Vector3(0.0, _bounce + _dip, 0.0))
+		+ Vector3(0.0, _bounce + _dip + _crouch_drop, 0.0))
 	camera_pivot.rotation.y = camera_yaw
-	var shake := shake_offset(_shake_age) if Settings.camera_motion else Vector2.ZERO
+	var shake := shake_offset(_shake_age, _shake_deg, _shake_time) if Settings.camera_motion 		else Vector2.ZERO
 	camera_pitch_node.rotation.x = camera_pitch + shake.x
 	camera_pitch_node.rotation.z = shake.y
 	# Read live rather than captured, the same reason pilot9's base_fov is a property: FOV is a
@@ -649,7 +777,7 @@ func _process(delta: float) -> void:
 	# so EXIA was sitting on Godot's default 75 rather than a framing decision.
 	#
 	# Before the handover block below, so a pan reading _handover_to.fov gets this frame's value.
-	camera.fov = Settings.fov + _sprint_fov_boost
+	camera.fov = Settings.fov + _sprint_fov_boost + _jump_fov
 
 	if handover_left <= 0.0:
 		return
@@ -685,35 +813,15 @@ func _cancel_handover() -> void:
 
 # --- animation ------------------------------------------------------------
 
-# Picks the clip to start this frame, or "" to leave the playhead where it is.
+# The clip for a mech nobody is driving: parked, being climbed, or sealing / unsealing. Returns ""
+# to leave the playhead where it is.
 #
-# Returning "" rather than re-issuing the clip already playing is what stops MECH_walk
-# restarting every frame, and what lets the one-shot MECH_walk_start run to its end with
-# MECH_walk queued behind it.
-#
-# Standing still means two different things: with a pilot aboard it is MECH_standing, and parked
-# it is the held last frame of MECH_idle. `current` is "" once a one-shot has ended, so a parked
-# mech reads as "nothing playing" - and that is precisely the state to leave alone, because the
-# skeleton is still holding the crouch.
-#
-# Releasing every movement key cuts straight back to standing, including part-way through the
-# start clip: a mech that has to finish spooling up before it will stop is worse to drive than
-# one whose start gets interrupted. The two scripted transitions, MECH_launch and MECH_idle, are
-# the exception - nobody is waiting on them, so they play out.
-static func clip_for(piloted: bool, moving: bool, was_moving_last_frame: bool,
-		current: String, fast: bool = false) -> String:
-	if moving:
-		# Above the walk speed the run takes over, and it stays on until the speed drops
-		# back - the clip falls through to the walk below when it does.
-		if fast:
-			return "" if current == ANIM_SPRINT else ANIM_SPRINT
-		if not was_moving_last_frame:
-			return ANIM_WALK_START
-		# Mid-spool-up, or already walking - either way the queue has it in hand. Anything else
-		# means the chain was interrupted, so pick the loop back up.
-		if current == ANIM_WALK_START or current == ANIM_WALK:
-			return ""
-		return ANIM_WALK
+# Standing still means two different things here: with a pilot aboard (the canopy closing) it is the
+# boot-up running on into MECH_standing, and parked it is the held last frame of MECH_idle. `current`
+# is "" once a one-shot has ended, so a parked mech reads as "nothing playing" - and that is precisely
+# the state to leave alone, because the skeleton is still holding the crouch. The two scripted
+# transitions, MECH_launch and MECH_idle, always play out.
+static func parked_clip(piloted: bool, current: String) -> String:
 	if current == ANIM_LAUNCH or current == ANIM_IDLE:
 		return ""
 	if piloted:
@@ -721,32 +829,66 @@ static func clip_for(piloted: bool, moving: bool, was_moving_last_frame: bool,
 	# Parked, and the power-down has already ended: the crouch is held, so play nothing.
 	return "" if current == "" else ANIM_IDLE
 
-# The acceleration that spends the whole of MECH_walk_start getting from a standstill to SPEED.
-#
-# Tying the two together is what keeps MECH_walk at one constant speed: the ramp ends on the
-# frame the start clip does, so the walk loop is only ever entered at SPEED and never plays at a
-# speed its stride was not authored for. A re-exported start clip of a different length retunes
-# the ramp to match it.
+# The clip each locomotion state plays. The run gives way to the sprint above SPRINT_GAIT_SPEED.
+static func loco_clip(state: Loco, h_speed: float, stop_clip: String) -> String:
+	match state:
+		Loco.TURN:
+			return ANIM_TURN_STEP
+		Loco.RUN:
+			return ANIM_SPRINT if h_speed > SPRINT_GAIT_SPEED else ANIM_RUN
+		Loco.STOP:
+			return stop_clip
+		Loco.CROUCH:
+			return ANIM_JUMP_CROUCH
+		Loco.AIR:
+			return ANIM_JUMP_AIR
+		Loco.LAND:
+			return ANIM_LAND
+	return ANIM_STAND_IDLE
+
+static func is_gait(clip: String) -> bool:
+	return clip == ANIM_RUN or clip == ANIM_SPRINT
+
+# The crossfade into `to` from `from`. The stop and the landing end exactly on the standing pose and
+# the idle starts on it, so those joins are near-cuts; the boot-up's MECH_standing fades into the
+# idle slowly. See the spec's blend table.
+static func blend_for(from: String, to: String) -> float:
+	if is_gait(to):
+		if is_gait(from):
+			return SPRINT_BLEND_TIME
+		if from == ANIM_STOP_L or from == ANIM_STOP_R:
+			return 0.15
+		return 0.2
+	match to:
+		ANIM_STAND_IDLE:
+			if from == ANIM_STOP_L or from == ANIM_STOP_R or from == ANIM_LAND:
+				return 0.1
+			if from == ANIM_STANDING:
+				return 0.3
+			return 0.2
+		ANIM_TURN_STEP:
+			return 0.2
+		ANIM_STOP_L, ANIM_STOP_R:
+			return 0.15
+		ANIM_JUMP_CROUCH:
+			return 0.1
+		ANIM_JUMP_AIR:
+			return 0.08 if from == ANIM_JUMP_CROUCH else 0.25
+		ANIM_LAND:
+			return 0.05
+	return 0.0
+
 # The mech's nose, as a unit vector on the ground plane.
 #
-# This is the inverse of the atan2(x, z) the turn above aims with, and has to stay that way: a
-# sin/cos swap here would point the mech's travel across its own facing and put the slide back,
-# mirrored. See test_the_nose_matches_the_heading_the_mech_turns_towards.
+# This is the inverse of the atan2(x, z) the turn aims with, and has to stay that way: a sin/cos
+# swap here would point the mech's travel across its own facing and put the slide back, mirrored.
+# See test_the_nose_matches_the_heading_the_mech_turns_towards.
 static func facing_for(yaw: float) -> Vector3:
 	return Vector3(sin(yaw), 0.0, cos(yaw))
 
-static func ramp_rate(walk_start_length: float) -> float:
-	# No clip, or a zero-length one: set off at once rather than never.
-	if walk_start_length <= 0.0:
-		return SPEED
-	return SPEED / walk_start_length
-
 # Starts `clip` now and hands over to `next` when it ends. The queue is cleared first: an
 # interrupted chain (launch cut short by a movement key) would otherwise leave its follow-up
-# sitting in the queue to fire after the walk start, one clip too late.
-#
-# `blend` is the crossfade in seconds. Every existing caller leaves it at 0 - the clips chain by
-# pose and cut - and only the sprint's own transitions ask for one: see blend_for.
+# sitting in the queue to fire one clip too late.
 func _play_chain(clip: String, next: String = "", blend: float = 0.0) -> void:
 	if not anim_player.has_animation(clip):
 		return
@@ -755,51 +897,57 @@ func _play_chain(clip: String, next: String = "", blend: float = 0.0) -> void:
 	if next != "" and anim_player.has_animation(next):
 		anim_player.queue(next)
 
-# The crossfade a clip change gets. While two clips blend their feet disagree and slide, so the
-# blend is kept short (SPRINT_BLEND_TIME) rather than spanning the ramp or the brake: the run
-# clip's own speed-matched rate keeps the feet planted through the rest of those.
-static func blend_for(from: String, to: String) -> float:
-	if to == ANIM_SPRINT and (from == ANIM_WALK or from == ANIM_WALK_START):
-		return SPRINT_BLEND_TIME
-	if from == ANIM_SPRINT and (to == ANIM_WALK or to == ANIM_STANDING):
-		return SPRINT_BLEND_TIME
-	return 0.0
+# Parked, being climbed, or sealing / unsealing: the exported chain.
+func _drive_parked(piloted: bool) -> void:
+	_loco_clip = ""
+	anim_player.speed_scale = 1.0
+	var clip := parked_clip(piloted, anim_player.current_animation)
+	if clip != "":
+		_play_chain(clip)
 
-func _drive_animation(piloted: bool, moving: bool, fast: bool = false) -> void:
+# Starts the clip `loco` wants if it is not already the one running, and keeps the gaits' rate
+# matched to the speed.
+func _drive_loco_animation(h_speed: float) -> void:
 	var current := anim_player.current_animation
-	var play_pos := anim_player.current_animation_position
-	var clip := clip_for(piloted, moving, was_moving, current, fast)
-	was_moving = moving
-	if clip == "":
+	# The boot-up plays out unless the pilot asks for something; standing still is not asking.
+	if loco == Loco.STAND and current == ANIM_LAUNCH:
+		anim_player.speed_scale = 1.0
 		return
-	var blend := blend_for(current, clip)
-	_play_chain(clip, ANIM_WALK if clip == ANIM_WALK_START else "", blend)
-	if clip == ANIM_SPRINT:
-		_sprint_blend_left = blend
-		_sprint_half = -1
-	# Phase-matched across the crossfade: the sprint starts where its left contact lines up with
-	# the walk's, and the walk takes over where its own contact lines up with the sprint's. The
-	# walk's contact is measured off the clip at boot, so a re-export retunes it. Only from the
-	# walk loop - the start clip has no stride to match.
-	if blend > 0.0 and anim_player.has_animation(ANIM_WALK):
-		var walk_len := anim_player.get_animation(ANIM_WALK).length
-		if clip == ANIM_SPRINT and current == ANIM_WALK:
-			var phase := fposmod((play_pos - _walk_contact) / walk_len, 1.0)
-			anim_player.seek(phase * MechSprint.LENGTH, false)
-		elif clip == ANIM_WALK and current == ANIM_SPRINT:
-			var phase := fposmod(play_pos / MechSprint.LENGTH, 1.0)
-			anim_player.seek(fposmod(_walk_contact + phase * walk_len, walk_len), false)
-	# Every path through here sets the rate, so a sprint left any way never strands a slowed player.
-	var h_speed := Vector2(velocity.x, velocity.z).length()
-	anim_player.speed_scale = sprint_rate(h_speed) if anim_player.current_animation == ANIM_SPRINT \
-		else 1.0
+	var want := loco_clip(loco, h_speed, _stop_clip)
+	if not anim_player.has_animation(want):
+		return
+	var from: String = current if current != "" else _loco_clip
+	if want != _loco_clip or (current == ANIM_STANDING and want == ANIM_STAND_IDLE):
+		var blend := blend_for(from, want)
+		var phase := -1.0
+		if is_gait(want) and is_gait(current):
+			# Both gaits put the left plant at u = 0: carry the phase across, the same foot stays down.
+			phase = fposmod(anim_player.current_animation_position
+				/ anim_player.get_animation(current).length, 1.0)
+		elif is_gait(want) and not is_gait(from):
+			# Setting off: the left foot reaching for its plant - the lean into the first step.
+			phase = 0.75
+		_play_chain(want, "", blend)
+		if phase >= 0.0:
+			anim_player.seek(phase * anim_player.get_animation(want).length, false)
+		_loco_clip = want
+		if is_gait(want):
+			_gait_blend_left = blend
+			_gait_half = -1
+	match want:
+		ANIM_RUN, ANIM_SPRINT:
+			anim_player.speed_scale = gait_rate(want, h_speed)
+		ANIM_LAND:
+			anim_player.speed_scale = _land_rate
+		_:
+			anim_player.speed_scale = 1.0
 
-# --- the sprint ------------------------------------------------------------
+# --- the gaits -------------------------------------------------------------
 #
-# See docs/specs/exia-sprint.md. Everything the sprint decides is a pure function up here so the
+# See docs/specs/exia-movement.md. Everything the gaits decide is a pure function up here so the
 # tests can pin it without driving a tree.
 
-# The turn rate at `speed`: ROTATE_SPEED at the walk, ROTATE_SPEED_SPRINT at a full sprint, blended
+# The turn rate at `speed`: ROTATE_SPEED at the run, ROTATE_SPEED_SPRINT at a full sprint, blended
 # by speed in between so it does not step on the frame the sprint starts.
 static func turn_rate(speed: float) -> float:
 	return lerpf(ROTATE_SPEED, ROTATE_SPEED_SPRINT,
@@ -807,27 +955,35 @@ static func turn_rate(speed: float) -> float:
 
 # The speed to head for and how fast to head for it, as (target, rate), while a key is held.
 #
-# Sprinting from a standstill is the walk start and then the ramp, so the ramp only begins once
-# the walk speed is reached. Dropping the sprint eases back to the walk in the brake time. Below
-# the walk speed the rate is the walk start's own.
-static func speed_target(sprinting: bool, speed: float, walk_rate: float) -> Vector2:
+# Sprinting from a standstill is the run ramp and then the sprint ramp, so the sprint ramp only
+# begins once the run speed is reached. Dropping the sprint eases back to the run in the brake time.
+static func speed_target(sprinting: bool, speed: float, run_rate: float) -> Vector2:
 	if sprinting:
 		if speed < SPEED - 0.01:
-			return Vector2(SPEED, walk_rate)
+			return Vector2(SPEED, run_rate)
 		return Vector2(SPRINT_SPEED, (SPRINT_SPEED - SPEED) / SPRINT_RAMP_TIME)
 	if speed > SPEED:
 		return Vector2(SPEED, (SPRINT_SPEED - SPEED) / SPRINT_BRAKE_TIME)
-	return Vector2(SPEED, walk_rate)
+	return Vector2(SPEED, run_rate)
 
-# How fast the sprint clip plays at `speed`: in proportion to it, so a planted foot moves back
-# through the mech at exactly the body's speed through the ramp and the brake - no skating above
-# the walk. Floored at the walk speed's share.
+# How fast a gait clip plays at `speed`: in proportion to it, so a planted foot moves back through
+# the mech at exactly the body's speed through the ramps and the brakes. Floored per gait.
+static func gait_rate(clip: String, speed: float) -> float:
+	if clip == ANIM_SPRINT:
+		return clampf(speed / SPRINT_SPEED, SPRINT_RATE_MIN, 1.0)
+	return clampf(speed / SPEED, RUN_RATE_MIN, 1.0)
+
+# The sprint clip's rate. Kept for the sprint tests' sake.
 static func sprint_rate(speed: float) -> float:
-	return clampf(speed / SPRINT_SPEED, SPRINT_RATE_MIN, 1.0)
+	return gait_rate(ANIM_SPRINT, speed)
 
-# Metres per second per second of the brake on letting go: a full sprint to a halt in 0.25 s.
-static func brake_rate() -> float:
-	return SPRINT_SPEED / SPRINT_BRAKE_TIME
+# Metres per second per second of the brake from a sprint down to the run when the keys are let go.
+static func release_rate() -> float:
+	return (SPRINT_SPEED - SPEED) / SPRINT_RELEASE_TIME
+
+# The launch speed for a JUMP_HEIGHT apex under the mech's gravity.
+static func jump_velocity(g: float) -> float:
+	return sqrt(2.0 * g * MECH_GRAVITY_SCALE * JUMP_HEIGHT)
 
 # The roll the model leans to, in radians. Into the turn: the lateral acceleration is speed times
 # the yaw rate, a left turn has a positive yaw rate, and a left lean is a negative roll about the
@@ -866,36 +1022,71 @@ func _update_bank(delta: float, driving: bool, h_speed: float) -> void:
 		model.transform = Transform3D(Basis(Vector3(0.0, 0.0, 1.0), bank), Vector3.ZERO) \
 			* _model_rest
 
-# A footfall is the sprint playhead crossing 0 (left) or half its length (right) - read off the
-# phase rather than a method track, so the clip stays pure pose data. Only counts once the clip has
-# its full weight, not mid-crossfade.
+# A footfall is a gait's playhead crossing 0 (left) or half its length (right) - read off the phase
+# rather than a method track, so the clips stay pure pose data. Only counts once the clip has its
+# full weight, not mid-crossfade.
 func _track_footfalls(delta: float) -> void:
-	if anim_player.current_animation != ANIM_SPRINT:
-		_sprint_half = -1
+	var current := anim_player.current_animation
+	if not is_gait(current):
+		_gait_half = -1
 		return
-	_sprint_blend_left = maxf(_sprint_blend_left - delta, 0.0)
-	var half := int(floorf(anim_player.current_animation_position / MechSprint.LENGTH * 2.0)) % 2
-	if _sprint_half != -1 and half != _sprint_half and _sprint_blend_left <= 0.0:
-		_on_footfall(half)
-	_sprint_half = half
+	_gait_blend_left = maxf(_gait_blend_left - delta, 0.0)
+	var length := anim_player.get_animation(current).length
+	var half := int(floorf(anim_player.current_animation_position / length * 2.0)) % 2
+	if _gait_half != -1 and half != _gait_half and _gait_blend_left <= 0.0:
+		_on_footfall(half, current)
+	_gait_half = half
 
-# One planted foot. The camera takes a dip and a shake (CAMERA MOTION), the floor a ring of dust
-# (MOVEMENT EFFECTS). `half` is 0 for the left foot, 1 for the right.
-func _on_footfall(half: int) -> void:
+# One planted foot. The camera takes a dip (and, sprinting, a shake) - CAMERA MOTION - and the floor
+# a ring of dust - MOVEMENT EFFECTS. `half` is 0 for the left foot, 1 for the right. The run takes
+# RUN_CAMERA_SHARE of the sprint's dip and smaller dust.
+func _on_footfall(half: int, clip: String = ANIM_SPRINT) -> void:
+	var sprinting := clip == ANIM_SPRINT
 	if Settings.camera_motion:
-		_dip = -FOOTFALL_DIP
+		_dip = -FOOTFALL_DIP * (1.0 if sprinting else RUN_CAMERA_SHARE)
 		_dip_velocity = 0.0
-		_shake_age = 0.0
+		if sprinting:
+			_start_shake(FOOTFALL_SHAKE_DEG, FOOTFALL_SHAKE_TIME)
 	if Settings.movement_effects and _vfx != null:
-		_vfx.footfall(_planted_ball(half))
+		_vfx.footfall(_planted_ball(half), 1.0 if sprinting else RUN_DUST_SCALE)
 
-# Where the planted foot's ball is on the floor, in the world.
+# Hit the floor from the air, `fall` metres below the highest point. The biggest dip of the set and a
+# shake, both scaled with the fall; a dust ring under each foot; a heavy landing bleeds speed.
+func _on_land(fall: float, moving: bool) -> void:
+	var k := clampf(fall / JUMP_HEIGHT, 0.5, 2.0)
+	if Settings.camera_motion:
+		_dip = -LAND_DIP * k
+		_dip_velocity = 0.0
+		_start_shake(LAND_SHAKE_DEG * k, LAND_SHAKE_TIME)
+	if Settings.movement_effects and _vfx != null:
+		_vfx.footfall(_planted_ball(0))
+		_vfx.footfall(_planted_ball(1))
+	if fall >= HEAVY_LANDING:
+		velocity.x *= HEAVY_LANDING_KEEP
+		velocity.z *= HEAVY_LANDING_KEEP
+	_land_rate = land_rate(fall, moving)
+
+# How fast the landing clip plays: quick for a short drop, quicker with a key held.
+static func land_rate(fall: float, moving: bool) -> float:
+	if fall < LIGHT_LANDING:
+		return LIGHT_LANDING_RATE
+	return MOVING_LANDING_RATE if moving else 1.0
+
+func _start_shake(deg: float, time: float) -> void:
+	_shake_age = 0.0
+	_shake_deg = deg
+	_shake_time = time
+
+# Where a foot's ball is on the floor, in the world. `half` is 0 for the left foot, 1 for the right.
 func _planted_ball(half: int) -> Vector3:
-	var bone := _skeleton.find_bone("toe.L.001" if half == 0 else "toe.R.001") if _skeleton != null else -1
+	var at := _ball_world(".L" if half == 0 else ".R")
+	return Vector3(at.x, global_position.y, at.z)
+
+func _ball_world(side: String) -> Vector3:
+	var bone := _skeleton.find_bone("toe" + side + ".001") if _skeleton != null else -1
 	if bone < 0:
 		return global_position
-	var at := (_skeleton.global_transform * _skeleton.get_bone_global_pose(bone)).origin
-	return Vector3(at.x, global_position.y, at.z)
+	return (_skeleton.global_transform * _skeleton.get_bone_global_pose(bone)).origin
 
 # One exact step of a critically damped spring - closed form, so the dip's shape does not depend on
 # the frame rate. Returns (offset, velocity). Same spring as pilot9's landing dip.
@@ -904,53 +1095,106 @@ static func dip_step(x: float, v: float, omega: float, dt: float) -> Vector2:
 	var c := v + omega * x
 	return Vector2((x + c * dt) * decay, (v - omega * c * dt) * decay)
 
-# The shake's (pitch, roll) in radians, `age` seconds after a footfall: random, fading to nothing.
-static func shake_offset(age: float) -> Vector2:
-	if age >= FOOTFALL_SHAKE_TIME:
+# The shake's (pitch, roll) in radians, `age` seconds into a shake of `deg` lasting `time`: random,
+# fading to nothing.
+static func shake_offset(age: float, deg: float = FOOTFALL_SHAKE_DEG,
+		time: float = FOOTFALL_SHAKE_TIME) -> Vector2:
+	if age >= time:
 		return Vector2.ZERO
-	var fade := 1.0 - age / FOOTFALL_SHAKE_TIME
-	return Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)) \
-		* deg_to_rad(FOOTFALL_SHAKE_DEG) * fade
+	var fade := 1.0 - age / time
+	return Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)) * deg_to_rad(deg) * fade
 
 # The widening the sprint adds to the field of view, in degrees.
 static func fov_boost_target(h_speed: float) -> float:
 	return SPRINT_FOV_BOOST if h_speed > SPRINT_GAIT_SPEED else 0.0
 
-# The camera's three offsets and the FOV boost, advanced one drawn frame. The bounce is a damped
-# share of the hip height of the sprint clip while it is the playing clip at full weight; the dip
-# and the shake are kicked by _on_footfall. All zero with CAMERA MOTION off. The FOV is not gated by
-# it - pilot9's sprint FOV is not either.
+# The camera's offsets and the FOV boosts, advanced one drawn frame. The bounce is a damped share of
+# the playing gait's hip height once it has its full weight; the dip and the shake are kicked by
+# footfalls and landings; the crouch eases the view down while the jump loads. All zero with CAMERA
+# MOTION off. The FOV is not gated by it - pilot9's sprint FOV is not either.
 func _step_bound_camera(delta: float) -> void:
 	if Settings.camera_motion:
 		var target := 0.0
-		if anim_player.current_animation == ANIM_SPRINT and _sprint_blend_left <= 0.0 \
-				and _hip_track >= 0:
-			var hip := (_sprint_clip.position_track_interpolate(_hip_track,
+		var current := anim_player.current_animation
+		if is_gait(current) and _gait_blend_left <= 0.0 and _hip_tracks.has(current):
+			var clip := anim_player.get_animation(current)
+			var hip := (clip.position_track_interpolate(_hip_tracks[current],
 				anim_player.current_animation_position) as Vector3).y
-			target = BOUNCE_SHARE * (hip - _hip_mean) * travel_scale
+			var share := BOUNCE_SHARE * (1.0 if current == ANIM_SPRINT else RUN_CAMERA_SHARE)
+			target = share * (hip - _hip_means[current]) * travel_scale
 		_bounce = lerpf(_bounce, target, 1.0 - exp(-delta / BOUNCE_SMOOTH))
 		var spring := dip_step(_dip, _dip_velocity, DIP_OMEGA, delta)
 		_dip = spring.x
 		_dip_velocity = spring.y
 		_shake_age += delta
+		var drop := -CROUCH_CAMERA_DROP if loco == Loco.CROUCH and pilot != null else 0.0
+		_crouch_drop = lerpf(_crouch_drop, drop, 1.0 - exp(-12.0 * delta))
 	else:
 		_bounce = 0.0
 		_dip = 0.0
 		_dip_velocity = 0.0
 		_shake_age = INF
+		_crouch_drop = 0.0
 	var boost := fov_boost_target(Vector2(velocity.x, velocity.z).length()) if pilot != null else 0.0
 	_sprint_fov_boost = lerpf(_sprint_fov_boost, boost, 1.0 - exp(-FOV_EASE * delta))
+	_jump_fov = lerpf(_jump_fov, 0.0, 1.0 - exp(-JUMP_FOV_EASE * delta))
 
 # --- movement -------------------------------------------------------------
+#
+# While a pilot drives, what the mech is doing is `loco`, one of Loco. next_loco() is the whole
+# transition table (docs/specs/exia-movement.md, "The locomotion state") as a pure function of what
+# this frame reads; _physics_process does the entry actions, moves the body the way the state says,
+# and _drive_loco_animation() plays the state's clip.
+
+# The state after `state`, given this frame's reading `r`:
+#   on_floor, air_time, rising (bool / seconds / bool), wants_move (a key held), heading_off
+#   (radians between the nose and where the keys point), h_speed, jump (pressed this frame),
+#   time (seconds in `state`), clip_done (the state's one-shot has ended).
+static func next_loco(state: Loco, r: Dictionary) -> Loco:
+	var grounded: bool = r.on_floor or r.air_time <= COYOTE
+	var can_jump: bool = grounded and state != Loco.CROUCH and state != Loco.AIR \
+		and not (state == Loco.LAND and r.time < LAND_JUMP_LOCK)
+	if r.jump and can_jump:
+		return Loco.CROUCH
+	if state == Loco.CROUCH:
+		return Loco.AIR if r.time >= MechMoves.CROUCH_TIME else Loco.CROUCH
+	if state == Loco.AIR:
+		return Loco.LAND if r.on_floor and not r.rising and r.time > 0.05 else Loco.AIR
+	if not grounded:
+		return Loco.AIR
+	match state:
+		Loco.STAND:
+			if r.wants_move:
+				return Loco.TURN if r.heading_off > TURN_STEP_ANGLE else Loco.RUN
+		Loco.TURN:
+			if not r.wants_move:
+				return Loco.STAND
+			if r.heading_off < TURN_DONE_ANGLE:
+				return Loco.RUN
+		Loco.RUN:
+			if r.wants_move or r.h_speed > EXIT_MAX_SPEED:
+				return Loco.RUN
+			return Loco.STOP if r.h_speed > STOP_MIN_SPEED else Loco.STAND
+		Loco.STOP:
+			if r.wants_move:
+				return Loco.RUN
+			if r.clip_done:
+				return Loco.STAND
+		Loco.LAND:
+			if r.clip_done:
+				return Loco.RUN if r.wants_move else Loco.STAND
+	return state
 
 func _physics_process(delta: float) -> void:
+	var driving := pilot != null and embark_left <= 0.0 and disembark_left <= 0.0 \
+		and seal_left <= 0.0 and unseal_left <= 0.0
 	if not is_on_floor():
-		velocity.y -= gravity * delta
+		velocity.y -= gravity * (MECH_GRAVITY_SCALE if driving else 1.0) * delta
 
 	# The climb. EXIA is claimed but not yet driven, so it holds its crouch through the parked
 	# branch below exactly as if nobody had pressed anything, and the boot-up waits for her.
 	# The countdown is read before it is spent, so the frame she lands still takes that branch:
-	# _board() has just started MECH_launch, and clip_for leaves a launch alone either way.
+	# _board() has just started MECH_launch, and parked_clip leaves a launch alone either way.
 	var climbing := embark_left > 0.0
 	if climbing:
 		# Mouse look stays live while she climbs. The pan lands on the mech's camera a third of
@@ -979,8 +1223,9 @@ func _physics_process(delta: float) -> void:
 		velocity.z = move_toward(velocity.z, 0, SPEED * delta)
 		sprint_toggled = false
 		_braking = false
+		loco = Loco.STAND
 		_update_bank(delta, false, 0.0)
-		_drive_animation(false, false)
+		_drive_parked(false)
 		move_and_slide()
 		# The power-down walks the mech forward as well; parked is not the same as anchored.
 		_apply_root_motion()
@@ -994,7 +1239,7 @@ func _physics_process(delta: float) -> void:
 	if seal_left > 0.0:
 		velocity.x = move_toward(velocity.x, 0, SPEED * delta)
 		velocity.z = move_toward(velocity.z, 0, SPEED * delta)
-		_drive_animation(true, false)
+		_drive_parked(true)
 		move_and_slide()
 		_apply_root_motion()
 		pilot.ride(seat_follow(_cockpit_world(), _cockpit_board, _pilot_board))
@@ -1016,7 +1261,7 @@ func _physics_process(delta: float) -> void:
 	if unseal_left > 0.0:
 		velocity.x = move_toward(velocity.x, 0, SPEED * delta)
 		velocity.z = move_toward(velocity.z, 0, SPEED * delta)
-		_drive_animation(false, false)
+		_drive_parked(false)
 		move_and_slide()
 		_apply_root_motion()
 		pilot.ride(seat_follow(_cockpit_world(), _cockpit_board, _pilot_board))
@@ -1027,6 +1272,11 @@ func _physics_process(delta: float) -> void:
 			_begin_descent()
 		return
 
+	_drive(delta)
+
+# One physics frame of a pilot driving: read the keys, advance `loco`, move the body the way the
+# state says, play its clip.
+func _drive(delta: float) -> void:
 	var input_dir := Vector2.ZERO
 	if Input.is_key_pressed(KEY_W):
 		input_dir.y -= 1
@@ -1040,67 +1290,136 @@ func _physics_process(delta: float) -> void:
 
 	var cam_basis := camera_pivot.global_transform.basis
 	var direction := cam_basis * Vector3(input_dir.x, 0, input_dir.y)
-
+	direction.y = 0.0
 	var wants_to_move := direction.length() > 0.01
+	var heading := atan2(direction.x, direction.z) if wants_to_move else rotation.y
 
+	var on_floor := is_on_floor()
+	_air_time = 0.0 if on_floor else _air_time + delta
 	var h_speed := Vector2(velocity.x, velocity.z).length()
-	_update_sprint_toggle(is_on_floor(), input_dir != Vector2.ZERO, h_speed,
+	_update_sprint_toggle(on_floor, input_dir != Vector2.ZERO, h_speed,
 		Input.is_action_just_pressed("sprint"), Input.is_action_just_pressed("walk"))
 
-	# The mech is allowed to turn through the standing start - it plants the foot facing where it
-	# is about to go, rather than stepping off and then swinging round. Setsuna turns the same way
-	# now that her 15-degree heading detents are gone, just at her own ROTATE_SPEED - and slower
-	# the faster it goes, down to ROTATE_SPEED_SPRINT at a full sprint.
-	if wants_to_move:
-		_braking = false
-		direction = direction.normalized()
-		rotation.y = lerp_angle(rotation.y, atan2(direction.x, direction.z),
-			turn_rate(h_speed) * delta)
-
-		# Only the *speed* is ramped; the heading is taken from the mech's nose outright, so the
-		# velocity is exactly along the facing on every frame and the mech cannot slide.
-		#
-		# Ramping the two axes towards the input direction instead is what used to slide it: the
-		# body turns at ROTATE_SPEED and the velocity chased the heading at its own rate, so
-		# through every turn the mech was pointing one way and travelling another. Feeding the
-		# nose back in also means a turn costs no speed and needs no separate steering term - the
-		# velocity vector is simply carried round by the rotation above.
-		#
-		# The magnitude is read back off the velocity rather than kept in a field so that a
-		# collision counts: move_and_slide() bleeds speed off against a wall, and the mech then
-		# ramps back up out of whatever it was left with.
-		var speed := h_speed
-		var step := speed_target(sprint_toggled, speed, acceleration)
-		speed = move_toward(speed, step.x, step.y * delta)
-		var facing := facing_for(rotation.y)
-		velocity.x = facing.x * speed
-		velocity.z = facing.z * speed
-	elif h_speed > SPEED or _braking:
-		# Letting go of a sprint is a 0.25 s brake, not an instant halt: it runs on through the
-		# walk speed to a stop along the way it was travelling (~2.5 m of slide).
-		_braking = true
-		var along := Vector2(velocity.x, velocity.z).normalized()
-		var speed := move_toward(h_speed, 0.0, brake_rate() * delta)
-		velocity.x = along.x * speed
-		velocity.z = along.y * speed
-		_braking = speed > 0.0
+	var before := loco
+	loco = next_loco(loco, {
+		on_floor = on_floor,
+		air_time = _air_time,
+		rising = velocity.y > 0.0,
+		wants_move = wants_to_move,
+		heading_off = absf(wrapf(heading - rotation.y, -PI, PI)),
+		h_speed = h_speed,
+		jump = Input.is_action_just_pressed("jump"),
+		time = _loco_time,
+		clip_done = anim_player.current_animation == "",
+	})
+	if loco != before:
+		_enter_loco(before, wants_to_move, h_speed)
 	else:
-		# Stopping stays instant - SPEED is a whole second's worth of ramp per frame - because
-		# releasing the keys has to win now. A mech that coasts is a mech that walks off ledges.
-		velocity.x = move_toward(velocity.x, 0, SPEED)
-		velocity.z = move_toward(velocity.z, 0, SPEED)
+		_loco_time += delta
 
-	_update_bank(delta, true, h_speed)
+	match loco:
+		Loco.STAND:
+			# Stopping from a standstill or a crawl is instant - releasing the keys has to win now. A
+			# mech that coasts is a mech that walks off ledges.
+			velocity.x = move_toward(velocity.x, 0, SPEED)
+			velocity.z = move_toward(velocity.z, 0, SPEED)
+		Loco.TURN:
+			velocity.x = 0.0
+			velocity.z = 0.0
+			_step_turn(heading, delta)
+		Loco.RUN, Loco.LAND:
+			if wants_to_move:
+				_run_toward(heading, h_speed, delta, 1.0)
+			elif loco == Loco.RUN:
+				# Let go above the run speed: down to it, along the way it was travelling, then the stop.
+				var along := Vector2(velocity.x, velocity.z).normalized()
+				var speed := move_toward(h_speed, SPEED, release_rate() * delta)
+				velocity.x = along.x * speed
+				velocity.z = along.y * speed
+			else:
+				velocity.x = move_toward(velocity.x, 0, SPEED)
+				velocity.z = move_toward(velocity.z, 0, SPEED)
+		Loco.STOP:
+			# The stop clip's own brake, so its locked foot holds.
+			var along := Vector2(velocity.x, velocity.z).normalized()
+			if along == Vector2.ZERO:
+				var f := facing_for(rotation.y)
+				along = Vector2(f.x, f.z)
+			var speed := MechMoves.stop_speed(_loco_time, _stop_v0)
+			velocity.x = along.x * speed
+			velocity.z = along.y * speed
+		Loco.AIR:
+			# Committed: the speed it left with. A held key swings the nose round slowly, and the
+			# velocity follows it.
+			_air_peak = maxf(_air_peak, global_position.y)
+			if wants_to_move:
+				rotation.y = lerp_angle(rotation.y, heading, turn_rate(h_speed) * AIR_TURN_SHARE * delta)
+				var facing := facing_for(rotation.y)
+				velocity.x = facing.x * h_speed
+				velocity.z = facing.z * h_speed
+		# CROUCH: the speed it had, no turning.
 
-	# Held on the ground, so the walk doesn't kick in for a frame while falling onto terrain.
-	_drive_animation(true, is_on_floor() and wants_to_move,
-		Vector2(velocity.x, velocity.z).length() > SPRINT_GAIT_SPEED)
+	_update_bank(delta, loco == Loco.RUN, h_speed)
+	var speed_now := Vector2(velocity.x, velocity.z).length()
+	_drive_loco_animation(speed_now)
 	_track_footfalls(delta)
 
 	move_and_slide()
 	_apply_root_motion()
 
 	_aim_camera()
+
+	if exit_pending and can_exit_now(is_on_floor(), Vector2(velocity.x, velocity.z).length(), loco):
+		_exit_mech()
+
+# The entry actions of a state change. `before` is the state left.
+func _enter_loco(before: Loco, wants_to_move: bool, h_speed: float) -> void:
+	_loco_time = 0.0
+	match loco:
+		Loco.AIR:
+			_air_peak = global_position.y
+			if before == Loco.CROUCH and is_on_floor():
+				# The push-off.
+				velocity.y = jump_velocity(gravity)
+				_jump_fov = JUMP_FOV_KICK
+		Loco.LAND:
+			_on_land(_air_peak - global_position.y, wants_to_move)
+		Loco.STOP:
+			_stop_v0 = h_speed
+			var u := 0.0
+			if is_gait(anim_player.current_animation):
+				u = anim_player.current_animation_position \
+					/ anim_player.get_animation(anim_player.current_animation).length
+			_stop_clip = ANIM_STOP_L if MechMoves.stop_lead(u) == ".L" else ANIM_STOP_R
+	_braking = loco == Loco.RUN and not wants_to_move
+
+# The body ramps its speed along the nose while the nose turns toward `heading`.
+#
+# Only the *speed* is ramped; the heading is taken from the mech's nose outright, so the velocity is
+# exactly along the facing on every frame and the mech cannot slide. The magnitude is read back off
+# the velocity rather than kept in a field so that a collision counts: move_and_slide() bleeds speed
+# off against a wall, and the mech then ramps back up out of whatever it was left with.
+func _run_toward(heading: float, h_speed: float, delta: float, turn_share: float) -> void:
+	_braking = false
+	rotation.y = lerp_angle(rotation.y, heading, turn_rate(h_speed) * turn_share * delta)
+	var step := speed_target(sprint_toggled, h_speed, acceleration)
+	var speed := move_toward(h_speed, step.x, step.y * delta)
+	var facing := facing_for(rotation.y)
+	velocity.x = facing.x * speed
+	velocity.z = facing.z * speed
+
+# One frame of the step-turn: yaw toward `heading` at TURN_STEP_RATE, about the planted foot's ball,
+# so that foot stays where it is on the floor and the stepping one carries the turn.
+func _step_turn(heading: float, delta: float) -> void:
+	var step := clampf(wrapf(heading - rotation.y, -PI, PI), -TURN_STEP_RATE * delta, TURN_STEP_RATE * delta)
+	var u := 0.0
+	if anim_player.current_animation == ANIM_TURN_STEP:
+		u = anim_player.current_animation_position / MechMoves.TURN_LENGTH
+	var pivot := _ball_world(MechMoves.turn_pivot(u))
+	pivot.y = global_position.y
+	var moved := pivot + Basis(Vector3.UP, step) * (global_position - pivot)
+	rotation.y = wrapf(rotation.y + step, -PI, PI)
+	move_and_collide(moved - global_position)
 
 # --- root motion ----------------------------------------------------------
 

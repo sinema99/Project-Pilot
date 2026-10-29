@@ -92,7 +92,7 @@ func _build_base() -> void:
 			_at(Vector3(0.0, 0.1, 0.42)), {"taper": Vector2(0.92, 0.85), "shear": Vector2(0.0, -0.02)})
 	# A row of round buttons down each side of the leg step, more on the camera side.
 	for i in 3:
-		_button("LegButtonL%d" % i, Vector3(0.22, 0.11, 0.33 + 0.07 * i), Vector3.RIGHT, 0.018, GRIP if i < 2 else TRIM)
+		_button("LegButtonL%d" % i, Vector3(0.22, 0.11, 0.33 + 0.07 * i), Vector3.RIGHT, 0.018, GRIP if i < 2 else SHELL_DARK)
 	for i in 2:
 		_button("LegButtonR%d" % i, Vector3(-0.22, 0.11, 0.36 + 0.07 * i), Vector3.LEFT, 0.018, GRIP)
 	var foot := Transform3D(Basis(Vector3.RIGHT, deg_to_rad(-12.0)), Vector3(0.0, 0.1, 0.64))
@@ -128,7 +128,7 @@ func _build_back() -> void:
 	_cushion("BackUpper", Vector3(0.44, 0.37, 0.06), back * _at(Vector3(0.0, 0.565, 0.06)), 0.026)
 
 	# Headrest: two neck posts out of the shell top, a rounded block leaning a little forward, a
-	# pad, thin red strips down its front edges, and the two screws the sketch draws on its face.
+	# pad, thin dark strips down its front edges, and the two screws the sketch draws on its face.
 	for x: float in [0.1, -0.1]:
 		_cylinder("HeadPost" + ("L" if x > 0.0 else "R"), PANEL, 0.018, 0.08, 0.004,
 				back * _at(Vector3(x, 0.81, -0.02)), false)
@@ -136,7 +136,7 @@ func _build_back() -> void:
 	_box("Headrest", SHELL, Vector3(0.4, 0.26, 0.14), 0.05, head, {"taper": Vector2(0.92, 0.9)})
 	_cushion("HeadPad", Vector3(0.27, 0.15, 0.04), head * _at(Vector3(0.0, -0.01, 0.07)), 0.014)
 	for side: float in [1.0, -1.0]:
-		_box("HeadCheek" + ("L" if side > 0.0 else "R"), TRIM, Vector3(0.022, 0.19, 0.035), 0.009,
+		_box("HeadCheek" + ("L" if side > 0.0 else "R"), SHELL_DARK, Vector3(0.022, 0.19, 0.035), 0.009,
 				head * _at(Vector3(0.188 * side, -0.005, 0.058)), {}, false)
 		_screw("HeadScrew" + ("L" if side > 0.0 else "R"), head * Vector3(0.165 * side, 0.095, 0.07), head.basis * Vector3.BACK)
 	# The round fitting the sketch has on the headrest's right flank.
@@ -144,7 +144,7 @@ func _build_back() -> void:
 
 
 # Three pods behind the backrest, on a mount: a tall one on his left with a round port, a grille
-# on top and the seat's one red band, a big one behind the headrest, a narrower one on his right
+# on top and a dark band, a big one behind the headrest, a narrower one on his right
 # with a slatted face.
 func _build_pods() -> void:
 	_box("PodMount", SHELL_DARK, Vector3(1.14, 0.14, 0.32), 0.04, _at(Vector3(0.0, 0.3, -0.7)))
@@ -152,7 +152,7 @@ func _build_pods() -> void:
 	var l := Vector3(0.47, 0.67, -0.68)
 	var ls := Vector3(0.3, 0.86, 0.46)
 	_box("PodL", SHELL, ls, 0.06, _at(l), {"taper": Vector2(1.0, 0.9)})
-	_box("PodLBand", TRIM, Vector3(ls.x + 0.012, 0.05, ls.z * 0.985 + 0.012), 0.05, _at(l + Vector3(0.0, -0.32, 0.0)), {}, false)
+	_box("PodLBand", SHELL_DARK, Vector3(ls.x + 0.012, 0.05, ls.z * 0.985 + 0.012), 0.05, _at(l + Vector3(0.0, -0.32, 0.0)), {}, false)
 	var lx := Transform3D(Basis(), l + Vector3(ls.x * 0.5, 0.0, 0.0))
 	_plate("PodLPlate", SHELL_DARK, lx, Vector3(0.0, 0.14, 0.03), Vector3.RIGHT, Vector3.BACK, Vector2(0.24, 0.26))
 	_port("PodLPort", lx * Vector3(0.0, 0.14, 0.03), Vector3.RIGHT, 0.075)

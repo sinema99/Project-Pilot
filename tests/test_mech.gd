@@ -48,43 +48,19 @@ func test_the_walk_and_the_standing_pose_loop() -> void:
 	eq(ap.get_animation("MECH_walk").loop_mode, Animation.LOOP_LINEAR,
 		"MECH_walk must loop - it plays for as long as the player is moving")
 	# A single held pose, so looping and holding look identical. It loops so that
-	# current_animation keeps naming it, which is what clip_for reads.
+	# current_animation keeps naming it, which is what parked_clip reads.
 	eq(ap.get_animation("MECH_standing").loop_mode, Animation.LOOP_LINEAR,
 		"MECH_standing must loop so the state machine can see it is the current clip")
 
-# --- the state machine -----------------------------------------------------
+# --- the parked state machine ----------------------------------------------
+#
+# parked_clip(piloted, current): the exported chain for a mech nobody is driving. Driving it is
+# tests/test_mech_moves.gd.
 
-# clip_for(piloted, moving, was_moving_last_frame, current)
-
-func test_a_pilot_standing_still_gets_the_standing_pose() -> void:
-	eq(Mech.clip_for(true, false, false, ""), "MECH_standing",
-		"aboard and not moving: stand up straight")
-	eq(Mech.clip_for(true, false, false, "MECH_standing"), "",
+func test_a_pilot_being_sealed_in_gets_the_standing_pose() -> void:
+	eq(Mech.parked_clip(true, ""), "MECH_standing", "aboard and not driving yet: stand up straight")
+	eq(Mech.parked_clip(true, "MECH_standing"), "",
 		"already standing: leave the playhead alone rather than restarting it")
-
-func test_first_frame_of_movement_starts_the_walk() -> void:
-	eq(Mech.clip_for(true, true, false, "MECH_standing"), "MECH_walk_start",
-		"a movement key from a standstill spools the walk up")
-
-func test_the_start_clip_is_allowed_to_finish() -> void:
-	eq(Mech.clip_for(true, true, true, "MECH_walk_start"), "",
-		"still moving mid-start: the queue hands over to MECH_walk on its own")
-
-func test_walk_holds_while_moving() -> void:
-	eq(Mech.clip_for(true, true, true, "MECH_walk"), "",
-		"MECH_walk must not be re-issued every frame or it never advances")
-
-func test_walk_is_recovered_if_the_chain_is_broken() -> void:
-	eq(Mech.clip_for(true, true, true, ""), "MECH_walk",
-		"moving with nothing playing means the queue was interrupted: pick the loop back up")
-
-# Releasing the keys part-way through the spool-up stops the mech now, rather than making the
-# player wait out an animation.
-func test_releasing_the_keys_cuts_the_start_short() -> void:
-	eq(Mech.clip_for(true, false, true, "MECH_walk_start"), "MECH_standing",
-		"letting go mid-start returns to the standing pose immediately")
-	eq(Mech.clip_for(true, false, true, "MECH_walk"), "MECH_standing",
-		"letting go while walking returns to the standing pose")
 
 # --- the standing start ----------------------------------------------------
 
@@ -106,40 +82,13 @@ func test_the_nose_stays_on_the_ground_plane() -> void:
 		approx(nose.y, 0.0, 0.0001, "the mech is driven horizontally; gravity owns y")
 		approx(nose.length(), 1.0, 0.0001, "the nose is a unit vector, so it scales SPEED cleanly")
 
-# ramp_rate(walk_start_length)
-
-# The point of deriving the ramp from the clip: the mech is at SPEED on the frame MECH_walk_start
-# ends, so MECH_walk is only ever entered at the one speed its stride was authored for. Any
-# other rate would leave the walk loop playing at a speed it does not match, either from the
-# handover onwards or for the stretch before the ramp caught up.
-func test_the_ramp_finishes_exactly_when_the_start_clip_does() -> void:
-	var length: float = _anim_player().get_animation("MECH_walk_start").length
-	approx(Mech.ramp_rate(length) * length, Mech.SPEED, 0.0001,
-		"the standing start must hand over to MECH_walk at full speed, not before or after")
-
-# The clip is a second long today, which is the number the header comments quote.
-func test_the_current_start_clip_gives_a_one_second_ramp() -> void:
-	approx(_anim_player().get_animation("MECH_walk_start").length, 1.0, 0.0001,
-		"MECH_walk_start is one second, so the ramp is 7 m/s/s")
-
-# A re-export of a different length retunes the ramp rather than desyncing it.
-func test_a_reexported_start_clip_retunes_the_ramp() -> void:
-	approx(Mech.ramp_rate(2.0) * 2.0, Mech.SPEED, 0.0001,
-		"a longer standing start should ramp more gently, not overshoot")
-	approx(Mech.ramp_rate(0.5) * 0.5, Mech.SPEED, 0.0001,
-		"a shorter one should ramp harder")
-
-# Division by the clip length, so a missing or broken clip must not stall the mech outright.
-func test_a_missing_start_clip_still_lets_the_mech_move() -> void:
-	check(Mech.ramp_rate(0.0) > 0.0, "no start clip means set off at once, not never")
-
-# The ramp is standing in for ground the clip does not cover. If MECH_walk_start ever travelled,
-# root motion would be moving the mech as well and the two would fight.
+# The old walk start is retired, but it is still imported, and it must still cover no ground of
+# its own: if a re-export made it travel, root motion would split it like the boot-up.
 func test_the_standing_start_covers_no_ground_itself() -> void:
 	var ap := _anim_player()
 	var clip: Animation = ap.get_animation("MECH_walk_start").duplicate()
 	eq(Mech.split_travel(clip, Mech.root_bone_names(_skeleton()), _anchor(ap)), null,
-		"MECH_walk_start is authored on the spot, so the ramp is the only thing moving the mech")
+		"MECH_walk_start is authored on the spot")
 
 # --- the launch and the power-down -----------------------------------------
 
@@ -147,28 +96,21 @@ func test_the_standing_start_covers_no_ground_itself() -> void:
 # must be left alone until the boot-up ends - otherwise the state machine would cut it off on
 # the very next physics frame.
 func test_a_standing_launch_is_left_to_play_out() -> void:
-	eq(Mech.clip_for(true, false, false, "MECH_launch"), "",
+	eq(Mech.parked_clip(true, "MECH_launch"), "",
 		"the launch runs to its end and hands over to the queued MECH_standing")
-
-# The other half of the same rule as the walk start: a key press wins over an animation in
-# progress. _play_chain clears the queue, so the launch's queued standing pose cannot fire
-# after the walk.
-func test_moving_off_interrupts_the_launch() -> void:
-	eq(Mech.clip_for(true, true, false, "MECH_launch"), "MECH_walk_start",
-		"driving off mid-launch starts walking rather than waiting the boot-up out")
 
 # The whole point of the held last frame: once MECH_idle has run, current_animation is "" and
 # the skeleton is still crouched. Re-issuing MECH_idle here would replay the power-down on a
 # loop forever, which is exactly what a looping idle used to do.
 func test_a_parked_mech_holds_its_crouch() -> void:
-	eq(Mech.clip_for(false, false, false, ""), "",
+	eq(Mech.parked_clip(false, ""), "",
 		"nothing playing and nobody aboard: the crouch is held, so play nothing")
-	eq(Mech.clip_for(false, false, false, "MECH_idle"), "",
+	eq(Mech.parked_clip(false, "MECH_idle"), "",
 		"the power-down is already running: let it reach the crouch")
 
 func test_a_parked_mech_left_mid_clip_powers_down() -> void:
-	eq(Mech.clip_for(false, false, true, "MECH_walk"), "MECH_idle",
-		"parked with a movement clip still playing means the chain broke: power down")
+	eq(Mech.parked_clip(false, "MECH_run"), "MECH_idle",
+		"parked with a movement clip still playing means the pilot just got out: power down")
 
 # --- the scene -------------------------------------------------------------
 

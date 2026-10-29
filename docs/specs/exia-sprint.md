@@ -1,5 +1,10 @@
 # Spec: EXIA's sprint - Titanfall titan run (grounded since 2026-10-12)
 
+> **2026-10-27: superseded** by `docs/specs/exia-movement.md`, which rebuilt the sprint and a new
+> 9 m/s run as one gait family. `scripts/mech_sprint.gd` is now `scripts/mech_gait.gd`, the tests are
+> `tests/test_mech_gait.gd`, the probe `tests/_probe_mech_moves.gd`. The rig measurements and the
+> history below still hold; the movement, brake, walk and camera numbers do not.
+
 > **Status:** grilled and specced 2026-10-06; built 2026-10-06. **Gait redone 2026-10-12** as a grounded
 > titan run - see "Redo 2026-10-12" at the end, which overrides the gait sections. Not yet played.
 > **Scene:** `scenes/mech.tscn` (instanced as `EXIA` in `test_platform.tscn` / `trial.tscn`).

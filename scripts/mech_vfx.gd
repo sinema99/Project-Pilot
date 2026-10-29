@@ -4,7 +4,8 @@ extends Node3D
 #
 # The same puffs as pilot9's landing dust - Pilot9Vfx.dust_burst - scaled up to a machine: 4x the
 # puff, a slower, wider ring. Built in code by mech.gd's _ready(), so a rebuild of mech.tscn
-# cannot lose it. mech.gd decides WHEN (a footfall of the sprint, MOVEMENT EFFECTS on).
+# cannot lose it. mech.gd decides WHEN (a footfall of the run or the sprint, a landing - MOVEMENT
+# EFFECTS on) and how big: the run's dust is smaller.
 
 const PUFF_SIZE := 1.8
 const COUNT := 10
@@ -21,12 +22,12 @@ var _puff: Texture2D = null
 func _ready() -> void:
 	_puff = Pilot9Vfx._radial([0.0, 1.0], [Color(1, 1, 1, 1), Color(1, 1, 1, 0)])
 
-## A dust ring on the floor at `world`.
-func footfall(world: Vector3) -> void:
+## A dust ring on the floor at `world`, `scale` times the sprint's.
+func footfall(world: Vector3, scale: float = 1.0) -> void:
 	if _puff == null:
 		_puff = Pilot9Vfx._radial([0.0, 1.0], [Color(1, 1, 1, 1), Color(1, 1, 1, 0)])
-	var p := Pilot9Vfx.dust_burst("Footfall", COUNT, RADIAL_SPEED, LIFE, Vector3.ZERO, 0.0,
-		Vector3.ZERO, Vector3.UP, PUFF_SIZE, COLOR, _puff)
+	var p := Pilot9Vfx.dust_burst("Footfall", COUNT, RADIAL_SPEED * scale, LIFE, Vector3.ZERO, 0.0,
+		Vector3.ZERO, Vector3.UP, PUFF_SIZE * scale, COLOR, _puff)
 	p.visibility_aabb = VISIBILITY
 	p.top_level = true
 	add_child(p, true)

@@ -1,0 +1,132 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/cutscene/arrival.gd" id="1_shot"]
+[ext_resource type="Script" path="res://scripts/cutscene/arrival_land.gd" id="2_land"]
+[ext_resource type="Script" path="res://scripts/cutscene/arrival_base.gd" id="3_base"]
+[ext_resource type="Script" path="res://scripts/cutscene/arrival_forest.gd" id="4_forest"]
+[ext_resource type="Script" path="res://scripts/cutscene/arrival_clouds.gd" id="5_clouds"]
+[ext_resource type="Shader" path="res://shaders/cutscene/arrival_sky.gdshader" id="6_sky"]
+[ext_resource type="Script" path="res://scripts/rendering/depth_composite.gd" id="90_composite"]
+[ext_resource type="CompositorEffect" path="res://resources/cinema_post_arrival.tres" id="91_post"]
+
+[sub_resource type="FastNoiseLite" id="Noise_streaks"]
+noise_type = 1
+frequency = 0.01
+fractal_octaves = 4
+
+[sub_resource type="NoiseTexture2D" id="NoiseTexture_streaks"]
+width = 512
+height = 512
+seamless = true
+normalize = true
+noise = SubResource("Noise_streaks")
+
+[sub_resource type="ShaderMaterial" id="Sky_clear"]
+shader = ExtResource("6_sky")
+shader_parameter/cloud_tex = SubResource("NoiseTexture_streaks")
+
+[sub_resource type="Sky" id="Sky_arrival"]
+sky_material = SubResource("Sky_clear")
+
+[sub_resource type="Environment" id="Environment_arrival"]
+background_mode = 2
+sky = SubResource("Sky_arrival")
+ambient_light_source = 2
+ambient_light_color = Color(0.3, 0.34, 0.41, 1)
+tonemap_mode = 2
+tonemap_exposure = 0.85
+glow_enabled = true
+glow_levels/1 = 1.0
+glow_levels/2 = 1.0
+glow_levels/3 = 1.0
+glow_levels/4 = 0.6
+glow_levels/5 = 0.3
+glow_intensity = 0.5
+glow_strength = 1.0
+glow_blend_mode = 0
+glow_hdr_threshold = 1.5
+
+[sub_resource type="CompositorEffect" id="CompositorEffect_depth"]
+resource_local_to_scene = true
+script = ExtResource("90_composite")
+light_color = Color(1, 0.97, 0.92, 1)
+light_energy = 0.3
+light_radius = 0.35
+light_stretch = 1.6
+haze_color = Color(0.64, 0.74, 0.88, 1)
+haze_start = 1400.0
+haze_end = 22000.0
+haze_amount = 0.6
+haze_radius = 0.9
+haze_floor = 0.6
+near_end = 0.0
+lit_start = 1.0
+near_value = 1.0
+wrap_near = 4000.0
+wrap_far = 15000.0
+wrap_strength = 0.5
+sky_distance = 5000.0
+
+[sub_resource type="Compositor" id="Compositor_look"]
+resource_local_to_scene = true
+compositor_effects = Array[CompositorEffect]([SubResource("CompositorEffect_depth"), ExtResource("91_post")])
+
+[sub_resource type="Animation" id="Animation_shot"]
+resource_name = "shot"
+length = 12.0
+
+[sub_resource type="AnimationLibrary" id="AnimationLibrary_shot"]
+_data = {
+&"shot": SubResource("Animation_shot")
+}
+
+[node name="Arrival" type="Node3D"]
+script = ExtResource("1_shot")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_arrival")
+compositor = SubResource("Compositor_look")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+light_color = Color(1, 0.97, 0.92, 1)
+light_energy = 0.85
+light_indirect_energy = 0.0
+shadow_enabled = true
+shadow_bias = 0.1
+shadow_normal_bias = 2.0
+directional_shadow_max_distance = 4000.0
+
+[node name="Land" type="Node3D" parent="."]
+script = ExtResource("2_land")
+
+[node name="Base" type="Node3D" parent="."]
+script = ExtResource("3_base")
+
+[node name="Forest" type="Node3D" parent="."]
+script = ExtResource("4_forest")
+
+[node name="Clouds" type="Node3D" parent="."]
+script = ExtResource("5_clouds")
+
+[node name="Camera3D" type="Camera3D" parent="."]
+current = true
+fov = 32.0
+near = 1.0
+far = 60000.0
+
+[node name="Fade" type="CanvasLayer" parent="."]
+layer = 10
+
+[node name="Black" type="ColorRect" parent="Fade"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0, 0, 0, 0)
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="."]
+libraries = {
+&"": SubResource("AnimationLibrary_shot")
+}

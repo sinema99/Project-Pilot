@@ -247,7 +247,10 @@ func test_a_board_exit_round_trip_ends_at_exitpoint_with_the_mech_empty() -> voi
 
 	exia._exit_mech()
 	eq(exia.pilot, null, "F again left the mech unpiloted")
-	approx(p.global_position.distance_to(exia.exit_point.global_position), 0.0, 0.01,
+	# On the ground plane: exit_spot() drops him onto whatever floor is under ExitPoint, and the
+	# suite's tree can hold another test's floor at any height.
+	var out: Vector3 = p.global_position - exia.exit_point.global_position
+	approx(Vector2(out.x, out.z).length(), 0.0, 0.01,
 		"he is put out at ExitPoint, 3.6 m off the back of the machine")
 	check(p.visible, "and back on screen")
 
