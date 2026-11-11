@@ -38,48 +38,72 @@ uniform vec2 forest_fade = vec2(3200.0, 9600.0);
 // (concave) down to `gully_snow` lower, and wind scours the ridges.
 uniform float snow_jitter = 0.03;
 uniform float gully_snow = 0.14;
-uniform vec2 jitter_fade = vec2(2000.0, 6000.0);
+uniform vec2 jitter_fade = vec2(1500.0, 2400.0);
+// Spec R6-5: past the near slopes the snow line and the forest read the broad normal
+// (ArrivalLand.broad_reach out) instead of the vertex's own, so the far bowls draw as a few big
+// shapes, not flecks: blended over `broad_fade` (m). ArrivalForest reads the same (ArrivalLand.far_ny).
+uniform vec2 broad_fade = vec2(1800.0, 2400.0);
+// Out to this band (m) the far flats keep their forest (ArrivalLand.flat_k).
+uniform vec2 flat_forest_fade = vec2(3500.0, 5000.0);
+// Spec R4-4: the forest floor a step lighter on faces toward the sun, so the landform reads through
+// the trees: where normal . sun_dir crosses `forest_light_step`.
+uniform vec3 forest_lit_color : source_color = vec3(0.17, 0.27, 0.29);
+uniform float forest_light_step = 0.5;
+uniform vec3 sun_dir = vec3(-0.38, 0.74, -0.55);
+// Where the viewer stands (world xz): every distance above is measured from here. The shot's
+// camera is at the origin; the boss arena puts it on the arena (ArrivalLand.view_centre).
+uniform vec2 view_centre = vec2(0.0);
 
 varying vec3 world_pos;
 varying vec3 world_normal;
 varying float ridge;
+varying vec3 broad_normal;
 
 void vertex() {
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	world_normal = normalize(mat3(MODEL_MATRIX) * NORMAL);
 	ridge = COLOR.r * 2.0 - 1.0;
+	vec2 bxz = COLOR.gb * 2.0 - 1.0;
+	broad_normal = normalize(mat3(MODEL_MATRIX) * vec3(bxz.x, sqrt(max(1.0 - dot(bxz, bxz), 0.0)), bxz.y));
 }
 
-vec2 clear_at(vec2 xz) {
+vec3 clear_at(vec2 xz) {
 	vec2 uv = (xz - clear_rect.xy) / clear_rect.zw;
 	if (uv.x < 0.0 || uv.y < 0.0 || uv.x >= 1.0 || uv.y >= 1.0) {
-		return vec2(0.0);
+		return vec3(0.0);
 	}
-	return texture(clear_tex, uv).rg;
+	return texture(clear_tex, uv).rgb;
 }
 
 // ArrivalLand.forest_score.
-float forest_score(float y, float ny, float r, float cleared) {
+float forest_score(float y, float ny, float r, float cleared, float flat_k) {
 	float alt = 1.0 - smoothstep(treeline - tree_band, treeline, y);
+	float flat_ny = mix(forest_max_slope, 1.02, flat_k);
 	float slope = smoothstep(forest_min_slope, forest_min_slope + 0.08, ny)
-			* (1.0 - smoothstep(forest_max_slope - 0.012, forest_max_slope, ny));
+			* (1.0 - smoothstep(flat_ny - 0.012, flat_ny, ny));
 	float open = 1.0 - smoothstep(ridge_clear.x, ridge_clear.y, r);
 	return alt * slope * open * (1.0 - cleared);
 }
 
 void fragment() {
 	scatter_shift = 0.0;
-	float dist = length(world_pos.xz);
+	float dist = length(world_pos.xz - view_centre);
+	float far_k = smoothstep(broad_fade.x, broad_fade.y, dist);
 	float m = texture(mask_tex, world_pos.xz / mask_size).r;
-	vec2 c = clear_at(world_pos.xz);
+	vec3 c = clear_at(world_pos.xz);
 	float ny = normalize(world_normal).y;
+	float snow_ny = mix(ny, normalize(broad_normal).y, far_k);
 	float jitter = (m - 0.5) * snow_jitter * (1.0 - smoothstep(jitter_fade.x, jitter_fade.y, dist));
 	// Wind scours the ridgelines: a little more rock there.
-	float line = mix(snow_threshold, clear_snow, c.r) + 0.06 * smoothstep(ridge_clear.x, ridge_clear.y, ridge)
-			- gully_snow * smoothstep(0.0, 0.12, -ridge);
-	vec3 fill = ny > line + jitter ? snow_color : rock_color;
-	if (forest_score(world_pos.y, ny, ridge, c.r) > mix(0.15, 0.85, m)) {
-		fill = mix(forest_color, rock_color, 0.7 * smoothstep(forest_fade.x, forest_fade.y, dist));
+	// The gully / ridge terms read the vertex's own convexity, fine detail: gone with the broad normal.
+	float line = mix(snow_threshold, clear_snow, c.r) + (0.06 * smoothstep(ridge_clear.x, ridge_clear.y, ridge)
+			- gully_snow * smoothstep(0.0, 0.12, -ridge)) * (1.0 - far_k);
+	vec3 fill = snow_ny > line + jitter ? snow_color : rock_color;
+	if (forest_score(world_pos.y, snow_ny, ridge, c.r,
+			far_k * (1.0 - smoothstep(flat_forest_fade.x, flat_forest_fade.y, dist))) > mix(0.15, 0.85, m)) {
+		float lit = dot(normalize(world_normal), normalize(sun_dir));
+		vec3 floor_color = lit > forest_light_step ? forest_lit_color : forest_color;
+		fill = mix(floor_color, rock_color, 0.7 * smoothstep(forest_fade.x, forest_fade.y, dist));
 	}
 	ALBEDO = fill * (1.0 - shade_strength * c.g);
 }

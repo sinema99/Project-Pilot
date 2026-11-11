@@ -26,6 +26,12 @@ func _scene() -> Node:
 		return null
 	tree.root.add_child(n)
 	_instances.append(n)
+	# The DayZ camera ships these at 0 with the code kept; drive it with the old numbers.
+	n.camera_sway_vertical = 0.0075
+	n.camera_sway_lateral = 0.005
+	n.camera_sway_roll = 0.2
+	n.landing_dip_full_jump = 0.15
+	n.landing_dip_max = 0.3
 	return n
 
 func end() -> void:

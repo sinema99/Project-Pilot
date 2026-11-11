@@ -12,7 +12,7 @@ results, new attacks, the reflect.
   contact point, small camera shake, red edge vignette. No health, knockback or stun; his movement
   is never touched. The flash and vignette always play; sparks follow MOVEMENT EFFECTS, the shake
   follows CAMERA MOTION.
-- **The dummy cannot die.** One generic hook, `take_hit(amount, kind, point)`, is how anything hurts
+- **The dummy** is the farmer since 2026-11-02 (docs/specs/range-farmer.md). **It cannot die.** One generic hook, `take_hit(amount, kind, point)`, is how anything hurts
   it; reflected bolts use it now, future attacks call the same method. A perfect reflect deals 50
   and shows `PERFECT 50`; a normal reflect deals 20. Reaction: white flash, white sparks, a short
   wobble of the mesh (never of its path), a floating damage number.

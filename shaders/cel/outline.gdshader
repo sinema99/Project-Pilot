@@ -19,12 +19,19 @@ global uniform float pixel_block;
 // the units differ: outline_width is the hull push, and the visible line is half of it (CEL's 4
 // draws 2 px). RETRO's line without touching the global the cutscenes share.
 uniform float ink_width = -1.0;
+// Distance thinning (off at 0): past this view depth in metres the line shrinks with the body
+// (width * ref / depth), down to ink_far_min of its width, so a far body is not drowned in ink.
+uniform float ink_far_ref = 0.0;
+uniform float ink_far_min = 0.3;
 
 void vertex() {
 	float width = pixel_block > 1.0 ? 2.0 : (ink_width >= 0.0 ? ink_width * 2.0 * VIEWPORT_SIZE.y / 1080.0 : outline_width);
-	vec4 clip_position = 
+	vec4 clip_position =
 			PROJECTION_MATRIX *
 			(MODELVIEW_MATRIX * vec4(VERTEX, 1.0));
+	if (ink_far_ref > 0.0 && pixel_block <= 1.0) {
+		width *= clamp(ink_far_ref / max(clip_position.w, 0.001), ink_far_min, 1.0);
+	}
 	vec3 clip_normal =
 			mat3(PROJECTION_MATRIX) *
 			(mat3(MODELVIEW_MATRIX) * NORMAL);

@@ -31,14 +31,14 @@ func end() -> void:
 	_instances.clear()
 	super()
 
-func test_framing_defaults_are_gta_close_and_over_the_shoulder() -> void:
+# The framing numbers moved to the DayZ camera (test_pilot9_camera_dayz.gd); the limits stay.
+func test_pitch_limit_defaults() -> void:
 	var p := _scene()
 	if p == null:
 		fail("could not instance pilot9")
 		return
-	approx(p.camera_distance, 2.5, 0.0001, "camera sits 2.5 m back")
-	approx(p.camera_shoulder_offset, 0.8, 0.0001, "0.8 m over the right shoulder")
-	check(p.camera_zoom_min > 0.3 * p.camera_distance, "the zoom floor must stay clear of the body-hide line")
+	approx(p.tilt_up_limit, deg_to_rad(45), 0.0001, "look-up limit is 45 from the horizon")
+	approx(p.tilt_down_limit, deg_to_rad(60), 0.0001, "look-down limit is 60 from the horizon")
 
 func test_pitch_limits_are_asymmetric() -> void:
 	approx(PILOT._clamp_pitch(2.0, deg_to_rad(45), deg_to_rad(60)), deg_to_rad(45), 0.0001, "look-up caps at 45")
@@ -71,6 +71,8 @@ func test_sprint_pulls_the_camera_back_and_releases() -> void:
 	if p == null:
 		fail("could not instance pilot9")
 		return
+	# Zeroed by the DayZ camera; the code is kept, so drive it with the old GTA number.
+	p.camera_sprint_pullback = 0.3
 	p.is_sprinting = true
 	for i in 60:
 		p._handle_camera_state(STEP)
@@ -101,6 +103,7 @@ func test_crouch_and_slide_drop_the_pivot_and_first_person_is_untouched() -> voi
 	if p == null:
 		fail("could not instance pilot9")
 		return
+	p.camera_crouch_drop = 0.4 # zeroed by the DayZ camera; the code is kept
 	p._camera_mode_length = p.camera_distance
 	var standing: float = p._camera_zoom_lift()
 	p.is_crouching = true

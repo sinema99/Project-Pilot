@@ -21,7 +21,8 @@ const SIDES := 6
 const REACH := 3200.0
 
 @export var forest_seed := 31
-## Trees per square metre of forest floor, how far out they stand (m from the camera), and the cap.
+## Trees per square metre of forest floor, how far out they stand (m from the land's view_centre:
+## the camera in the shot), and the cap.
 ## They thin out over `edge` of forest score past the floor's edge, so the forest has no hard rim.
 @export var density := 0.012
 @export var reach := REACH
@@ -45,14 +46,14 @@ func _ready() -> void:
 	for t in land.triangles.size() / 3:
 		var ia := land.triangles[t * 3]
 		var a := v[ia]
-		if Vector2(a.x, a.z).length() > reach or a.y > land.treeline:
+		if Vector2(a.x, a.z).distance_to(land.view_centre) > reach or a.y > land.treeline:
 			continue
 		var b := v[land.triangles[t * 3 + 1]]
 		var c := v[land.triangles[t * 3 + 2]]
 		var cross := (c - a).cross(b - a)
 		var mid := (a + b + c) / 3.0
-		var score := land.forest_score(mid.y, absf(cross.normalized().y), land.ridges[ia],
-				land.clear_at(mid.x, mid.z).x)
+		var score := land.forest_score(mid.y, land.far_ny(ia, absf(cross.normalized().y)), land.ridges[ia],
+				land.clear_at(mid.x, mid.z).x, land.flat_k(ia))
 		var f := smoothstep(0.0, edge, score - land.forest_bar(mid.x, mid.z))
 		if f <= 0.0:
 			continue
@@ -73,7 +74,7 @@ func _ready() -> void:
 	count = xforms.size()
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.mesh = _spruce_mesh()
+	mm.mesh = spruce_mesh()
 	mm.instance_count = count
 	for i in count:
 		mm.set_instance_transform(i, xforms[i])
@@ -83,8 +84,9 @@ func _ready() -> void:
 	add_child(mmi)
 
 
-# One spruce, 1 m tall: three stacked green tiers, each with a snow cap on its upper half.
-func _spruce_mesh() -> ArrayMesh:
+## One spruce, 1 m tall: three stacked green tiers, each with a snow cap on its upper half. Shared
+## with ArrivalGrowth (the trees on the abandoned base).
+func spruce_mesh() -> ArrayMesh:
 	var green := SurfaceTool.new()
 	green.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var snow := SurfaceTool.new()

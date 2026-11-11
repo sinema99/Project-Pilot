@@ -1,0 +1,7 @@
+[gd_scene format=3 uid="uid://dpb8cgoos1d8q"]
+
+[ext_resource type="PackedScene" path="res://scenes/boss_arena.tscn" id="1_0ed60"]
+
+[node name="Node3D" type="Node3D" unique_id=1732933293]
+
+[node name="BossArena" parent="." unique_id=1710837387 instance=ExtResource("1_0ed60")]

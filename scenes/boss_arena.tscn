@@ -1,0 +1,129 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/boss_arena.gd" id="1_arena"]
+[ext_resource type="Script" path="res://scripts/cutscene/arrival.gd" id="2_shot"]
+[ext_resource type="Script" path="res://scripts/cutscene/arrival_land.gd" id="3_land"]
+[ext_resource type="Script" path="res://scripts/cutscene/arrival_base.gd" id="4_base"]
+[ext_resource type="Script" path="res://scripts/cutscene/arrival_forest.gd" id="5_forest"]
+[ext_resource type="Script" path="res://scripts/cutscene/arrival_growth.gd" id="6_growth"]
+[ext_resource type="Script" path="res://scripts/cutscene/arrival_clouds.gd" id="7_clouds"]
+[ext_resource type="Shader" path="res://shaders/boss_arena_backdrop.gdshader" id="8_backdrop"]
+[ext_resource type="Texture2D" path="res://assets/boss_arena/backdrop_px.png" id="9_px"]
+[ext_resource type="Texture2D" path="res://assets/boss_arena/backdrop_nx.png" id="10_nx"]
+[ext_resource type="Texture2D" path="res://assets/boss_arena/backdrop_py.png" id="11_py"]
+[ext_resource type="Texture2D" path="res://assets/boss_arena/backdrop_ny.png" id="12_ny"]
+[ext_resource type="Texture2D" path="res://assets/boss_arena/backdrop_pz.png" id="13_pz"]
+[ext_resource type="Texture2D" path="res://assets/boss_arena/backdrop_nz.png" id="14_nz"]
+[ext_resource type="PackedScene" path="res://scenes/pilot9.tscn" id="15_pilot"]
+[ext_resource type="Script" path="res://scripts/rendering/apply_stylized.gd" id="16_applier"]
+[ext_resource type="Material" path="res://resources/pilot_cel_character.tres" id="17_pilotchar"]
+[ext_resource type="Script" path="res://scripts/rendering/pixel_world.gd" id="18_pixelworld"]
+[ext_resource type="Script" path="res://scripts/rendering/pixel_look.gd" id="19_pixellook"]
+[ext_resource type="Script" path="res://scripts/rendering/retro_look.gd" id="20_retrolook"]
+[ext_resource type="Script" path="res://scripts/boss/knight_body.gd" id="21_knight"]
+
+[sub_resource type="ShaderMaterial" id="Backdrop_sky"]
+shader = ExtResource("8_backdrop")
+shader_parameter/face_px = ExtResource("9_px")
+shader_parameter/face_nx = ExtResource("10_nx")
+shader_parameter/face_py = ExtResource("11_py")
+shader_parameter/face_ny = ExtResource("12_ny")
+shader_parameter/face_pz = ExtResource("13_pz")
+shader_parameter/face_nz = ExtResource("14_nz")
+
+[sub_resource type="Sky" id="Sky_backdrop"]
+sky_material = SubResource("Backdrop_sky")
+
+[sub_resource type="Environment" id="Environment_arena"]
+background_mode = 2
+sky = SubResource("Sky_backdrop")
+ambient_light_source = 2
+ambient_light_color = Color(0.3, 0.34, 0.41, 1)
+tonemap_mode = 2
+tonemap_exposure = 0.85
+glow_enabled = true
+glow_levels/1 = 1.0
+glow_levels/2 = 1.0
+glow_levels/3 = 1.0
+glow_levels/4 = 0.6
+glow_levels/5 = 0.3
+glow_intensity = 0.5
+glow_strength = 1.0
+glow_blend_mode = 0
+glow_hdr_threshold = 4.0
+
+[node name="BossArena" type="Node3D" node_paths=PackedStringArray("world", "sun", "environment", "pilot", "knight")]
+script = ExtResource("1_arena")
+world = NodePath("World")
+sun = NodePath("Sun")
+environment = NodePath("WorldEnvironment")
+pilot = NodePath("Pilot9")
+knight = NodePath("KnightBoss")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_arena")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+light_color = Color(1, 0.97, 0.92, 1)
+light_energy = 0.85
+light_indirect_energy = 0.0
+shadow_enabled = true
+shadow_bias = 0.05
+shadow_normal_bias = 1.0
+directional_shadow_max_distance = 400.0
+
+[node name="World" type="Node3D" parent="."]
+script = ExtResource("2_shot")
+cutscene = false
+
+[node name="Land" type="Node3D" parent="World"]
+script = ExtResource("3_land")
+view_on_tower = "RightWide"
+near = 20.0
+far = 3500.0
+half_angle_degrees = 180.0
+columns = 360
+
+[node name="Base" type="Node3D" parent="World"]
+script = ExtResource("4_base")
+outpost = false
+
+[node name="Forest" type="Node3D" parent="World"]
+script = ExtResource("5_forest")
+reach = 1800.0
+density = 0.007
+
+[node name="Growth" type="Node3D" parent="World"]
+script = ExtResource("6_growth")
+bare_caps = PackedStringArray("RightWide")
+
+[node name="Clouds" type="Node3D" parent="World"]
+script = ExtResource("7_clouds")
+
+[node name="Pilot9" parent="." instance=ExtResource("15_pilot")]
+
+[node name="KnightBoss" type="Node3D" parent="."]
+script = ExtResource("21_knight")
+
+[node name="ApplyCelPilot9" type="Node" parent="."]
+script = ExtResource("16_applier")
+material = ExtResource("17_pilotchar")
+targets = Array[NodePath]([NodePath("../Pilot9")])
+derive_from_surfaces = true
+
+[node name="PixelWorld" type="CanvasLayer" parent="."]
+process_mode = 3
+process_priority = 10000
+layer = -100
+script = ExtResource("18_pixelworld")
+
+[node name="PixelLook" type="Node" parent="."]
+process_mode = 3
+script = ExtResource("19_pixellook")
+fog_density = 0.0004
+fog_color = Color(0.5, 0.55, 0.64, 1)
+fog_sky_affect = 0.0
+
+[node name="RetroLook" type="Node" parent="."]
+process_mode = 3
+script = ExtResource("20_retrolook")

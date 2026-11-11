@@ -1,0 +1,14 @@
+[gd_resource type="CompositorEffect" script_class="CinemaPost" format=3]
+
+[ext_resource type="Script" path="res://scripts/rendering/cinema_post.gd" id="1_post"]
+
+; The COMPOSITE look's finish (docs/specs/live-composite.md): CinemaPost on its defaults, which are the
+; cutscene grade, vignette, grain and fringing, plus RETRO's soften and chroma bleed so it still reads
+; as RETRO. Gameplay only - RetroLook puts it after the DepthComposite on the WorldEnvironment.
+[resource]
+resource_local_to_scene = true
+script = ExtResource("1_post")
+streak_passes = 1
+soften = 0.6
+bleed = 3.0
+bleed_amount = 0.6

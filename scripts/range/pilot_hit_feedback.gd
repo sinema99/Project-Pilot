@@ -29,6 +29,8 @@ var _pilot: Node = null
 var _flash_mat: StandardMaterial3D = null
 var _flash_age := INF
 var _shake_age := INF
+var _shake_time := SHAKE_TIME
+var _shake_amount := SHAKE_AMOUNT
 var _vignette_age := INF
 var _vignette_mat: ShaderMaterial = null
 var _rect: ColorRect = null
@@ -64,11 +66,23 @@ func hit(point: Vector3) -> void:
 	_flash_age = 0.0
 	_vignette_age = 0.0
 	_shake_age = 0.0
+	_shake_time = SHAKE_TIME
+	_shake_amount = SHAKE_AMOUNT
 	_apply_flash(true)
 	if Settings.movement_effects and _pilot != null and _pilot.has_method(&"spark_burst"):
 		var out: Vector3 = (_pilot.global_position + Vector3.UP * 1.2 - point)
 		out = out.normalized() if out.length() > 0.01 else Vector3.UP
 		_pilot.spark_burst(point, out, 18, 6.0, RED)
+
+
+## A camera shake with no hit (the Knight's smash landing near him). A bigger shake wins over a
+## smaller one still running. CAMERA MOTION gates it like the hit shake.
+func shake(amount: float, seconds: float) -> void:
+	if _shake_age < INF and _shake_amount * (1.0 - _shake_age / _shake_time) > amount:
+		return
+	_shake_age = 0.0
+	_shake_time = maxf(seconds, 0.01)
+	_shake_amount = amount
 
 
 func _process(delta: float) -> void:

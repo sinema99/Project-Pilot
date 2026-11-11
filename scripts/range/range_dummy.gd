@@ -1,9 +1,22 @@
-## The firing range's target: a box that circles pilot at a distance and fires a laser at him every
-## couple of seconds. It cannot die and cannot kill; it only counts what it takes. Dormant until the
-## range wakes it. See docs/specs/firing-range.md.
+## The firing range's target: the farmer, a four-legged disc that slides around pilot at a distance
+## and fires a laser at him every couple of seconds. It cannot die and cannot kill; it only counts
+## what it takes. Dormant until the range wakes it. See docs/specs/firing-range.md and
+## docs/specs/range-farmer.md.
 extends AnimatableBody3D
 
 const _Bolt := preload("res://scripts/range/range_bolt.gd")
+const _Model := preload("res://assets/enemie_farmer.glb")
+
+## The model's measured layout (metres, in its own frame before the 180 deg turn). See the spec.
+const DISC_RADIUS := 1.06
+const DISC_BOTTOM := 0.92
+const DISC_TOP := 1.67
+const LEG_RADIUS := 0.42
+const LEG_TOP := 3.41
+const LEG_BONES: Array[StringName] = [&"Bone.005", &"Bone.006", &"Bone.007", &"Bone.008"]
+## Middle of the window band once turned to face +Z, and how far in front of it bolts leave.
+const WINDOW_CENTRE := Vector3(0.0, 1.375, 0.93)
+const MUZZLE_OUT := 0.25
 
 signal woke
 signal slept
@@ -27,7 +40,10 @@ enum State { DORMANT, WAKING, ACTIVE }
 @export var reverse_max: float = 3.0
 ## Half the playable square it stays inside, metres from the range centre, and the margin kept.
 @export var bounds_half: float = 25.0
-@export var bounds_margin: float = 2.0
+@export var bounds_margin: float = 3.0
+## Most it leans into its slide at strafe speed, degrees, and how long it takes to get there, seconds.
+@export_range(0.0, 15.0, 0.5) var lean_max_deg: float = 4.0
+@export_range(0.05, 1.0, 0.05) var lean_time: float = 0.3
 
 @export_group("Firing")
 @export var fire_min: float = 2.0
@@ -39,6 +55,8 @@ enum State { DORMANT, WAKING, ACTIVE }
 @export_range(5.0, 80.0, 1.0) var bolt_speed: float = 28.0
 ## Where on pilot it aims, metres above his feet.
 @export var aim_height: float = 1.2
+## Where a perfect reflect homes onto it: the disc centre, metres above its feet.
+@export var homing_height: float = 1.3
 @export var damage_normal: float = 20.0
 @export var damage_perfect: float = 50.0
 
@@ -57,13 +75,20 @@ var _charge := -1.0
 var _wake_left := 0.0
 
 var _visual: Node3D = null
-## Holds the box's wobble on a hit in ANIME. Built in _build().
+## Holds the wobble on a hit in ANIME. Built in _build().
 var anime_hold: AnimeHold = null
+## The windows: the only part that shows its state.
 var _mat: StandardMaterial3D = null
+## Additive white over every mesh for the hit flash.
+var _flash_mat: StandardMaterial3D = null
 var _muzzle: Marker3D = null
 var _hitbox: Area3D = null
 var _flash := 0.0
 var _recoil := 0.0
+## What it moved last physics frame over the frame time, world space.
+var _velocity := Vector3.ZERO
+## The current lean as an axis in its own frame, length in radians.
+var _lean := Vector3.ZERO
 
 
 func _ready() -> void:
@@ -86,46 +111,104 @@ func _build() -> void:
 	add_child(anime_hold)
 	anime_hold.setup()
 	anime_hold.inner = [_visual]
+	var model: Node3D = _Model.instantiate()
+	model.name = &"Farmer"
+	# Its windows are on its -Z; this body faces pilot along +Z.
+	model.rotation.y = PI
+	_visual.add_child(model)
+	var sk: Skeleton3D = model.get_node("Armature/Skeleton3D")
+	_mount_spheres(model, sk)
 	_mat = StandardMaterial3D.new()
+	_mat.resource_name = "farmer_windows"
+	_mat.albedo_color = Color(0.055, 0.055, 0.055)
+	_mat.roughness = 0.5
 	_mat.emission_enabled = true
-	_mat.roughness = 0.9
-	var body_mesh := MeshInstance3D.new()
-	body_mesh.name = &"Body"
-	var box := BoxMesh.new()
-	box.size = Vector3(1.2, 2.0, 1.2)
-	box.material = _mat
-	body_mesh.mesh = box
-	body_mesh.position = Vector3(0.0, 1.0, 0.0)
-	_visual.add_child(body_mesh)
-	# A snout so it is obvious which way it faces and where the bolt leaves.
-	var snout := MeshInstance3D.new()
-	var sb := BoxMesh.new()
-	sb.size = Vector3(0.35, 0.35, 0.5)
-	sb.material = _mat
-	snout.mesh = sb
-	snout.position = Vector3(0.0, 1.45, 0.85)
-	_visual.add_child(snout)
+	(sk.get_node("Cylinder") as MeshInstance3D).set_surface_override_material(1, _mat)
+	_flash_mat = StandardMaterial3D.new()
+	_flash_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_flash_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	_flash_mat.albedo_color = Color(0, 0, 0)
+	for mi in model.find_children("*", "MeshInstance3D", true, false):
+		(mi as MeshInstance3D).material_overlay = _flash_mat
 	_muzzle = Marker3D.new()
 	_muzzle.name = &"Muzzle"
-	_muzzle.position = Vector3(0.0, 1.45, 1.15)
+	_muzzle.position = WINDOW_CENTRE + Vector3(0.0, 0.0, MUZZLE_OUT)
 	_visual.add_child(_muzzle)
-	var col := CollisionShape3D.new()
-	var bs := BoxShape3D.new()
-	bs.size = Vector3(1.2, 2.0, 1.2)
-	col.shape = bs
-	col.position = Vector3(0.0, 1.0, 0.0)
-	add_child(col)
 	_hitbox = Area3D.new()
 	_hitbox.name = &"Hitbox"
 	_hitbox.collision_layer = _Bolt.LAYER_DUMMY
 	_hitbox.collision_mask = 0
-	var hs := CollisionShape3D.new()
-	var hb := BoxShape3D.new()
-	hb.size = Vector3(1.4, 2.2, 1.4)
-	hs.shape = hb
-	hs.position = Vector3(0.0, 1.0, 0.0)
-	_hitbox.add_child(hs)
 	add_child(_hitbox)
+	# The same shapes for the body and the hitbox, the hitbox 0.1 m fuller.
+	for spec in shape_specs(sk):
+		add_child(_shape(spec, 0.0))
+		_hitbox.add_child(_shape(spec, 0.1))
+
+
+## The disc and one cylinder per leg, each as [Transform3D, radius, height] in this body's frame.
+## Each leg runs along its bone from the leg top down to the ground.
+static func shape_specs(sk: Skeleton3D) -> Array:
+	var turn := Transform3D(Basis(Vector3.UP, PI), Vector3.ZERO)
+	var to_body := turn * (sk.get_parent() as Node3D).transform * sk.transform
+	var out := [[Transform3D(Basis(), Vector3(0.0, (DISC_BOTTOM + DISC_TOP) * 0.5, 0.0)),
+		DISC_RADIUS, DISC_TOP - DISC_BOTTOM]]
+	for b in LEG_BONES:
+		var g := to_body * sk.get_bone_global_rest(sk.find_bone(b))
+		var down := g.basis.y.normalized()
+		var top := g.origin + down * ((LEG_TOP - g.origin.y) / down.y)
+		var foot := g.origin + down * (-g.origin.y / down.y)
+		var axis := (top - foot).normalized()
+		var x := axis.cross(Vector3.FORWARD).normalized()
+		out.append([Transform3D(Basis(x, axis, x.cross(axis)), (top + foot) * 0.5),
+			LEG_RADIUS, top.distance_to(foot)])
+	return out
+
+
+func _shape(spec: Array, pad: float) -> CollisionShape3D:
+	var cs := CollisionShape3D.new()
+	var cyl := CylinderShape3D.new()
+	cyl.radius = spec[1] + pad
+	cyl.height = spec[2] + pad
+	cs.shape = cyl
+	cs.transform = spec[0]
+	return cs
+
+
+## The export carries one disc sphere and one leg-joint sphere; the model is four-way symmetric, so
+## each is copied at 90 / 180 / 270 deg. Disc spheres ride the root bone, joint spheres their leg.
+func _mount_spheres(model: Node3D, sk: Skeleton3D) -> void:
+	var to_model := (sk.get_parent() as Node3D).transform * sk.transform
+	var attach := {}
+	for src_name: StringName in [&"Sphere", &"Sphere_001"]:
+		var src: MeshInstance3D = model.get_node(NodePath(src_name))
+		var base := src.transform
+		model.remove_child(src)
+		for k in 4:
+			var m: MeshInstance3D = src if k == 0 else src.duplicate()
+			var xf := Transform3D(Basis(Vector3.UP, k * PI * 0.5), Vector3.ZERO) * base
+			var bone := nearest_bone(sk, to_model, xf.origin)
+			if not attach.has(bone):
+				var ba := BoneAttachment3D.new()
+				ba.name = StringName("At_" + sk.get_bone_name(bone).replace(".", "_"))
+				sk.add_child(ba)
+				ba.bone_name = sk.get_bone_name(bone)
+				attach[bone] = ba
+			m.name = StringName("%s_%d" % [src_name, k])
+			m.transform = (to_model * sk.get_bone_global_rest(bone)).affine_inverse() * xf
+			attach[bone].add_child(m)
+
+
+## The leg bone whose head `p` sits on (the joint spheres), else the root bone (the disc ones).
+static func nearest_bone(sk: Skeleton3D, to_model: Transform3D, p: Vector3) -> int:
+	var best := sk.find_bone(&"Bone")
+	var best_d := 0.6
+	for b in LEG_BONES:
+		var i := sk.find_bone(b)
+		var d := (to_model * sk.get_bone_global_rest(i)).origin.distance_to(p)
+		if d < best_d:
+			best = i
+			best_d = d
+	return best
 
 
 # --- state ------------------------------------------------------------------------------------
@@ -168,7 +251,6 @@ func force_fire() -> void:
 func _set_dormant_look() -> void:
 	if _mat == null:
 		return
-	_mat.albedo_color = Color(0.25, 0.26, 0.3)
 	_mat.emission = Color(0.0, 0.0, 0.0)
 	_mat.emission_energy_multiplier = 0.0
 
@@ -195,22 +277,24 @@ func _process(delta: float) -> void:
 	if state == State.DORMANT:
 		_set_dormant_look()
 	else:
-		_mat.albedo_color = Color(0.55, 0.25, 0.2)
 		_mat.emission = Color(1.0, 0.25, 0.15)
-		_mat.emission_energy_multiplier = 0.35
+		_mat.emission_energy_multiplier = 1.5
 		if _charge >= 0.0:
 			var k := clampf(_charge / charge_time, 0.0, 1.0)
-			_mat.emission = Color(1.0, 0.9, 0.5)
-			_mat.emission_energy_multiplier = 0.35 + 3.0 * k * k
-	if _flash > 0.0:
-		_mat.emission = Color(1, 1, 1)
-		_mat.emission_energy_multiplier = maxf(_mat.emission_energy_multiplier, 4.0 * _flash)
-	# The wobble: a quick shake of the visual only, so the box's path is untouched.
-	_visual.rotation = Vector3(sin(_recoil * 40.0) * 0.12 * _recoil, 0.0,
-		cos(_recoil * 33.0) * 0.12 * _recoil)
+			_mat.emission = Color(1.0, 0.25, 0.15).lerp(Color(1.0, 0.9, 0.5), k)
+			_mat.emission_energy_multiplier = 1.5 + 6.0 * k * k
+	_flash_mat.albedo_color = Color(_flash, _flash, _flash)
+	_lean = _lean.lerp(lean_target(global_basis.inverse() * _velocity, strafe_speed,
+		deg_to_rad(lean_max_deg)), 1.0 - exp(-delta * 3.0 / lean_time))
+	# The wobble: a quick shake of the visual only, so its path is untouched.
+	var wobble := Basis.from_euler(Vector3(sin(_recoil * 40.0) * 0.12 * _recoil, 0.0,
+		cos(_recoil * 33.0) * 0.12 * _recoil))
+	var lean := Basis(_lean.normalized(), _lean.length()) if _lean.length() > 1e-5 else Basis()
+	_visual.basis = lean * wobble
 
 
 func _physics_process(delta: float) -> void:
+	_velocity = Vector3.ZERO
 	if state == State.DORMANT:
 		return
 	var pilot := _find_pilot()
@@ -258,6 +342,7 @@ func _move(pilot: Node3D, delta: float) -> void:
 	var clamped := clamp_to_bounds(want, centre, bounds_half - bounds_margin)
 	if clamped.distance_to(want) > 0.001 and _since_flip > 0.4:
 		_flip()
+	_velocity = (clamped - global_position) / delta
 	global_position = clamped
 
 
@@ -319,6 +404,16 @@ static func range_velocity(dist: float, preferred: float, dead_band: float, spee
 	if absf(err) <= dead_band:
 		return 0.0
 	return signf(err) * minf((absf(err) - dead_band) / 2.0, 1.0) * speed
+
+
+## The lean it eases toward for a velocity in its own frame: an axis tipping its top toward where it
+## is going, as long as `max_rad` at `full_speed` and up. Nothing when it is still.
+static func lean_target(local_v: Vector3, full_speed: float, max_rad: float) -> Vector3:
+	local_v.y = 0.0
+	var speed := local_v.length()
+	if speed < 0.01:
+		return Vector3.ZERO
+	return Vector3.UP.cross(local_v / speed) * max_rad * minf(speed / maxf(full_speed, 0.01), 1.0)
 
 
 ## `p` kept inside the square of half-size `half` around `centre_` (x and z only).

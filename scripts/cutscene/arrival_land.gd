@@ -12,8 +12,13 @@ extends Node3D
 # by the terrain (spec R2-2), `forest_score`: below the treeline, off the steeps and the flats, off
 # the ridgelines (a per-vertex convexity, `ridges`), and out of the clearings. The clear map
 # (`clear`) holds the clearings people and snow made: the base's aprons, the road, the power-line
-# cut, the avalanche chutes (R), and the shade at the foot of the walls (G). A fine noise breaks the
-# forest's edge up at tree scale. ArrivalForest reads the same rules to stand its spruce.
+# cut, the avalanche chutes (R), and the shade at the foot of the walls (G). A fine noise breaks the forest's edge up at tree scale. ArrivalForest reads
+# the same rules to stand its spruce.
+#
+# Revision 4 (spec R4-4) gives the near slope a landform: SPURS and a gully down from the base, rock
+# bands where it steps (ROCK_BANDS, and one under the left tower's bastion), and the forest floor lit
+# a step lighter on the faces toward the sun. The spire stands on a low snowfield (SPIRE, R4b) just
+# above the cloud sea, laid after the gullies so it stays level.
 #
 # GENERATED like DescentLand: children have no owner, so nothing is saved into the .tscn. Sits
 # above Base and Forest in the tree, so it is built before they ask it for heights.
@@ -30,12 +35,27 @@ const LAYERS := [
 
 @export var land_seed := 7
 @export_group("Grid")
-## Level distance (m) of the first and last ring, and the half-width of the fan (degrees).
+## Where the viewer stands (world xz): the fan is centred here and every distance the land fades
+## over (the broad normal, the far flats, the shader's forest and jitter fades) is measured from it.
+## The shot's camera is at the origin; the boss arena stands it on the arena (docs/specs/boss-arena.md).
+@export var view_centre := Vector2.ZERO
+## When set, `view_centre` is this tower's cap (ArrivalShot.TOWERS name), worked out at load.
+@export var view_on_tower := ""
+## Level distance (m) of the first and last ring, and the half-width of the fan (degrees, from -Z).
+## 180 is a full circle round `view_centre`.
 @export var near := 350.0
 @export var far := 45000.0
 @export var half_angle_degrees := 34.0
 ## Columns across the fan; the rings are spaced to keep cells square.
 @export var columns := 320
+## Spec R6-5: past the near slopes the snow line and the forest read a broad normal (measured
+## `broad_reach` m out) instead of the face's own, blended in over `broad_fade` (m from the camera),
+## so the far bowls draw as a few big shapes, not flecks.
+@export var broad_reach := 100.0
+@export var broad_fade := Vector2(1800.0, 2400.0)
+## Inside that zone, out to this band (m), flats keep their forest: the broad normal reads the bowls
+## behind the base flatter than they are. Past it the far valleys' flats go back to open snow.
+@export var flat_forest_fade := Vector2(3500.0, 5000.0)
 
 @export_group("Ridge")
 ## The near ridge's profile across the crest: a flat `shelf` (m) either side, then toward the camera
@@ -57,6 +77,10 @@ const LAYERS := [
 ## Ranges are kept off the base: they ramp in from this far either side of the crest (m).
 @export var range_clear := 600.0
 @export var range_full := 2600.0
+## The ranges stretched up over `range_lift_from` (m), by this much. 1 in the shot; the boss arena's
+## backdrop bake raises them, measured from its eye height so they stand this much taller on screen.
+@export var range_lift := 1.0
+@export var range_lift_from := 100.0
 ## Gullies on every slope: size (m) and depth (m), fading out between these distances (m) so the far
 ## layers draw simpler.
 @export var gully_size := 380.0
@@ -102,14 +126,33 @@ const LAYERS := [
 ## The road's and the power-line cut's cleared width (m).
 @export var road_width := 8.0
 @export var cut_width := 16.0
+## Either side of the road (spec R4-3): the cut bank uphill and the plowed berm downhill (m), cleared
+## with it so the trees stand right at their edges.
+@export var road_verge := 3.0
 ## Avalanche chutes: how many, and their width at the top and the bottom (m).
 @export var chutes := 18
 @export var chute_width := Vector2(10.0, 36.0)
+
+@export_group("Landform")
+## Rock bands (spec R4-4): the drop below a band is given back over this far (m) on down the slope,
+## and fades in over `band_taper` m past a band's ends. The bastion's own band: how far out of the
+## bastion it runs (m), its drop and how far past the bastion's sides it reaches (m).
+@export var band_recover := 300.0
+@export var band_taper := 70.0
+@export var bastion_band_out := 14.0
+@export var bastion_band_drop := 14.0
+@export var bastion_band_reach := 40.0
+## The forest floor on faces toward the sun is this colour (spec R4-4); the step is where the face's
+## light (normal . sun) crosses `forest_light_step`.
+@export var forest_lit_color := Color(0.17, 0.27, 0.29)
+@export_range(0.0, 1.0, 0.01) var forest_light_step := 0.355
 
 ## Every vertex, its normal and its ridge value (convexity), kept for ArrivalForest.
 var vertices := PackedVector3Array()
 var normals := PackedVector3Array()
 var ridges := PackedFloat32Array()
+## Each vertex's broad normal (spec R6-5).
+var broad := PackedVector3Array()
 ## Triangles as index triples.
 var triangles := PackedInt32Array()
 ## The forest break-up noise, shared with the shader.
@@ -121,6 +164,10 @@ var portal: Vector3
 var portal_out: Vector2
 ## The avalanche chutes as world xz polylines.
 var chute_paths: Array[PackedVector2Array] = []
+## The road's centreline (world xz), rounded through its hairpins; ArrivalBase lays the road on it.
+var road_path := PackedVector2Array()
+## The spire's foot centre (world): its snowfield's top is just under it.
+var spire_foot: Vector3
 
 var _ranges := FastNoiseLite.new()
 var _gullies := FastNoiseLite.new()
@@ -133,16 +180,27 @@ var _massif_along := 0.0
 var _crest: Array[Vector3] = []
 ## Hills as {at: world xz, top, radius, fall}, spurs also {dir, length, rise, steep}.
 var _hills: Array[Dictionary] = []
+## The spire's snowfield (spec R4b), a hill of its own kind laid after the gullies.
+var _field := {}
 ## Deck feet as {poly: world xz outline, y: ground height inside it, box: Rect2 it can reach}.
 var _feet: Array[Dictionary] = []
 ## Every deck with legs: {outer: its edge, band: its band line} (world xz), for the aprons.
 var _footprints: Array[Dictionary] = []
-## Every tower's foot: {at: world xz, shaft: radius}.
+## Every tower's foot: {at: world xz, shaft: radius, bastion: radius or 0}.
 var _tower_feet: Array[Dictionary] = []
+## Spurs and gullies (spec R4-4): {a, b: world xz ends, height, width}.
+var _spurs: Array[Dictionary] = []
+## Rock bands: {pts: world xz polyline, out: toward the drop (xz), drop, width}.
+var _bands: Array[Dictionary] = []
 
 
 func _ready() -> void:
 	var shot := get_parent() as ArrivalShot
+	if view_on_tower != "":
+		for t: Dictionary in ArrivalShot.TOWERS:
+			if t.name == view_on_tower:
+				var top := shot.at_distance(t.u, t.v, t.distance)
+				view_centre = Vector2(top.x, top.z)
 	_setup(shot)
 	_build_clear(shot)
 	_build()
@@ -215,9 +273,37 @@ func _setup(shot: ArrivalShot) -> void:
 		for q in poly:
 			box = box.expand(q)
 		_feet.append({poly = poly, y = y, box = box.grow((y - valley_floor) / foot_grade)})
+	for sp: Dictionary in ArrivalShot.SPURS:
+		var a := shot.on_plane(sp.from.x, sp.from.y, -60.0)
+		var b := shot.on_plane(sp.to.x, sp.to.y, -160.0)
+		_spurs.append({a = Vector2(a.x, a.z), b = Vector2(b.x, b.z), height = sp.height, width = sp.width})
+	for band: Dictionary in ArrivalShot.ROCK_BANDS:
+		var pts := PackedVector2Array()
+		for q: Vector2 in band.line:
+			var w := shot.on_plane(q.x, q.y, -60.0)
+			pts.append(Vector2(w.x, w.z))
+		# Toward the camera (+z) is down the slope.
+		_bands.append({pts = pts, out = Vector2(0.0, 1.0), drop = band.drop, width = band.width})
+	# The spire's snowfield (spec R4b): its level top just under the spire's foot.
+	var spire := ArrivalShot.SPIRE
+	spire_foot = shot.at_distance(spire.u, spire.v, spire.distance)
+	_field = {at = Vector2(spire_foot.x, spire_foot.z), top = spire_foot.y - 2.0, flat = spire.field,
+			shoulder = spire.shoulder, grade = spire.grade, radius = spire.field_radius, fall = spire.fall,
+			lobes = spire.lobes}
 	for t: Dictionary in ArrivalShot.TOWERS:
 		var p := shot.at_distance(t.u, t.v, t.distance)
-		_tower_feet.append({at = Vector2(p.x, p.z), shaft = t.shaft})
+		var bastion: float = t.shaft * t.bastion if t.has("bastion") else 0.0
+		_tower_feet.append({at = Vector2(p.x, p.z), shaft = t.shaft, bastion = bastion})
+	# The rock band under each bastion (spec R4-4): square to the fall line, just out of its wall.
+	for tf in _tower_feet:
+		if tf.bastion <= 0.0:
+			continue
+		var down := -_gradient(tf.at).normalized()
+		var side := Vector2(-down.y, down.x)
+		var c: Vector2 = tf.at + down * (tf.bastion + bastion_band_out)
+		var half: float = tf.bastion + bastion_band_reach
+		_bands.append({pts = PackedVector2Array([c - side * half, c + side * half]), out = down,
+				drop = bastion_band_drop, width = 6.0})
 
 
 ## The crest under world x: (z, height), straight between points and carried on past the ends.
@@ -248,19 +334,79 @@ func height(x: float, z: float) -> float:
 	var dist := Vector2(x, z).length()
 	var keep_off := smoothstep(range_clear, range_full, absf(s))
 	h = _smooth_max(h, lerpf(valley_floor, ranges_at(x, z), keep_off), 120.0)
+	for spur in _spurs:
+		h += _spur(spur, Vector2(x, z))
 	var g := _gullies.get_noise_2d(x, z) * 0.5 + 0.5
 	h -= gully_depth * g * (1.0 - smoothstep(gully_fade.x, gully_fade.y, dist))
+	# After the gullies, so the spire's snowfield stays level.
+	h = _smooth_max(h, _hill(_field, Vector2(x, z)), 60.0)
 	# After the gullies, so none cuts in under a deck.
 	for foot in _feet:
 		if (foot.box as Rect2).has_point(Vector2(x, z)):
 			h = _smooth_max(h, foot.y - foot_grade * _outside(foot.poly, Vector2(x, z)), foot_blend)
+	# After the feet, so the step shows in front of the foundation's ramp too.
+	for band in _bands:
+		h -= _band(band, Vector2(x, z))
 	return h
+
+
+## A spur's (or gully's) lift at `p`: full along its line, easing in from the deck's foot and out
+## past the frame's bottom, falling off across it.
+func _spur(spur: Dictionary, p: Vector2) -> float:
+	var ab: Vector2 = spur.b - spur.a
+	var t := clampf((p - spur.a).dot(ab) / ab.length_squared(), -0.3, 1.5)
+	var along := smoothstep(-0.1, 0.15, t) * (1.0 - smoothstep(1.0, 1.4, t))
+	if along <= 0.0:
+		return 0.0
+	var d := p.distance_to(spur.a + ab * t)
+	return spur.height * along * exp(-1.5 * pow(d / spur.width, 2.0))
+
+
+## How far a rock band has dropped the ground at `p`: a steep step just past its line, given back
+## over `band_recover` further down, faded out past its ends.
+func _band(band: Dictionary, p: Vector2) -> float:
+	var pts: PackedVector2Array = band.pts
+	var best := INF
+	var s := 0.0
+	var over := 0.0
+	for i in pts.size() - 1:
+		var a := pts[i]
+		var b := pts[i + 1]
+		var q := Geometry2D.get_closest_point_to_segment(p, a, b)
+		var d := p.distance_squared_to(q)
+		if d >= best:
+			continue
+		best = d
+		var e := (b - a).normalized()
+		var n := Vector2(-e.y, e.x)
+		if n.dot(band.out) < 0.0:
+			n = -n
+		s = (p - q).dot(n)
+		# Past the polyline's ends: how far beyond them.
+		over = 0.0
+		if i == 0:
+			over = maxf(over, (a - p).dot(e))
+		if i == pts.size() - 2:
+			over = maxf(over, (p - b).dot(e))
+	if s <= 0.0:
+		return 0.0
+	var w: float = band.width
+	return band.drop * smoothstep(0.0, w, s) * (1.0 - smoothstep(w, w + band_recover, s)) \
+			* (1.0 - smoothstep(0.0, band_taper, over))
 
 
 ## A hill's height at `p`: a cone, or for a spur a ridge climbing from the top along its heading,
 ## widening as it goes, its right flank (as the camera sees it) steeper.
 func _hill(hill: Dictionary, p: Vector2) -> float:
 	var rel: Vector2 = p - hill.at
+	if hill.has("flat"):
+		# A snowfield (the spire's): level out to `flat`, a shoulder gentle enough to stay open snow
+		# down into the cloud sea, then falling away under it; lobed round so its shore is no circle.
+		var a := rel.angle()
+		var lobe: float = 1.0 + hill.lobes * (0.55 * sin(2.0 * a + 1.3) + 0.3 * sin(3.0 * a + 0.4) + 0.15 * sin(5.0 * a + 2.1))
+		var out: float = maxf(rel.length() / lobe - hill.flat, 0.0)
+		var under: float = maxf(out - hill.shoulder, 0.0)
+		return hill.top - hill.grade * out - hill.fall * pow(under / hill.radius, 1.5)
 	if not hill.has("dir"):
 		return hill.top - hill.fall * pow(rel.length() / hill.radius, 1.5)
 	var dir: Vector2 = hill.dir
@@ -294,7 +440,7 @@ func ranges_at(x: float, z: float) -> float:
 			crest += m.height * exp(-pow((along - _massif_along) / m.width, 2.0))
 		var shape := pow(e, 2.2) * (0.3 + 0.7 * r)
 		h = _smooth_max(h, valley_floor + (crest - valley_floor) * shape, 150.0)
-	return h
+	return h + maxf(h - range_lift_from, 0.0) * (range_lift - 1.0)
 
 
 ## How far (m) `p` is outside polygon `poly`; 0 inside.
@@ -342,12 +488,32 @@ func clear_at(x: float, z: float) -> Vector2:
 ## How much forest the land carries (0..1) at height `y` on a face with normal y `ny`, ridge value
 ## `ridge`, cleared by `cleared`: the shader's forest_score, line for line. The forest stands where
 ## this beats `forest_bar`.
-func forest_score(y: float, ny: float, ridge: float, cleared: float) -> float:
+func forest_score(y: float, ny: float, ridge: float, cleared: float, flat_k := 0.0) -> float:
 	var alt := 1.0 - smoothstep(treeline - tree_band, treeline, y)
+	# Spec R6-5: the far bowls' flats keep their forest (the broad normal reads them flatter).
+	var flat := lerpf(forest_max_slope, 1.02, flat_k)
 	var slope := smoothstep(forest_min_slope, forest_min_slope + 0.08, ny) \
-			* (1.0 - smoothstep(forest_max_slope - 0.012, forest_max_slope, ny))
+			* (1.0 - smoothstep(flat - 0.012, flat, ny))
 	var open := 1.0 - smoothstep(ridge_clear.x, ridge_clear.y, ridge)
 	return alt * slope * open * (1.0 - cleared)
+
+
+## How far into the broad-normal zone vertex `i` is, 0 near to 1 past `broad_fade` (spec R6-5).
+func far_k(i: int) -> float:
+	var v := vertices[i]
+	return smoothstep(broad_fade.x, broad_fade.y, Vector2(v.x, v.z).distance_to(view_centre))
+
+
+## How much vertex `i`'s flats keep their forest, 0..1 (spec R6-5): the forest_score `far_k`.
+func flat_k(i: int) -> float:
+	var v := vertices[i]
+	return far_k(i) * (1.0 - smoothstep(flat_forest_fade.x, flat_forest_fade.y, Vector2(v.x, v.z).distance_to(view_centre)))
+
+
+## The face normal's y the forest and snow read at vertex `i` for a face with normal y `ny`: the
+## face's own near, the broad normal's past `broad_fade` (spec R6-5); the shader's, line for line.
+func far_ny(i: int, ny: float) -> float:
+	return lerpf(ny, broad[i].y, far_k(i))
 
 
 ## The break-up the forest score has to beat at world (x, z).
@@ -373,6 +539,14 @@ func _build_clear(shot: ArrivalShot) -> void:
 	for tf in _tower_feet:
 		var at: Vector2 = tf.at
 		var s: float = tf.shaft
+		var bastion: float = tf.bastion
+		if bastion > 0.0:
+			# A bastion (spec R4-2) clears only its own octagon and a few metres past it, so the trees
+			# stand at its wall. Its shade spreads like a deck wall's.
+			_fill(Rect2(at, Vector2.ZERO).grow(bastion + ao_reach + 20.0), func(p: Vector2) -> Vector2:
+				var d := _octagon_distance(p - at, bastion)
+				return Vector2(1.0 - smoothstep(2.0, 6.0, d), 1.0 - smoothstep(0.0, ao_reach, d)))
+			continue
 		_fill(Rect2(at, Vector2.ZERO).grow(s * 2.0 + apron + 20.0), func(p: Vector2) -> Vector2:
 			var d := p.distance_to(at)
 			return Vector2(1.0 - smoothstep(s * 1.8 + apron * 0.7, s * 1.8 + apron * 0.7 + 12.0, d),
@@ -384,6 +558,16 @@ func _build_clear(shot: ArrivalShot) -> void:
 	var b := shot.at_distance(pc.to.x, pc.to.y, pc.distance)
 	_stroke(PackedVector2Array([Vector2(a.x, a.z), Vector2(b.x, b.z)]), PackedFloat32Array([cut_width, cut_width]))
 	_build_chutes()
+
+
+## How far `rel` lies outside an octagon of corner radius `r` with its flat sides facing the axes and
+## diagonals (ArrivalBase's octagons).
+static func _octagon_distance(rel: Vector2, r: float) -> float:
+	var apothem := r * cos(PI / 8.0)
+	var best := -INF
+	for i in 8:
+		best = maxf(best, rel.dot(Vector2.from_angle(TAU * i / 8.0)) - apothem)
+	return maxf(best, 0.0)
 
 
 # The road: out of the portal in the Lower deck's band wall, straight down the slope, then
@@ -414,9 +598,18 @@ func _build_road() -> void:
 	for k in r.legs:
 		path.append(path[path.size() - 1] + e * sign * r.leg + out * r.advance)
 		sign = -sign
+	# Rounded through the hairpins (spec R4-3: a road, not a zig-zag scar), both ends kept.
+	for k in 4:
+		var rounded := PackedVector2Array([path[0]])
+		for i in path.size() - 1:
+			if i > 0:
+				rounded.append(path[i].lerp(path[i + 1], 0.25))
+			rounded.append(path[i].lerp(path[i + 1], 0.75) if i < path.size() - 2 else path[i + 1])
+		path = rounded
+	road_path = path
 	var widths := PackedFloat32Array()
 	widths.resize(path.size())
-	widths.fill(road_width)
+	widths.fill(road_width + road_verge * 2.0)
 	_stroke(path, widths)
 
 
@@ -503,7 +696,7 @@ func _fill(box: Rect2, paint: Callable) -> void:
 			if v.x <= 0.0 and v.y <= 0.0:
 				continue
 			var c := clear.get_pixel(i, j)
-			clear.set_pixel(i, j, Color(maxf(c.r, v.x), maxf(c.g, v.y), 0.0, 1.0))
+			clear.set_pixel(i, j, Color(maxf(c.r, v.x), maxf(c.g, v.y), c.b, 1.0))
 
 
 # Clears a stroke along `path` (world xz), `widths` (m) at each point, cut into short pieces so each
@@ -530,13 +723,17 @@ func _build() -> void:
 	var ratio := 1.0 + step
 	var rings := int(ceil(log(far / near) / log(ratio))) + 1
 	var cols := columns + 1
+	# A full circle: the last column is the first again, and neighbours wrap across that seam.
+	var full := half_angle_degrees >= 180.0
+	var left := func(i: int, k: int) -> int: return posmod(i - k, columns) if full else maxi(i - k, 0)
+	var right := func(i: int, k: int) -> int: return posmod(i + k, columns) if full else mini(i + k, cols - 1)
 	vertices.resize(rings * cols)
 	for j in rings:
 		var r := near * pow(ratio, j)
 		for i in cols:
 			var a := -half + step * i
-			var x := sin(a) * r
-			var z := -cos(a) * r
+			var x := view_centre.x + sin(a) * r
+			var z := view_centre.y - cos(a) * r
 			vertices[j * cols + i] = Vector3(x, height(x, z), z)
 	# Convexity per vertex against its neighbours two cells out, in cell sizes: ridgelines high.
 	ridges.resize(vertices.size())
@@ -545,21 +742,34 @@ func _build() -> void:
 	for j in rings:
 		var cell := near * pow(ratio, j) * step * 2.0
 		for i in cols:
-			var around := (vertices[j * cols + maxi(i - 2, 0)].y + vertices[j * cols + mini(i + 2, cols - 1)].y
+			var around := (vertices[j * cols + left.call(i, 2)].y + vertices[j * cols + right.call(i, 2)].y
 					+ vertices[maxi(j - 2, 0) * cols + i].y + vertices[mini(j + 2, rings - 1) * cols + i].y) * 0.25
 			var c := (vertices[j * cols + i].y - around) / cell
 			ridges[j * cols + i] = c
 			# Signed, packed into 0..1 for the shader: 0.5 is flat.
 			colors[j * cols + i] = Color(clampf(c * 0.5 + 0.5, 0.0, 1.0), 0.0, 0.0, 1.0)
 	normals.resize(vertices.size())
+	broad.resize(vertices.size())
 	for j in rings:
 		for i in cols:
-			var l := vertices[j * cols + maxi(i - 1, 0)]
-			var rt := vertices[j * cols + mini(i + 1, cols - 1)]
+			var l := vertices[j * cols + left.call(i, 1)]
+			var rt := vertices[j * cols + right.call(i, 1)]
 			var nr := vertices[maxi(j - 1, 0) * cols + i]
 			var fr := vertices[mini(j + 1, rings - 1) * cols + i]
 			var n := (rt - l).cross(nr - fr).normalized()
 			normals[j * cols + i] = n if n.y > 0.0 else -n
+			# The broad normal, `broad_reach` m out, for the far snow line (spec R6-5): x and z packed
+			# into the colour's g and b, y rebuilt in the shader.
+			var k := maxi(int(ceil(broad_reach / (near * pow(ratio, j) * step))), 1)
+			var bl := vertices[j * cols + left.call(i, k)]
+			var br := vertices[j * cols + right.call(i, k)]
+			var bn := vertices[maxi(j - k, 0) * cols + i]
+			var bf := vertices[mini(j + k, rings - 1) * cols + i]
+			var wide := (br - bl).cross(bn - bf).normalized()
+			wide = wide if wide.y > 0.0 else -wide
+			broad[j * cols + i] = wide
+			colors[j * cols + i].g = wide.x * 0.5 + 0.5
+			colors[j * cols + i].b = wide.z * 0.5 + 0.5
 	triangles.resize((rings - 1) * columns * 6)
 	var t := 0
 	for j in rings - 1:
@@ -608,4 +818,10 @@ func _material() -> ShaderMaterial:
 	m.set_shader_parameter(&"clear_rect", Vector4(clear_rect.position.x, clear_rect.position.y,
 			clear_rect.size.x, clear_rect.size.y))
 	m.set_shader_parameter(&"forest_fade", Vector2(ArrivalForest.REACH, ArrivalForest.REACH * 3.0))
+	m.set_shader_parameter(&"forest_lit_color", forest_lit_color)
+	m.set_shader_parameter(&"forest_light_step", forest_light_step)
+	m.set_shader_parameter(&"sun_dir", (get_parent() as ArrivalShot).sun_direction())
+	m.set_shader_parameter(&"broad_fade", broad_fade)
+	m.set_shader_parameter(&"flat_forest_fade", flat_forest_fade)
+	m.set_shader_parameter(&"view_centre", view_centre)
 	return m

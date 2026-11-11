@@ -62,10 +62,10 @@ const DEFS := [
 	# The PIXEL look's own block size: no OFF, 4X by default. It has no row of its own - the PIXEL
 	# FILTER row edits whichever look is on (pixel_filter_key()). See docs/specs/pixel-look.md.
 	[&"pixel_look_size", "PIXEL FILTER", "graphics", [2, 3, 4, 6], 2],
-	# CEL (today's ink look), PIXEL (stepped soft light, surface clumps, warm haze, no ink) or
-	# RETRO (90s anime cel: coloured lines, flat fills, video softness). RETRO is the default
-	# while it is being judged. See docs/specs/pixel-look.md and docs/specs/retro-look.md.
-	[&"look", "LOOK", "graphics", ["cel", "pixel", "retro"], 2],
+	# RETRO (90s anime cel: coloured lines, flat fills, video softness), the default, or COMPOSITE
+	# (RETRO with the cutscene depth composite and grade). CEL and PIXEL left the row 2026-11-04;
+	# their code stays. See docs/specs/live-composite.md and docs/specs/retro-look.md.
+	[&"look", "LOOK", "graphics", ["retro", "composite"], 0],
 	# SMOOTH, or ANIME: characters' poses held and refreshed 12 times a second while the game stays
 	# smooth. SMOOTH by default; U flips it in play. See docs/specs/anime-animation.md.
 	[&"anime_animation", "ANIMATION", "graphics", ["smooth", "anime"], 0],
@@ -127,6 +127,11 @@ static func defaults() -> Dictionary:
 ## its list, and a wrong `version` each produce a complete, playable set of
 ## defaults. A config that half-loads must still give a game that is
 ## configured correctly rather than one that looks fine and is not.
+## Rows that left the menu with CEL and PIXEL (docs/specs/live-composite.md). Their code stays, so
+## they stay in DEFS, but a save can no longer reach them: they always load as their default.
+const HIDDEN_KEYS: Array[StringName] = [&"pixel_size", &"pixel_look_size", &"colour_depth",
+	&"painted_shading", &"cel_scatter"]
+
 static func sanitise(raw: Dictionary) -> Dictionary:
 	if raw.get("version") != CONFIG_VERSION:
 		return defaults()
@@ -139,6 +144,8 @@ static func sanitise(raw: Dictionary) -> Dictionary:
 		# EXCLUSIVE was renamed FULLSCREEN, not removed: an old save keeps the mode it picked.
 		if key == &"window_mode" and value == "exclusive":
 			value = "fullscreen"
+		if HIDDEN_KEYS.has(key):
+			value = values[default_index]
 		out[key] = value if values.has(value) else values[default_index]
 	return out
 
@@ -225,6 +232,10 @@ static func pixel_supersample(look_value: String) -> int:
 const PIXEL_LOOK_SUPERSAMPLE := 2
 const PIXEL_LOOK_LEVELS := 24
 
+## Whether LOOK runs RetroLook: COMPOSITE is RETRO with the composite on top.
+static func is_retro(look_value: String) -> bool:
+	return look_value == "retro" or look_value == "composite"
+
 static func keys() -> Array:
 	var out: Array = []
 	for row: Array in DEFS:
@@ -256,7 +267,7 @@ var pixel_look_size: int:
 var colour_depth: int:
 	get: return _values.get(&"colour_depth", 0)
 var look: String:
-	get: return _values.get(&"look", "cel")
+	get: return _values.get(&"look", "retro")
 var anime_animation: bool:
 	get: return _values.get(&"anime_animation", "smooth") == "anime"
 var painted_shading: bool:
@@ -409,12 +420,13 @@ func _apply(key: StringName, value: Variant) -> void:
 				var retro_look := get_tree().get_first_node_in_group(&"retro_look")
 				if pixel_look and value != "pixel":
 					pixel_look.apply_look(false)
-				if retro_look and value != "retro":
+				if retro_look and not is_retro(value):
 					retro_look.apply_look(false)
 				if pixel_look and value == "pixel":
 					pixel_look.apply_look(true)
-				if retro_look and value == "retro":
+				if retro_look and is_retro(value):
 					retro_look.apply_look(true)
+					retro_look.apply_composite(value == "composite")
 		&"mouse_sensitivity", &"controller_sensitivity", &"fov", &"camera_motion", &"hologram_menu", &"movement_effects", &"anime_animation":
 			# No global to push to, because every consumer reads these off this
 			# autoload at the point of use rather than caching them: both

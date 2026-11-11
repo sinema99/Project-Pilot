@@ -172,7 +172,7 @@ func test_exit_vehicle_places_faces_and_aims_him() -> void:
 		"the MESH child faces the given yaw - the body's own yaw is never written")
 	approx(wrapf(p.camera_pivot.rotation.y - (1.2 + PI), -PI, PI), 0.0, 0.001,
 		"camera_pivot sits half a turn round: behind him, looking at the machine")
-	approx(p.camera_pivot.rotation.x, PilotScript.EXIT_PITCH, 0.001, "and at the fixed exit pitch")
+	approx(p.camera_pivot.rotation.x, deg_to_rad(p.camera_neutral_pitch), 0.001, "and at the neutral (resting) pitch")
 	check(p.camera_3d.current, "his camera takes the picture; mech.gd then pans the view into it")
 
 func test_exit_vehicle_lands_him_level() -> void:

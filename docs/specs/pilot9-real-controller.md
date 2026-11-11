@@ -136,7 +136,7 @@ rather than rebuilding it.
 ### Input map additions
 
 `forward` W · `backward` S · `left` A · `right` D · `jump` Space · `sprint` Shift ·
-`walk` Alt · `camera_mode_switch` V · `look_up/down/left/right` right stick.
+`walk` Caps Lock (Alt until 2026-11-10; Alt is free-look now, see pilot9-dayz-camera.md) · `camera_mode_switch` V · `look_up/down/left/right` right stick.
 
 Stock RC holds `sprint`; pilot9 made it a **toggle** (press to start running, press again or
 press `walk` to stop) on 2026-09-06 - see `docs/specs/pilot9-jump-slide.md`. The binding is

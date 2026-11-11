@@ -643,7 +643,7 @@ enum CameraMode {
 @export_range(0.0, 1.0, 0.01) var wall_jump_coyote_time: float = 0.15
 ## Camera roll toward the wall, degrees, eased at camera_transition_speed. See "The camera"
 ## in the spec.
-@export_range(0.0, 45.0, 0.5) var wall_run_camera_roll: float = 12.0
+@export_range(0.0, 45.0, 0.5) var wall_run_camera_roll: float = 0.0
 ## The mesh's lean off the wall, degrees: feet toward the face, head out into open air, eased
 ## at slope_align_speed. See "Sprint cycle on the wall" in the spec.
 @export_range(0.0, 60.0, 0.5) var wall_run_lean: float = 30.0
@@ -854,6 +854,9 @@ var rim_light_suppressed := false:
 ## number is a starting dial. See docs/specs/pilot9-movement-vfx.md.
 
 @export_group("Movement Effects")
+## A scene can veto MOVEMENT EFFECTS (and the dash afterimages) whatever the setting says.
+## Jetpack does: it shows only its own look. See docs/specs/jetpack-look.md.
+@export var movement_effects_allowed: bool = true
 @export var vfx_spark_color: Color = Color(1.0, 0.6, 0.18)
 ## Sparks per second at the rail-sprint gear. Fixed when the pilot is built.
 @export_range(1.0, 400.0, 1.0) var vfx_spark_rate: float = 90.0
@@ -960,6 +963,20 @@ var rim_light_suppressed := false:
 ## Furthest the camera may look DOWN, radians. Deeper than up because a platformer looks at
 ## its feet more than at the sky.
 @export_range(0.0, 1.57, 0.01) var tilt_down_limit: float = deg_to_rad(60)
+## The orbit pitch the camera rests at, degrees - negative looks down from above his head. It is
+## where the pivot starts (and where exit_vehicle() puts it), so with the mouse untouched the
+## DayZ screenshot frame IS the view. tilt_up_limit / tilt_down_limit stay measured from the
+## horizon, not from this. See docs/specs/pilot9-dayz-camera.md.
+@export_range(-45.0, 45.0, 0.5) var camera_neutral_pitch: float = -15.0
+## Seconds the camera takes to ease back behind his frozen heading when free-look (Alt / R3) is
+## let go. See docs/specs/pilot9-dayz-camera.md, Free-look.
+@export_range(0.05, 1.0, 0.01) var free_look_return_time: float = 0.25
+## Settle time, seconds, of the light horizontal trail on the pivot: a critically damped spring
+## on its XZ only, so the shot weighs a little behind him while Y stays welded. 0.0 welds XZ too.
+@export_range(0.0, 0.5, 0.01) var camera_trail_time: float = 0.1
+## A jump in his position bigger than this (a teleport, a respawn, a pilot switch) snaps the
+## trail instead of sweeping the camera across the map.
+@export_range(0.5, 20.0, 0.5) var camera_trail_snap_distance: float = 4.0
 ## The stick's response curve exponent: the stick's deflection (past the action's own 0.2
 ## deadzone) is raised to this, so small pushes turn slowly and a full push turns fast. 1.0 is
 ## linear. Mouse look is never curved.
@@ -990,7 +1007,7 @@ var rim_light_suppressed := false:
 		if is_node_ready():
 			_update_camera_mode()
 ## Camera distance (SpringArm length) for third-person mode.
-@export_range(0.0, 10.0, 0.1) var camera_distance: float = 2.5
+@export_range(0.0, 10.0, 0.1) var camera_distance: float = 1.7
 ## Closest the scroll wheel can pull the camera in, metres. Kept above 30% of
 ## camera_distance (0.75 m), the line under which his body hides for first person.
 ## See docs/specs/pilot9-camera-zoom.md.
@@ -1018,14 +1035,14 @@ var rim_light_suppressed := false:
 ## Degrees added to the camera's FOV while he is sprinting. Rides on top of the player's own
 ## FOV setting rather than replacing it - see `base_fov`. 0.0 is the off switch, and the whole
 ## feature costs one lerp a frame when it is off.
-@export_range(0.0, 40.0, 0.5) var sprint_fov_boost: float = 10.0
+@export_range(0.0, 40.0, 0.5) var sprint_fov_boost: float = 0.0
 ## Speed at which the FOV eases between the base and the sprint boost. Deliberately the same
 ## dial and the same shipping value as camera_transition_speed above, so the lens and the
 ## spring arm move at a rate the player reads as one camera rather than two.
 @export_range(1.0, 20.0, 0.1) var fov_transition_speed: float = 8.0
 ## Degrees the dash kicks the lens open, on top of whatever the sprint boost is doing. Ground
 ## and air alike. 0.0 is the off switch. See docs/specs/pilot9-dash-fov.md.
-@export_range(0.0, 30.0, 0.5) var dash_fov_boost: float = 10.0
+@export_range(0.0, 30.0, 0.5) var dash_fov_boost: float = 0.0
 ## Seconds from the launch to the full kick. Short on purpose: the dash itself is only
 ## `dash_time` long, and a slower open would still be opening when he reappears.
 @export_range(0.0, 0.5, 0.01) var dash_fov_rise_time: float = 0.12
@@ -1066,17 +1083,20 @@ var rim_light_suppressed := false:
 ## past `dash_time`, in which case the shot is still visibly gliding onto him for a beat after
 ## he has already reappeared - see _camera_dash_lag_position().
 @export_range(0.05, 1.5, 0.01) var camera_dash_lag_time: float = 0.3
+## The dash's camera lag on/off. Off since the DayZ camera (2026-11-10): the pivot's horizontal
+## trail does that job for every move now. See docs/specs/pilot9-dayz-camera.md, Effects.
+@export var camera_dash_lag: bool = false
 ## How far the third-person camera sits to one side of him, metres, at full zoom-out from first
 ## person. See docs/specs/pilot9-camera-shoulder.md.
-@export_range(0.0, 2.0, 0.05) var camera_shoulder_offset: float = 0.8
+@export_range(0.0, 2.0, 0.05) var camera_shoulder_offset: float = 0.25
 ## Metres the pivot is raised above the old chest-height anchor, so the camera orbits his head
 ## the way GTA's does. Fades out into first person with the zoom lift. See
 ## docs/specs/pilot9-gta-camera.md.
-@export_range(0.0, 1.0, 0.05) var camera_pivot_raise: float = 0.4
+@export_range(0.0, 1.0, 0.05) var camera_pivot_raise: float = 0.3
 ## Metres the camera pulls back while he sprints or dashes.
-@export_range(0.0, 1.0, 0.05) var camera_sprint_pullback: float = 0.3
+@export_range(0.0, 1.0, 0.05) var camera_sprint_pullback: float = 0.0
 ## Metres the pivot drops while he crouches or slides.
-@export_range(0.0, 1.0, 0.05) var camera_crouch_drop: float = 0.4
+@export_range(0.0, 1.0, 0.05) var camera_crouch_drop: float = 0.0
 ## Seconds for either of those to ease fully in or out - never cut.
 @export_range(0.05, 1.0, 0.01) var camera_state_ease_time: float = 0.3
 ## Seconds for the camera to slide across on a swap, and on the wall-run's own side change.
@@ -1087,11 +1107,11 @@ var rim_light_suppressed := false:
 ## screen switches the whole group off.
 ##
 ## Vertical bob at a full sprint, metres - one dip per footfall.
-@export_range(0.0, 0.1, 0.001) var camera_sway_vertical: float = 0.0075
+@export_range(0.0, 0.1, 0.001) var camera_sway_vertical: float = 0.0
 ## Side-to-side at a full sprint, metres - one swing per stride, half the bob's rate.
-@export_range(0.0, 0.1, 0.001) var camera_sway_lateral: float = 0.005
+@export_range(0.0, 0.1, 0.001) var camera_sway_lateral: float = 0.0
 ## Roll at a full sprint, degrees, in phase with the lateral swing. Added to the wall-run roll.
-@export_range(0.0, 5.0, 0.05) var camera_sway_roll: float = 0.2
+@export_range(0.0, 5.0, 0.05) var camera_sway_roll: float = 0.0
 ## The sway at a run (`speed`), as a fraction of the sprint's.
 @export_range(0.0, 1.0, 0.05) var camera_sway_run_fraction: float = 0.4
 ## Seconds for the sway to fade fully in or out - never cut.
@@ -1099,9 +1119,9 @@ var rim_light_suppressed := false:
 ## Downward speed at impact under which a landing gets no dip at all, m/s.
 @export_range(0.0, 20.0, 0.5) var landing_dip_min_speed: float = 5.0
 ## Dip depth at a full jump's landing speed, metres.
-@export_range(0.0, 0.6, 0.005) var landing_dip_full_jump: float = 0.15
+@export_range(0.0, 0.6, 0.005) var landing_dip_full_jump: float = 0.0
 ## Dip depth at `max_fall_speed` and above, metres.
-@export_range(0.0, 0.6, 0.005) var landing_dip_max: float = 0.3
+@export_range(0.0, 0.6, 0.005) var landing_dip_max: float = 0.0
 ## Seconds from touchdown to the bottom of the dip. Sets the spring's stiffness; the settle
 ## back is critically damped, so it never rebounds above rest.
 @export_range(0.02, 0.5, 0.01) var landing_dip_time: float = 0.1
@@ -1142,11 +1162,9 @@ const SLOPE_ALIGN_DEADZONE := deg_to_rad(3.0)
 ## no way to see why. 0.1 is far under a crouch's 1.6 and above that residue.
 const SPRINT_STOP_SPEED := 0.1
 
-## The camera pitch exit_vehicle() lands on - level, and the same value and intent as
-## player.gd's EXIT_PITCH. He is put down at EXIA's ExitPoint looking at the machine he just
-## climbed out of, and a fixed pitch keeps that framing the same however the mech's own
-## camera was left. See docs/specs/pilot9-mech-mount.md and docs/specs/mech-camera-handover.md.
-const EXIT_PITCH := 0.0
+## exit_vehicle() lands the pitch on camera_neutral_pitch - the resting frame - so the
+## framing is the same however the mech's own camera was left. (It was a level EXIT_PITCH const
+## before the DayZ camera.) See docs/specs/pilot9-mech-mount.md and mech-camera-handover.md.
 
 ## How far past the wall face the down ray is cast, so it lands on the platform rather than
 ## on the edge itself - a ray aimed exactly at an edge is a coin toss.
@@ -1588,7 +1606,7 @@ const CAMERA_FRAME_HEIGHT := 1.0
 const SWAY_RUN_STRIDE := 0.600
 const SWAY_SPRINT_STRIDE := 0.533
 
-var target_camera_distance: float = 2.5
+var target_camera_distance: float = 1.7
 ## The wall-run roll's own ease, radians. camera_3d.rotation.z is this plus the sway's roll,
 ## so the ease never starts from a value the sway has moved.
 var _camera_wall_roll: float = 0.0
@@ -1598,7 +1616,7 @@ var _shoulder_side: float = 1.0
 ## The arm origin's eased sideways position, metres, signed (+ = camera's right).
 var _shoulder_pos: float = 0.0
 ## How far the world lets the offset go on its current side, damped like the arm length.
-var _shoulder_limit: float = 0.8
+var _shoulder_limit: float = 0.25
 var _shoulder_probe: PhysicsShapeQueryParameters3D = null
 ## The sway's stride clock, radians of lateral phase. Runs through the air.
 var _sway_phase: float = 0.0
@@ -1654,7 +1672,7 @@ var is_transitioning_camera: bool = false
 ## now because walls write the real spring_length, and the character mesh's visibility reads
 ## THIS one: keying visibility off the wall-aware length would blink his body out every time
 ## a wall squeezed the camera in, which is a new glitch traded for an old one.
-var _camera_mode_length: float = 2.5
+var _camera_mode_length: float = 1.7
 ## The probe cast every frame by _camera_obstruction_length(), built once in
 ## _setup_camera_collision() rather than per frame - it is the same query with a new origin.
 var _camera_probe: PhysicsShapeQueryParameters3D = null
@@ -1780,7 +1798,15 @@ static func wall_jump_chain_ceiling(height: float, decay: float) -> float:
 	return height / (1.0 - decay)
 
 
+## Physics layer 10, `stop_only`: walls that only stop the body - the boss arena's invisible edge
+## (docs/specs/boss-arena.md). The body collides with them; every movement probe (wall-run, wall
+## climb, mantle, vault) and the camera's spring arm ignore them.
+const STOP_ONLY_LAYER := 1 << 9
+## What the movement probes see: everything but the stop-only walls.
+const PROBE_MASK := 0xFFFFFFFF & ~STOP_ONLY_LAYER
+
 func _ready() -> void:
+	collision_mask |= STOP_ONLY_LAYER
 	# Set here rather than on the scene so it cannot be lost to a rebuild of pilot9.tscn, and
 	# so the reason for it sits next to the number. See FLOOR_SNAP_LENGTH.
 	floor_snap_length = FLOOR_SNAP_LENGTH
@@ -1792,6 +1818,7 @@ func _ready() -> void:
 	_camera_mode_length = target_camera_distance
 	spring_arm.spring_length = target_camera_distance
 	_setup_camera_collision()
+	camera_pivot.rotation.x = deg_to_rad(camera_neutral_pitch)
 	_setup_afterimage()
 	_setup_vfx()
 	_sprint_fov = camera_3d.fov
@@ -1867,6 +1894,8 @@ func _physics_process(delta: float) -> void:
 	# frames a mantle or a freeze bails out on are exactly the frames the FOV has to be
 	# easing back on.
 	_handle_camera_fov(delta)
+	# Ahead of everything that reads the move basis - see _move_yaw().
+	_handle_free_look(delta)
 	# Last frame's touchdown, now that the bounce pad has had its chance to launch him - see
 	# "What counts as a landing" in docs/specs/pilot9-camera-sway.md.
 	_resolve_landing_dip()
@@ -2935,7 +2964,7 @@ func _handle_movement_input() -> void:
 ## Lifted out of _handle_movement_input so the slide can ask the same question on the frame
 ## it starts, before that function has run - see _handle_crouch_and_slide().
 func _travel_direction(dir: Vector2) -> Vector3:
-	var camera_basis := Transform3D(Basis(Vector3.UP, camera_pivot.rotation.y), Vector3.ZERO).basis
+	var camera_basis := Transform3D(Basis(Vector3.UP, _move_yaw()), Vector3.ZERO).basis
 	return (camera_basis * Vector3(dir.x, 0, dir.y)).normalized()
 
 ## Rotates the character mesh smoothly toward the direction it should face.
@@ -3010,13 +3039,13 @@ func _handle_character_rotation(delta: float) -> void:
 		return
 	else:
 		target = atan2(direction.x, direction.z) if face_travel_direction \
-			else camera_pivot.rotation.y + PI
+			else _move_yaw() + PI
 	var turn := rotation_speed * (tredge_turn_scale if is_tredging else 1.0)
 	character.rotation.y = lerp_angle(character.rotation.y, target, turn * delta)
 
 ## Handles controller stick input for camera rotation.
 func _handle_controller_camera(delta: float) -> void:
-	if not controller_support or frozen:
+	if not controller_support or frozen or _free_look_returning():
 		return
 	if not InputMap.has_action("look_left") or not InputMap.has_action("look_right") or not InputMap.has_action("look_up") or not InputMap.has_action("look_down"):
 		return
@@ -3030,8 +3059,7 @@ func _handle_controller_camera(delta: float) -> void:
 		* _look_ramp_factor(_look_ramp_t, raw.length(), look_stick_ramp_start)
 	var sensitivity := controller_sensitivity * Settings.controller_sensitivity
 	camera_pivot.rotation.y -= look_dir.x * sensitivity * delta
-	camera_pivot.rotation.x = _clamp_pitch(camera_pivot.rotation.x - look_dir.y * sensitivity * delta,
-		tilt_up_limit, tilt_down_limit)
+	camera_pivot.rotation.x = _clamp_look_pitch(camera_pivot.rotation.x - look_dir.y * sensitivity * delta)
 
 ## The stick's response curve: the direction kept, the deflection raised to `exponent`. Static and
 ## pure. Zero stays zero; a full push stays a full push.
@@ -3060,6 +3088,112 @@ static func _look_ramp_factor(t: float, magnitude: float, start: float) -> float
 static func _clamp_pitch(pitch: float, up_limit: float, down_limit: float) -> float:
 	return clampf(pitch, -down_limit, up_limit)
 
+## The orbit (pivot) pitch clamped so the WORLD pitch the view looks along - the orbit plus the
+## zoom framing's lens tilt - stays inside tilt_up_limit / tilt_down_limit from the horizon.
+## The neutral pitch lives in the orbit, so it never shifts the limits. See "Pitch limits" in
+## docs/specs/pilot9-dayz-camera.md.
+func _clamp_look_pitch(pitch: float) -> float:
+	return _clamp_world_pitch(pitch, _lens_pitch, tilt_up_limit, tilt_down_limit)
+
+## Static half of the above: clamps `orbit` so orbit + lens sits in [-down, up].
+static func _clamp_world_pitch(orbit: float, lens: float, up_limit: float, down_limit: float) -> float:
+	return _clamp_pitch(orbit, up_limit - lens, down_limit + lens)
+
+## -- free-look (DayZ) -------------------------------------------------------
+##
+## Hold `free_look` (Alt / R3): his travel heading freezes at the press and the camera orbits
+## freely, all the way round, without steering the run. On release the view eases back to where
+## it was at the press over free_look_return_time, and only then is movement camera-relative
+## again. Free-look wins over the rail swing and the wall-run yaw limit while it is held. See
+## docs/specs/pilot9-dayz-camera.md, Free-look.
+
+## The lens tilt the zoom framing last wrote, radians - _clamp_look_pitch() needs it.
+var _lens_pitch: float = 0.0
+## Held this frame.
+var _free_look_held: bool = false
+## Camera yaw / pitch at the press - the frozen heading, and where the release returns to.
+var _free_look_yaw: float = 0.0
+var _free_look_pitch: float = 0.0
+## Seconds into the return ease; < 0 when no return is running.
+var _free_look_return_t: float = -1.0
+var _free_look_from_yaw: float = 0.0
+var _free_look_from_pitch: float = 0.0
+
+## Free-look held, or its return still easing: the move basis is frozen either way.
+func _free_look_active() -> bool:
+	return _free_look_held or _free_look_returning()
+
+func _free_look_returning() -> bool:
+	return _free_look_return_t >= 0.0
+
+## The yaw movement is built from: the camera's, except while free-look has it frozen.
+func _move_yaw() -> float:
+	return _free_look_yaw if _free_look_active() else camera_pivot.rotation.y
+
+func _handle_free_look(delta: float) -> void:
+	var held := not frozen and InputMap.has_action("free_look") 		and Input.is_action_pressed("free_look")
+	_step_free_look(held, delta)
+
+## One step of the free-look state, with the press read by the caller so tests can drive it.
+func _step_free_look(held: bool, delta: float) -> void:
+	if frozen:
+		_cancel_free_look()
+		return
+	if held and not _free_look_held:
+		if not _free_look_returning():
+			_free_look_yaw = camera_pivot.rotation.y
+			_free_look_pitch = camera_pivot.rotation.x
+		# Re-pressed mid-return: keep the heading that was already frozen.
+		_free_look_return_t = -1.0
+	elif not held and _free_look_held:
+		_free_look_return_t = 0.0
+		_free_look_from_yaw = camera_pivot.rotation.y
+		_free_look_from_pitch = camera_pivot.rotation.x
+	_free_look_held = held
+	if not _free_look_returning():
+		return
+	_free_look_return_t += delta
+	var k := _free_look_return_weight(_free_look_return_t, free_look_return_time)
+	camera_pivot.rotation.y = lerp_angle(_free_look_from_yaw, _free_look_yaw, k)
+	camera_pivot.rotation.x = lerpf(_free_look_from_pitch, _free_look_pitch, k)
+	if k >= 1.0:
+		camera_pivot.rotation.y = _free_look_yaw
+		_free_look_return_t = -1.0
+
+## 0..1 along the return: smoothstep in time, 1.0 at and past `return_time`. Static and pure.
+static func _free_look_return_weight(t: float, return_time: float) -> float:
+	if return_time <= 0.0:
+		return 1.0
+	return smoothstep(0.0, 1.0, clampf(t / return_time, 0.0, 1.0))
+
+## Drops free-look on the spot, view left where it is.
+func _cancel_free_look() -> void:
+	_free_look_held = false
+	_free_look_return_t = -1.0
+
+## -- the horizontal trail ---------------------------------------------------
+
+## The trail's eased pivot XZ and its velocity. Y is never trailed.
+var _trail_pos: Vector3 = Vector3.ZERO
+var _trail_vel: Vector3 = Vector3.ZERO
+## Set to snap the trail onto its target next frame (first frame, exits, teleports).
+var _trail_snap: bool = true
+
+## Where the pivot goes this frame: `target` with its X and Z eased by a critically damped
+## spring settling in camera_trail_time (no overshoot), Y welded so jumps and landings stay
+## crisp. The spring arm casts from the pivot, so the collision always sees the trailed origin.
+func _trail_pivot(target: Vector3, delta: float) -> Vector3:
+	if _trail_snap or camera_trail_time <= 0.0 			or Vector2(target.x - _trail_pos.x, target.z - _trail_pos.z).length() > camera_trail_snap_distance:
+		_trail_snap = false
+		_trail_pos = target
+		_trail_vel = Vector3.ZERO
+		return target
+	var x := _camera_state_spring(_trail_pos.x, _trail_vel.x, target.x, delta, camera_trail_time)
+	var z := _camera_state_spring(_trail_pos.z, _trail_vel.z, target.z, delta, camera_trail_time)
+	_trail_pos = Vector3(x.x, target.y, z.x)
+	_trail_vel = Vector3(x.y, 0.0, z.y)
+	return _trail_pos
+
 ## The rail's swing-behind: once look input has been idle for rail_camera_idle_delay, the
 ## camera YAW eases toward the ride direction at up to rail_camera_swing_rate. Any look input -
 ## this stick, or the mouse in _unhandled_input() - zeroes the idle clock and cancels it at once.
@@ -3067,7 +3201,7 @@ static func _clamp_pitch(pitch: float, up_limit: float, down_limit: float) -> fl
 ## only - no other state gets this. See docs/specs/pilot9-rail-grind.md, "The camera".
 func _handle_rail_camera(delta: float) -> void:
 	_rail_camera_idle += delta
-	if not is_rail_grinding or frozen or camera_mode != CameraMode.THIRD_PERSON:
+	if not is_rail_grinding or frozen or camera_mode != CameraMode.THIRD_PERSON 			or _free_look_active():
 		return
 	if _rail_camera_idle < rail_camera_idle_delay:
 		return
@@ -3310,9 +3444,10 @@ func _handle_camera_transition(delta: float) -> void:
 	var camera_roll_target := 0.0
 	if is_wall_running:
 		# Already past parallel at attach: ease back to the limit instead of snapping.
-		camera_pivot.rotation.y = rotate_toward(camera_pivot.rotation.y,
-			_clamp_yaw_off_wall(camera_pivot.rotation.y, _wall_normal),
-			deg_to_rad(360.0) * delta)
+		if not _free_look_active():
+			camera_pivot.rotation.y = rotate_toward(camera_pivot.rotation.y,
+				_clamp_yaw_off_wall(camera_pivot.rotation.y, _wall_normal),
+				deg_to_rad(360.0) * delta)
 		camera_roll_target = _wall_run_roll_angles(
 			camera_pivot.rotation.y, _wall_normal, wall_run_camera_roll).y
 	_camera_wall_roll = lerp_angle(_camera_wall_roll, camera_roll_target,
@@ -3321,9 +3456,15 @@ func _handle_camera_transition(delta: float) -> void:
 
 	# Zoom framing. Read off the live arm length, which is already eased and already knows
 	# about walls, so the tilt needs no smoothing of its own.
-	camera_3d.rotation.x = _camera_zoom_tilt(spring_arm.spring_length, camera_zoom_min,
+	_lens_pitch = _camera_zoom_tilt(spring_arm.spring_length, camera_zoom_min,
 		camera_zoom_max, camera_zoom_out_screen_height,
 		CAMERA_PIVOT_OFFSET.y + _camera_zoom_lift() - CAMERA_FRAME_HEIGHT, deg_to_rad(base_fov))
+	camera_3d.rotation.x = _lens_pitch
+	# The pitch limits are on the WORLD pitch, so a zoom that tilts the lens moves the orbit's
+	# allowance with it. Re-clamped here too, not only on look input, so zooming out at the limit
+	# cannot carry the view past it.
+	if not _free_look_returning():
+		camera_pivot.rotation.x = _clamp_look_pitch(camera_pivot.rotation.x)
 
 ## How far the pivot rises for the current zoom: camera_zoom_in_lift at camera_zoom_min,
 ## camera_zoom_out_lift at camera_zoom_max, linear between. Below zoom_min - only ever the ease
@@ -3930,6 +4071,7 @@ func _probe_ledge(facing: Vector3, reach: float = -1.0) -> Dictionary:
 	var forward_q := PhysicsRayQueryParameters3D.create(eye,
 		eye + facing * (climb_probe_reach if reach < 0.0 else reach))
 	forward_q.exclude = [self_rid]
+	forward_q.collision_mask = PROBE_MASK
 	var forward := space.intersect_ray(forward_q)
 	if forward.is_empty():
 		return {}
@@ -3942,6 +4084,7 @@ func _probe_ledge(facing: Vector3, reach: float = -1.0) -> Dictionary:
 	var span := (climb_band_max - climb_band_min) + 2.0 * CLIMB_PROBE_MARGIN
 	var down_q := PhysicsRayQueryParameters3D.create(top, top + Vector3.DOWN * span)
 	down_q.exclude = [self_rid]
+	down_q.collision_mask = PROBE_MASK
 	var down := space.intersect_ray(down_q)
 	if down.is_empty():
 		return {}
@@ -3953,6 +4096,7 @@ func _probe_ledge(facing: Vector3, reach: float = -1.0) -> Dictionary:
 	var head_q := PhysicsRayQueryParameters3D.create(
 		landing + Vector3.UP * CLIMB_PROBE_MARGIN, landing + Vector3.UP * climb_headroom)
 	head_q.exclude = [self_rid]
+	head_q.collision_mask = PROBE_MASK
 	var headroom := space.intersect_ray(head_q)
 
 	return _evaluate_ledge(feet.y, forward, down, headroom)
@@ -3986,7 +4130,7 @@ func _try_start_climb() -> bool:
 	# probe would fire at a fixed world heading. Aim it where the camera looks instead, the
 	# way every other first-person heading in this controller is taken.
 	var facing := _facing() if camera_mode == CameraMode.THIRD_PERSON \
-		else -Vector3(sin(camera_pivot.rotation.y), 0.0, cos(camera_pivot.rotation.y))
+		else -Vector3(sin(_move_yaw()), 0.0, cos(_move_yaw()))
 	return _try_start_climb_along(facing)
 
 ## The mantle out of a wall-run - rows 2, 3 and 6 of the spec's table. The ahead ray follows
@@ -4334,6 +4478,7 @@ func _vault_ray(space: PhysicsDirectSpaceState3D, from: Vector3, to: Vector3,
 		exclude: Array) -> Dictionary:
 	var q := PhysicsRayQueryParameters3D.create(from, to)
 	q.exclude = exclude
+	q.collision_mask = PROBE_MASK
 	return space.intersect_ray(q)
 
 ## A shape overlap test against the static world at `feet` (his origin). A capsule of his own
@@ -4347,6 +4492,7 @@ func _vault_clear(feet: Vector3, height: float) -> bool:
 	q.shape = cap
 	q.transform = Transform3D(Basis.IDENTITY, feet + Vector3.UP * cap.height * 0.5)
 	q.exclude = [get_rid()]
+	q.collision_mask = PROBE_MASK
 	q.collide_with_areas = false
 	return space.intersect_shape(q, 1).is_empty()
 
@@ -4358,7 +4504,7 @@ func _try_start_vault() -> bool:
 			or vault_clip_speed <= 0.0 or vault_travel <= 0.0:
 		return false
 	var facing := _facing() if camera_mode == CameraMode.THIRD_PERSON \
-		else -Vector3(sin(camera_pivot.rotation.y), 0.0, cos(camera_pivot.rotation.y))
+		else -Vector3(sin(_move_yaw()), 0.0, cos(_move_yaw()))
 	var m := _probe_vault(facing)
 	if m.is_empty() or not _qualifies_as_vault(m["reach"], m["height"], m["angle"], m["depth"],
 			m["top_slope"], m["landing_rise"]):
@@ -4661,7 +4807,7 @@ func _start_dash(heading: Vector3) -> void:
 	# position IS this frame's weld target already (nothing else has touched it), so capturing
 	# it here as the lerp's start is a no-op position-wise - the lag begins from exactly where
 	# the hard weld left off, with no jump.
-	_camera_dash_lag_active = true
+	_camera_dash_lag_active = camera_dash_lag
 	_camera_dash_lag_start = camera_pivot.global_position
 	_camera_dash_lag_elapsed = 0.0
 
@@ -4776,6 +4922,7 @@ func _probe_wall(travel_dir: Vector3) -> Dictionary:
 	for side in [t.rotated(Vector3.UP, -PI / 2.0), t.rotated(Vector3.UP, PI / 2.0)]:
 		var query := PhysicsRayQueryParameters3D.create(origin, origin + side * wall_run_probe_reach)
 		query.exclude = [self_rid]
+		query.collision_mask = PROBE_MASK
 		var hit := space.intersect_ray(query)
 		if not hit.is_empty():
 			return hit
@@ -4795,6 +4942,7 @@ func _probe_wall_ahead(travel_dir: Vector3) -> Dictionary:
 	var t := travel_dir.normalized()
 	var query := PhysicsRayQueryParameters3D.create(origin, origin + t * wall_run_probe_reach)
 	query.exclude = [get_rid()]
+	query.collision_mask = PROBE_MASK
 	return space.intersect_ray(query)
 
 ## The sustain ray: one ray straight at the face he is running on (along -_wall_normal, kept
@@ -4812,6 +4960,7 @@ func _probe_wall_side(height: float) -> Dictionary:
 	var query := PhysicsRayQueryParameters3D.create(origin,
 		origin + into.normalized() * wall_run_probe_reach)
 	query.exclude = [get_rid()]
+	query.collision_mask = PROBE_MASK
 	var hit := space.intersect_ray(query)
 	if not hit.is_empty():
 		hit["origin"] = origin
@@ -4895,7 +5044,7 @@ static func _wall_run_head_on_gates(on_floor: bool, horizontal_speed: float, wal
 ## Looking right along the wall starts the run to the right, and looking left starts it left.
 ## Returns Vector3.ZERO if the camera is also looking dead into the wall - no redirect to give.
 func _camera_wall_run_tangent(wall_normal: Vector3) -> Vector3:
-	var forward := -Vector3(sin(camera_pivot.rotation.y), 0.0, cos(camera_pivot.rotation.y))
+	var forward := -Vector3(sin(_move_yaw()), 0.0, cos(_move_yaw()))
 	var n := wall_normal.normalized()
 	var tangent := forward - n * forward.dot(n)
 	return tangent.normalized() if tangent.length() > 0.0001 else Vector3.ZERO
@@ -5388,6 +5537,7 @@ func _probe_wall_climb_face() -> Dictionary:
 	var query := PhysicsRayQueryParameters3D.create(origin,
 		origin + into.normalized() * wall_run_probe_reach)
 	query.exclude = [get_rid()]
+	query.collision_mask = PROBE_MASK
 	var hit := space.intersect_ray(query)
 	if not hit.is_empty():
 		hit["origin"] = origin
@@ -5735,7 +5885,7 @@ func _handle_rail_grind(delta: float) -> void:
 func _try_catch_rail() -> bool:
 	var path := _rail_sweep_points(_rail_sweep_from, global_position, _rail_sweep_valid)
 	var h_velocity := Vector3(velocity.x, 0.0, velocity.z)
-	var look := -Vector3(sin(camera_pivot.rotation.y), 0.0, cos(camera_pivot.rotation.y))
+	var look := -Vector3(sin(_move_yaw()), 0.0, cos(_move_yaw()))
 	var facing := _facing() if camera_mode == CameraMode.THIRD_PERSON else look
 	var best = null
 	var best_offset := 0.0
@@ -6023,7 +6173,7 @@ func _setup_vfx() -> void:
 
 ## MOVEMENT EFFECTS, and the node to draw them with. Every spawn asks this at the moment.
 func _effects_on() -> bool:
-	return _vfx != null and Settings.movement_effects
+	return _vfx != null and Settings.movement_effects and movement_effects_allowed
 
 ## End of the frame a landing was resolved on - after _handle_crouch_and_slide(), so a slide
 ## the landing started (buffered or auto) is already is_sliding and the dust can trail it.
@@ -6042,7 +6192,7 @@ func _emit_landing_dust() -> void:
 func _update_grind_vfx() -> void:
 	if _vfx == null:
 		return
-	var active := is_rail_grinding and Settings.movement_effects
+	var active := is_rail_grinding and Settings.movement_effects and movement_effects_allowed
 	var backward := -_rail_ride_tangent()
 	_vfx.grind(active, global_position, backward,
 		_rail_gear_weight(_rail_speed, rail_grind_speed, rail_sprint_speed))
@@ -6064,7 +6214,7 @@ static func _rail_gear_weight(rail_speed: float, grind: float, sprint: float) ->
 func _update_movement_vfx(delta: float) -> void:
 	if _vfx == null:
 		return
-	var on := Settings.movement_effects
+	var on := Settings.movement_effects and movement_effects_allowed
 	_vfx_clock += delta
 	_kick_cooldown_left = maxf(_kick_cooldown_left - delta, 0.0)
 	var flat := Vector3(velocity.x, 0.0, velocity.z)
@@ -6267,8 +6417,9 @@ func _process(delta: float) -> void:
 			camera_dash_lag_delay, camera_dash_lag_time)
 		if _camera_dash_lag_elapsed >= camera_dash_lag_delay + camera_dash_lag_time:
 			_camera_dash_lag_active = false
+		_trail_snap = true
 	else:
-		camera_pivot.global_position = target
+		camera_pivot.global_position = _trail_pivot(target, delta)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -6282,10 +6433,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		# authored value, not a replacement for it - the number itself is a
 		# deliberate feel decision. See docs/specs/settings.md, Controls.
 		var sensitivity := mouse_sensitivity * Settings.mouse_sensitivity
-		camera_pivot.rotation.x = _clamp_pitch(camera_pivot.rotation.x - event.relative.y * sensitivity,
-			tilt_up_limit, tilt_down_limit)
+		# The free-look return owns the view for its quarter second.
+		if _free_look_returning():
+			return
+		camera_pivot.rotation.x = _clamp_look_pitch(camera_pivot.rotation.x - event.relative.y * sensitivity)
 		camera_pivot.rotation.y += -event.relative.x * sensitivity
-		if is_wall_running:
+		if is_wall_running and not _free_look_active():
 			camera_pivot.rotation.y = _clamp_yaw_off_wall(camera_pivot.rotation.y, _wall_normal)
 	elif event is InputEventMouseButton and event.pressed 			and camera_mode == CameraMode.THIRD_PERSON:
 		# Wheel zoom. factor is 0 on some devices that do not report it; treat that as a notch.
@@ -6441,6 +6594,9 @@ var hit_feedback: Node = null
 ## Extra lens degrees from a perfect reflect, easing to zero. See kick_fov().
 var _reflect_fov_deg: float = 0.0
 var _reflect_fov_rate: float = 0.0
+## Multiplier on the perfect reflect's lens kick. 0.0 (DayZ camera, 2026-11-10) turns it off;
+## 1.0 is the kick as reflect_spin.gd authors it.
+@export_range(0.0, 2.0, 0.05) var reflect_fov_scale: float = 0.0
 
 func _setup_reflect() -> void:
 	add_to_group(&"reflect_target")
@@ -6467,7 +6623,9 @@ func spark_burst(point: Vector3, dir: Vector3, count: int, burst_speed: float, t
 		_vfx.impact_burst(point, dir, count, burst_speed, tint)
 
 ## Adds `degrees` to the lens and eases it back to nothing over `seconds`. Larger kicks win.
+## Scaled by reflect_fov_scale, 0 since the DayZ camera zeroed the camera effects.
 func kick_fov(degrees: float, seconds: float) -> void:
+	degrees *= reflect_fov_scale
 	if degrees <= _reflect_fov_deg:
 		return
 	_reflect_fov_deg = degrees
@@ -6672,7 +6830,9 @@ func exit_vehicle(exit_position: Vector3, facing_yaw: float) -> void:
 	# mech-camera-handover.md's rule, and the fix for the handback dropping him staring at his
 	# own back. Written straight onto the pivot because the body is unrotated.
 	camera_pivot.rotation.y = facing_yaw + PI
-	camera_pivot.rotation.x = EXIT_PITCH
+	camera_pivot.rotation.x = deg_to_rad(camera_neutral_pitch)
+	_cancel_free_look()
+	_trail_snap = true
 	velocity = Vector3.ZERO
 	# Not a landing, and nothing from before boarding should still be swaying.
 	_reset_camera_motion()

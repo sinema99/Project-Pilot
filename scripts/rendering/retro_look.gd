@@ -20,12 +20,17 @@ extends PixelLook
 # Pass 3 (docs/specs/retro-look-pass-3.md): the palette is CEL's. Same environment (Filmic, full
 # ambient, CEL fog, no grade), same sky colours, neutral shadows, no background tint, CEL's floor.
 #
+# COMPOSITE (docs/specs/live-composite.md) is this look with the cutscene composite on top: a
+# DepthComposite placed on the map's sun every frame, then resources/composite_post.tres instead of
+# the video pass. The Composite exports are the map's values; override them on a map's node.
+#
 # Gameplay only: nothing in a cutscene scene has one of these. Settings switches it; the I key
 # lives on PixelLook.
 
 const OUTLINE_SHADER := preload("res://shaders/cel/outline.gdshader")
 const CREASE_SHADER := preload("res://shaders/cel/crease.gdshader")
 const VIDEO_PASS := preload("res://resources/retro_post.tres")
+const COMPOSITE_PASS := preload("res://resources/composite_post.tres")
 
 @export_group("Ink")
 ## Visible line width in pixels at 1080p, scaled with the resolution (CEL draws 2 px at any size).
@@ -64,7 +69,42 @@ const VIDEO_PASS := preload("res://resources/retro_post.tres")
 ## The painted clouds' underside; their tops keep the CEL sky's cloud colour.
 @export var cloud_shade := Color(0.5, 0.5, 0.5)
 
+@export_group("Composite")
+## The near band: full dark up to the first distance, gone by the second (m).
+@export var composite_near_end := 6.0
+@export var composite_lit_start := 60.0
+## Perceived brightness of the near band (the cutscenes use 0.28).
+@export_range(0.0, 1.0, 0.01) var composite_near_value := 0.6
+## The band's hue, and what it adds to the blacks. A dark map wants both near neutral, or it goes navy.
+@export var composite_dark_tint := Color(0.72, 0.75, 0.92)
+@export var composite_dark_lift := Color(0.011, 0.014, 0.03)
+## HDR brightness and colourfulness that escape the band, so bolts, rails and dash effects stay lit.
+@export var composite_keep := 2.5
+@export var composite_keep_chroma := 0.75
+## Haze: where it starts and is full (m), its colour, how much it replaces at full distance near the
+## sun, and how much of that is left away from it.
+@export var composite_haze_start := 60.0
+@export var composite_haze_end := 500.0
+@export var composite_haze_color := Color(0.8, 0.77, 0.86)
+@export_range(0.0, 1.0, 0.01) var composite_haze_amount := 0.5
+@export_range(0.0, 1.0, 0.01) var composite_haze_floor := 0.25
+## The sun's glow on far pixels, and its size as a fraction of the screen height.
+@export var composite_light_energy := 0.3
+@export var composite_light_radius := 0.15
+## How far past the screen edge the sun has faded out, in screens.
+@export var composite_sun_margin := 0.35
+## The far pixels wrap over the nearer ones: counted from the first distance, full by the second (m).
+@export var composite_wrap_near := 150.0
+@export var composite_wrap_far := 500.0
+@export_range(0.0, 1.0, 0.01) var composite_wrap := 0.25
+
+## Whether the composite is on top of this look.
+var composite := false
 var _cel_compositor: Compositor
+var _video_compositor: Compositor
+var _composite_compositor: Compositor
+var _depth: DepthComposite
+var _sun: DirectionalLight3D
 ## cel material -> its background twin, and its floor twin.
 var _bg_twins: Dictionary = {}
 var _floor_twins: Dictionary = {}
@@ -73,12 +113,18 @@ var _shadows: Array[RetroContactShadow] = []
 
 func _ready() -> void:
 	add_to_group(&"retro_look")
+	# After the cameras, so the glow sits on this frame's view.
+	process_priority = 100
+	set_process(false)
 	var settings := get_node_or_null(^"/root/Settings")
-	if settings and settings.look == "retro":
+	if settings and settings.is_retro(settings.look):
 		apply_look.call_deferred(true)
+		apply_composite.call_deferred(settings.look == "composite")
 
 
 func apply_look(on: bool) -> void:
+	if not on:
+		apply_composite(false)
 	var was := pixel
 	super(on)
 	if pixel != was:
@@ -184,7 +230,8 @@ func ink_chain(pass_mat: Material, fill: ShaderMaterial) -> Material:
 		if value != null:
 			ink.set_shader_parameter(pair[1], value)
 	if sm.shader == OUTLINE_SHADER:
-		ink.set_shader_parameter(&"ink_width", ink_width)
+		# A body can ask for a heavier line (the knight boss's ink_scale meta).
+		ink.set_shader_parameter(&"ink_width", ink_width * float(sm.get_meta(&"ink_scale", 1.0)))
 	ink.next_pass = ink_chain(sm.next_pass, fill)
 	return ink
 
@@ -201,6 +248,93 @@ func _apply_environment(on: bool) -> void:
 		var compositor := Compositor.new()
 		compositor.compositor_effects = [VIDEO_PASS.duplicate()]
 		_env_node.compositor = compositor
+		_video_compositor = compositor
+
+
+# --- composite --------------------------------------------------------------------
+
+## Called by Settings when LOOK changes. Needs this look on: it swaps the look's own compositor.
+func apply_composite(on: bool) -> void:
+	if on == composite or (on and (not pixel or _env_node == null)):
+		return
+	composite = on
+	set_process(on)
+	if on:
+		_sun = find_sun(get_parent())
+		if _composite_compositor == null:
+			_depth = DepthComposite.new()
+			_composite_compositor = Compositor.new()
+			_composite_compositor.compositor_effects = [_depth, COMPOSITE_PASS.duplicate()]
+		configure_depth(_depth, _sun != null)
+		_place_sun()
+		_env_node.compositor = _composite_compositor
+	elif _env_node != null and is_instance_valid(_env_node):
+		_env_node.compositor = _video_compositor
+
+
+## The map's values onto `depth`. With no sun there is no light and nothing bright to wrap.
+func configure_depth(depth: DepthComposite, has_sun: bool) -> void:
+	depth.near_end = composite_near_end
+	depth.lit_start = composite_lit_start
+	depth.near_value = composite_near_value
+	depth.dark_tint = composite_dark_tint
+	depth.dark_lift = composite_dark_lift
+	depth.dark_keep = composite_keep
+	depth.dark_keep_chroma = composite_keep_chroma
+	depth.haze_start = composite_haze_start
+	depth.haze_end = composite_haze_end
+	depth.haze_color = composite_haze_color
+	depth.haze_amount = composite_haze_amount
+	depth.haze_floor = composite_haze_floor
+	depth.light_radius = composite_light_radius
+	depth.light_stretch = 1.0
+	depth.light_energy = 0.0
+	depth.wrap_near = composite_wrap_near
+	depth.wrap_far = composite_wrap_far
+	depth.wrap_strength = composite_wrap if has_sun else 0.0
+
+
+## The first directional light under `node`, or null.
+static func find_sun(node: Node) -> DirectionalLight3D:
+	if node == null:
+		return null
+	if node is DirectionalLight3D:
+		return node
+	for child in node.get_children():
+		var found := find_sun(child)
+		if found:
+			return found
+	return null
+
+
+## A direction as seen through a camera: x, y = screen UV, z = 0-1, full on screen and gone once
+## `margin` screens past the edge or behind the camera. DepthComposite.screen_uv mirrors points
+## behind the camera, which would put the sun in front of you with it at your back.
+static func sun_view(camera_basis: Basis, sun_dir: Vector3, tan_v: float, aspect: float, margin: float) -> Vector3:
+	var local := camera_basis.inverse() * sun_dir
+	if local.z >= -0.01:
+		return Vector3(-10.0, -10.0, 0.0)
+	var depth := -local.z
+	var uv := Vector2(0.5 + 0.5 * local.x / depth / (tan_v * aspect), 0.5 - 0.5 * local.y / depth / tan_v)
+	uv = uv.clamp(Vector2(-10.0, -10.0), Vector2(10.0, 10.0))
+	var past := maxf(maxf(absf(uv.x - 0.5), absf(uv.y - 0.5)) - 0.5, 0.0)
+	return Vector3(uv.x, uv.y, 1.0 - smoothstep(0.0, maxf(margin, 1e-4), past))
+
+
+func _process(_delta: float) -> void:
+	_place_sun()
+
+
+func _place_sun() -> void:
+	var camera := get_viewport().get_camera_3d()
+	if _sun == null or not is_instance_valid(_sun) or camera == null:
+		return
+	var size := get_viewport().get_visible_rect().size
+	var view := sun_view(camera.get_global_transform_interpolated().basis.orthonormalized(),
+			_sun.global_basis.z, tan(deg_to_rad(camera.fov) * 0.5), size.x / maxf(size.y, 1.0),
+			composite_sun_margin)
+	_depth.light_uv = Vector2(view.x, view.y)
+	_depth.light_energy = composite_light_energy * view.z
 
 
 ## A copy of `cel_env` with only the clouds painted: CEL's light, fog and colours.

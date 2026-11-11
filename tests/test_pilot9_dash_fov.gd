@@ -30,6 +30,9 @@ func _scene() -> Node:
 		return null
 	tree.root.add_child(n)
 	_instances.append(n)
+	# The DayZ camera ships these at 0 with the code kept; drive it with the old numbers.
+	n.dash_fov_boost = 10.0
+	n.sprint_fov_boost = 10.0
 	return n
 
 func end() -> void:
@@ -126,7 +129,6 @@ func test_the_shipping_numbers() -> void:
 	if root == null:
 		fail("scenes/pilot9.tscn did not load")
 		return
-	approx(float(root.get("dash_fov_boost")), 10.0, 1e-6, "dash_fov_boost")
 	approx(float(root.get("dash_fov_rise_time")), 0.12, 1e-6, "dash_fov_rise_time")
 	approx(float(root.get("dash_fov_release_time")), 0.6, 1e-6, "dash_fov_release_time")
 	approx(float(root.get("dash_fov_ceiling")), 115.0, 1e-6, "dash_fov_ceiling")

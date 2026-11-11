@@ -256,29 +256,3 @@ func _make_rect(rect_name: StringName, mat: ShaderMaterial) -> ColorRect:
 	rect.visible = false
 	add_child(rect)
 	return rect
-
-
-# --- QA keys -------------------------------------------------------------------
-
-func _input(event: InputEvent) -> void:
-	if not (event is InputEventKey) or not event.pressed or event.echo:
-		return
-	var settings := get_node_or_null(^"/root/Settings")
-	if settings == null:
-		return
-	match event.keycode:
-		KEY_O:
-			# The PIXEL look has no OFF.
-			if settings.look != "pixel":
-				settings.set_value(&"pixel_size", 0 if settings.pixel_size > 0 else _last_block)
-		KEY_BRACKETLEFT, KEY_BRACKETRIGHT:
-			# The active look's own size - see Settings.pixel_filter_key().
-			var key: StringName = settings.pixel_filter_key(settings.look)
-			var next := step_block(settings.values_of(key), block,
-				1 if event.keycode == KEY_BRACKETLEFT else -1)
-			if next != block:
-				settings.set_value(key, next)
-		KEY_BACKSLASH:
-			var levels: Array = settings.values_of(&"colour_depth")
-			var next := (levels.find(colour_steps) + 1) % levels.size()
-			settings.set_value(&"colour_depth", levels[next])

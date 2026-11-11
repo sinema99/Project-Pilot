@@ -18,7 +18,7 @@ func _tree() -> SceneTree:
 # --- settings ------------------------------------------------------------------
 
 func test_look_rows() -> void:
-	eq(SETTINGS.values_of(&"look"), ["cel", "pixel", "retro"], "CEL / PIXEL / RETRO")
+	eq(SETTINGS.values_of(&"look"), ["retro", "composite"], "RETRO / COMPOSITE")
 	# 2026-10-21: RETRO is the default while the user judges it (docs/specs/retro-look.md).
 	eq(SETTINGS.defaults()[&"look"], "retro", "the game boots in the RETRO look")
 

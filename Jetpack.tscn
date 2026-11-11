@@ -1,0 +1,369 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/pilot9.tscn" id="1_pilot"]
+[ext_resource type="Script" path="res://scripts/rendering/jetpack_look.gd" id="2_look"]
+[ext_resource type="PackedScene" uid="uid://ces1m5kofa4ig" path="res://assets/pilot9_decimate.glb" id="3_body"]
+
+[sub_resource type="ProceduralSkyMaterial" id="SkyMat"]
+sky_top_color = Color(0.04, 0.16, 0.62, 1)
+sky_horizon_color = Color(0.42, 0.6, 0.92, 1)
+sky_curve = 0.12
+ground_bottom_color = Color(0.42, 0.6, 0.92, 1)
+ground_horizon_color = Color(0.42, 0.6, 0.92, 1)
+sun_angle_max = 2.0
+
+[sub_resource type="Sky" id="Sky"]
+sky_material = SubResource("SkyMat")
+
+[sub_resource type="Environment" id="Env"]
+background_mode = 2
+sky = SubResource("Sky")
+ambient_light_source = 2
+ambient_light_color = Color(0.36, 0.44, 0.66, 1)
+ambient_light_energy = 0.55
+tonemap_mode = 0
+fog_enabled = true
+fog_mode = 1
+fog_light_color = Color(0.42, 0.6, 0.92, 1)
+fog_density = 1.0
+fog_sky_affect = 0.0
+fog_depth_curve = 1.0
+fog_depth_begin = 60.0
+fog_depth_end = 150.0
+
+[sub_resource type="StandardMaterial3D" id="Mat_ground"]
+albedo_color = Color(0.5, 0.47, 0.43, 1)
+roughness = 1.0
+
+[sub_resource type="StandardMaterial3D" id="Mat_concrete"]
+albedo_color = Color(0.58, 0.56, 0.52, 1)
+roughness = 1.0
+
+[sub_resource type="StandardMaterial3D" id="Mat_rust"]
+albedo_color = Color(0.55, 0.27, 0.13, 1)
+roughness = 1.0
+
+[sub_resource type="StandardMaterial3D" id="Mat_paint_blue"]
+albedo_color = Color(0.16, 0.27, 0.52, 1)
+roughness = 1.0
+
+[sub_resource type="StandardMaterial3D" id="Mat_paint_red"]
+albedo_color = Color(0.58, 0.15, 0.11, 1)
+roughness = 1.0
+
+[sub_resource type="PlaneMesh" id="GroundMesh"]
+size = Vector2(200, 200)
+subdivide_width = 99
+subdivide_depth = 99
+
+[sub_resource type="BoxShape3D" id="GroundShape"]
+size = Vector3(200, 1, 200)
+
+[sub_resource type="BoxMesh" id="Mesh_Step"]
+size = Vector3(2.0, 1.0, 2.0)
+subdivide_width = 1
+subdivide_height = 0
+subdivide_depth = 1
+
+[sub_resource type="BoxShape3D" id="Shape_Step"]
+size = Vector3(2.0, 1.0, 2.0)
+
+[sub_resource type="BoxMesh" id="Mesh_Crate"]
+size = Vector3(0.5, 0.5, 0.5)
+subdivide_width = 0
+subdivide_height = 0
+subdivide_depth = 0
+
+[sub_resource type="BoxShape3D" id="Shape_Crate"]
+size = Vector3(0.5, 0.5, 0.5)
+
+[sub_resource type="BoxMesh" id="Mesh_BigBlock"]
+size = Vector3(4.0, 4.0, 4.0)
+subdivide_width = 3
+subdivide_height = 3
+subdivide_depth = 3
+
+[sub_resource type="BoxShape3D" id="Shape_BigBlock"]
+size = Vector3(4.0, 4.0, 4.0)
+
+[sub_resource type="BoxMesh" id="Mesh_BigBlockTop"]
+size = Vector3(2.0, 2.0, 2.0)
+subdivide_width = 1
+subdivide_height = 1
+subdivide_depth = 1
+
+[sub_resource type="BoxShape3D" id="Shape_BigBlockTop"]
+size = Vector3(2.0, 2.0, 2.0)
+
+[sub_resource type="BoxMesh" id="Mesh_RedBlock"]
+size = Vector3(3.0, 2.0, 3.0)
+subdivide_width = 2
+subdivide_height = 1
+subdivide_depth = 2
+
+[sub_resource type="BoxShape3D" id="Shape_RedBlock"]
+size = Vector3(3.0, 2.0, 3.0)
+
+[sub_resource type="BoxMesh" id="Mesh_RedSide"]
+size = Vector3(1.0, 1.0, 1.0)
+subdivide_width = 0
+subdivide_height = 0
+subdivide_depth = 0
+
+[sub_resource type="BoxShape3D" id="Shape_RedSide"]
+size = Vector3(1.0, 1.0, 1.0)
+
+[sub_resource type="BoxMesh" id="Mesh_RunWall"]
+size = Vector3(1.0, 4.0, 16.0)
+subdivide_width = 0
+subdivide_height = 3
+subdivide_depth = 15
+
+[sub_resource type="BoxShape3D" id="Shape_RunWall"]
+size = Vector3(1.0, 4.0, 16.0)
+
+[sub_resource type="BoxMesh" id="Mesh_RustCube"]
+size = Vector3(1.5, 1.5, 1.5)
+subdivide_width = 1
+subdivide_height = 1
+subdivide_depth = 1
+
+[sub_resource type="BoxShape3D" id="Shape_RustCube"]
+size = Vector3(1.5, 1.5, 1.5)
+
+[sub_resource type="BoxMesh" id="Mesh_Bunker"]
+size = Vector3(4.0, 3.0, 4.0)
+subdivide_width = 3
+subdivide_height = 2
+subdivide_depth = 3
+
+[sub_resource type="BoxShape3D" id="Shape_Bunker"]
+size = Vector3(4.0, 3.0, 4.0)
+
+[sub_resource type="BoxMesh" id="Mesh_VaultWall"]
+size = Vector3(4.0, 1.0, 0.6)
+subdivide_width = 3
+subdivide_height = 0
+subdivide_depth = 0
+
+[sub_resource type="BoxShape3D" id="Shape_VaultWall"]
+size = Vector3(4.0, 1.0, 0.6)
+
+[sub_resource type="BoxMesh" id="Mesh_RedCube"]
+size = Vector3(2.0, 2.0, 2.0)
+subdivide_width = 1
+subdivide_height = 1
+subdivide_depth = 1
+
+[sub_resource type="BoxShape3D" id="Shape_RedCube"]
+size = Vector3(2.0, 2.0, 2.0)
+
+[sub_resource type="BoxMesh" id="Mesh_RustTower"]
+size = Vector3(3.0, 4.0, 3.0)
+subdivide_width = 2
+subdivide_height = 3
+subdivide_depth = 2
+
+[sub_resource type="BoxShape3D" id="Shape_RustTower"]
+size = Vector3(3.0, 4.0, 3.0)
+
+[sub_resource type="BoxMesh" id="Mesh_FarBlock"]
+size = Vector3(4.0, 4.0, 4.0)
+subdivide_width = 3
+subdivide_height = 3
+subdivide_depth = 3
+
+[sub_resource type="BoxShape3D" id="Shape_FarBlock"]
+size = Vector3(4.0, 4.0, 4.0)
+
+[sub_resource type="BoxMesh" id="Mesh_FarRed"]
+size = Vector3(4.0, 6.0, 4.0)
+subdivide_width = 3
+subdivide_height = 5
+subdivide_depth = 3
+
+[sub_resource type="BoxShape3D" id="Shape_FarRed"]
+size = Vector3(4.0, 6.0, 4.0)
+
+[node name="Jetpack" type="Node3D"]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Env")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 20, 0)
+rotation_degrees = Vector3(-45, 45, 0)
+light_color = Color(1, 0.96, 0.88, 1)
+light_energy = 1.6
+light_indirect_energy = 0.0
+shadow_enabled = true
+shadow_bias = 0.03
+shadow_normal_bias = 1.0
+shadow_blur = 0.0
+directional_shadow_max_distance = 80.0
+
+[node name="World" type="Node3D" parent="."]
+
+[node name="Ground" type="StaticBody3D" parent="World"]
+
+[node name="Mesh" type="MeshInstance3D" parent="World/Ground"]
+mesh = SubResource("GroundMesh")
+surface_material_override/0 = SubResource("Mat_ground")
+
+[node name="Shape" type="CollisionShape3D" parent="World/Ground"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
+shape = SubResource("GroundShape")
+
+[node name="Boxes" type="Node3D" parent="World"]
+
+[node name="Step" type="StaticBody3D" parent="World/Boxes"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0, 0.5, -8.0)
+
+[node name="Mesh" type="MeshInstance3D" parent="World/Boxes/Step"]
+mesh = SubResource("Mesh_Step")
+surface_material_override/0 = SubResource("Mat_concrete")
+
+[node name="Shape" type="CollisionShape3D" parent="World/Boxes/Step"]
+shape = SubResource("Shape_Step")
+
+[node name="Crate" type="StaticBody3D" parent="World/Boxes"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.5, 0.25, -6.0)
+
+[node name="Mesh" type="MeshInstance3D" parent="World/Boxes/Crate"]
+mesh = SubResource("Mesh_Crate")
+surface_material_override/0 = SubResource("Mat_rust")
+
+[node name="Shape" type="CollisionShape3D" parent="World/Boxes/Crate"]
+shape = SubResource("Shape_Crate")
+
+[node name="BigBlock" type="StaticBody3D" parent="World/Boxes"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.0, 2.0, -12.0)
+
+[node name="Mesh" type="MeshInstance3D" parent="World/Boxes/BigBlock"]
+mesh = SubResource("Mesh_BigBlock")
+surface_material_override/0 = SubResource("Mat_paint_blue")
+
+[node name="Shape" type="CollisionShape3D" parent="World/Boxes/BigBlock"]
+shape = SubResource("Shape_BigBlock")
+
+[node name="BigBlockTop" type="StaticBody3D" parent="World/Boxes"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.0, 5.0, -12.0)
+
+[node name="Mesh" type="MeshInstance3D" parent="World/Boxes/BigBlockTop"]
+mesh = SubResource("Mesh_BigBlockTop")
+surface_material_override/0 = SubResource("Mat_rust")
+
+[node name="Shape" type="CollisionShape3D" parent="World/Boxes/BigBlockTop"]
+shape = SubResource("Shape_BigBlockTop")
+
+[node name="RedBlock" type="StaticBody3D" parent="World/Boxes"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.0, 1.0, -14.0)
+
+[node name="Mesh" type="MeshInstance3D" parent="World/Boxes/RedBlock"]
+mesh = SubResource("Mesh_RedBlock")
+surface_material_override/0 = SubResource("Mat_paint_red")
+
+[node name="Shape" type="CollisionShape3D" parent="World/Boxes/RedBlock"]
+shape = SubResource("Shape_RedBlock")
+
+[node name="RedSide" type="StaticBody3D" parent="World/Boxes"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 7.0, 0.5, -14.0)
+
+[node name="Mesh" type="MeshInstance3D" parent="World/Boxes/RedSide"]
+mesh = SubResource("Mesh_RedSide")
+surface_material_override/0 = SubResource("Mat_concrete")
+
+[node name="Shape" type="CollisionShape3D" parent="World/Boxes/RedSide"]
+shape = SubResource("Shape_RedSide")
+
+[node name="RunWall" type="StaticBody3D" parent="World/Boxes"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 12.0, 2.0, -20.0)
+
+[node name="Mesh" type="MeshInstance3D" parent="World/Boxes/RunWall"]
+mesh = SubResource("Mesh_RunWall")
+surface_material_override/0 = SubResource("Mat_concrete")
+
+[node name="Shape" type="CollisionShape3D" parent="World/Boxes/RunWall"]
+shape = SubResource("Shape_RunWall")
+
+[node name="RustCube" type="StaticBody3D" parent="World/Boxes"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10.0, 0.75, -6.0)
+
+[node name="Mesh" type="MeshInstance3D" parent="World/Boxes/RustCube"]
+mesh = SubResource("Mesh_RustCube")
+surface_material_override/0 = SubResource("Mat_rust")
+
+[node name="Shape" type="CollisionShape3D" parent="World/Boxes/RustCube"]
+shape = SubResource("Shape_RustCube")
+
+[node name="Bunker" type="StaticBody3D" parent="World/Boxes"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -12.0, 1.5, -20.0)
+
+[node name="Mesh" type="MeshInstance3D" parent="World/Boxes/Bunker"]
+mesh = SubResource("Mesh_Bunker")
+surface_material_override/0 = SubResource("Mat_concrete")
+
+[node name="Shape" type="CollisionShape3D" parent="World/Boxes/Bunker"]
+shape = SubResource("Shape_Bunker")
+
+[node name="VaultWall" type="StaticBody3D" parent="World/Boxes"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0, 0.5, -18.0)
+
+[node name="Mesh" type="MeshInstance3D" parent="World/Boxes/VaultWall"]
+mesh = SubResource("Mesh_VaultWall")
+surface_material_override/0 = SubResource("Mat_concrete")
+
+[node name="Shape" type="CollisionShape3D" parent="World/Boxes/VaultWall"]
+shape = SubResource("Shape_VaultWall")
+
+[node name="RedCube" type="StaticBody3D" parent="World/Boxes"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3.0, 1.0, -26.0)
+
+[node name="Mesh" type="MeshInstance3D" parent="World/Boxes/RedCube"]
+mesh = SubResource("Mesh_RedCube")
+surface_material_override/0 = SubResource("Mat_paint_red")
+
+[node name="Shape" type="CollisionShape3D" parent="World/Boxes/RedCube"]
+shape = SubResource("Shape_RedCube")
+
+[node name="RustTower" type="StaticBody3D" parent="World/Boxes"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.0, 2.0, -28.0)
+
+[node name="Mesh" type="MeshInstance3D" parent="World/Boxes/RustTower"]
+mesh = SubResource("Mesh_RustTower")
+surface_material_override/0 = SubResource("Mat_rust")
+
+[node name="Shape" type="CollisionShape3D" parent="World/Boxes/RustTower"]
+shape = SubResource("Shape_RustTower")
+
+[node name="FarBlock" type="StaticBody3D" parent="World/Boxes"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 20.0, 2.0, -60.0)
+
+[node name="Mesh" type="MeshInstance3D" parent="World/Boxes/FarBlock"]
+mesh = SubResource("Mesh_FarBlock")
+surface_material_override/0 = SubResource("Mat_concrete")
+
+[node name="Shape" type="CollisionShape3D" parent="World/Boxes/FarBlock"]
+shape = SubResource("Shape_FarBlock")
+
+[node name="FarRed" type="StaticBody3D" parent="World/Boxes"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -30.0, 3.0, -90.0)
+
+[node name="Mesh" type="MeshInstance3D" parent="World/Boxes/FarRed"]
+mesh = SubResource("Mesh_FarRed")
+surface_material_override/0 = SubResource("Mat_paint_red")
+
+[node name="Shape" type="CollisionShape3D" parent="World/Boxes/FarRed"]
+shape = SubResource("Shape_FarRed")
+
+[node name="Pilot9" parent="." instance=ExtResource("1_pilot")]
+rim_light_enabled = false
+starting_item = null
+movement_effects_allowed = false
+body_glb = ExtResource("3_body")
+
+[node name="JetpackLook" type="Node" parent="." node_paths=PackedStringArray("world_root", "pilot", "sun")]
+script = ExtResource("2_look")
+world_root = NodePath("../World")
+pilot = NodePath("../Pilot9")
+sun = NodePath("../Sun")

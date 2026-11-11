@@ -17,8 +17,9 @@ extends Node
 # It works on its parent's subtree (in trial.tscn, the whole scene), plus anything added anywhere
 # while PIXEL is on.
 #
-# QA key: I cycles LOOK (CEL, PIXEL, RETRO), through Settings so the menu row agrees. RETRO is
-# RetroLook, a subclass of this node - see docs/specs/retro-look.md.
+# QA key: I flips LOOK (RETRO, COMPOSITE), through Settings so the menu row agrees. Both are
+# RetroLook, a subclass of this node, so a scene without one (Ichi) ignores the key. See
+# docs/specs/live-composite.md.
 
 const CEL_SHADER := preload("res://shaders/cel/cel-shader-base.gdshader")
 const PIXEL_SHADER := preload("res://shaders/pixel_look/pixel-look.gdshader")
@@ -257,7 +258,7 @@ static func _find_world_environment(node: Node) -> WorldEnvironment:
 func _input(event: InputEvent) -> void:
 	if not (event is InputEventKey) or not event.pressed or event.echo:
 		return
-	if event.keycode != KEY_I:
+	if event.keycode != KEY_I or get_tree().get_first_node_in_group(&"retro_look") == null:
 		return
 	var settings := get_node_or_null(^"/root/Settings")
 	if settings:

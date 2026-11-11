@@ -21,13 +21,10 @@ const SettingsScript := preload("res://scripts/settings.gd")
 # exactly window / block. Shown dimmed with OVERRIDDEN_TEXT. See docs/specs/pixel-world.md.
 const PIXEL_OVERRIDDEN_KEYS: Array[StringName] = [&"msaa", &"render_scale"]
 const OVERRIDDEN_TEXT := "PIXEL FILTER ON"
-# PAINTED SHADING only exists in CEL (PIXEL's clumps replace it, RETRO's fills are flat). The row
-# shows the look that overrides it. See docs/specs/pixel-look.md and docs/specs/retro-look.md.
-const CEL_ONLY_TEXT := "%s LOOK"
 
-# Settings keys with no row of their own. The PIXEL look's block size is shown and stepped on the
-# PIXEL FILTER row while PIXEL is on - see _bound_key().
-const ROWLESS_KEYS: Array[StringName] = [&"pixel_look_size"]
+# Settings keys with no row of their own: Settings.HIDDEN_KEYS, the rows that left with CEL and PIXEL
+# (docs/specs/live-composite.md).
+const ROWLESS_KEYS := SettingsScript.HIDDEN_KEYS
 
 # Rows that get a SliderRow instead of a SelectorRow - the ones the spec itself calls
 # "continuous", stepped in fine fractions rather than a short enum.
@@ -202,8 +199,6 @@ func _refresh_row(key: StringName) -> void:
 			_sync_maybe_disabled(control, key, label, value,
 				SettingsScript.effective_pixel_size(Settings.pixel_size, Settings.pixel_look_size, Settings.look) > 0,
 				OVERRIDDEN_TEXT)
-		elif key == &"painted_shading" or key == &"cel_scatter":
-			_sync_maybe_disabled(control, key, label, value, Settings.look != "cel", CEL_ONLY_TEXT % Settings.look.to_upper())
 		else:
 			control.sync(label, value, _can_step(key, -1), _can_step(key, 1))
 		return
@@ -282,8 +277,6 @@ func _step(direction: int, key: StringName) -> void:
 			_queue_display_confirm(old_window_mode, old_resolution)
 		&"pixel_size", &"look":
 			Settings.step_value(_bound_key(key), direction)
-			# MSAA and RENDER SCALE grey out or come back with the filter; PAINTED SHADING and the
-			# PIXEL FILTER row's own value with the look.
 			_sync_all()
 		_:
 			Settings.step_value(key, direction)

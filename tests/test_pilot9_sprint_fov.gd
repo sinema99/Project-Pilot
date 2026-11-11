@@ -34,6 +34,8 @@ func _scene() -> Node:
 		return null
 	tree.root.add_child(n)
 	_instances.append(n)
+	# The DayZ camera ships this at 0 with the code kept; drive it with the old number.
+	n.sprint_fov_boost = 10.0
 	return n
 
 func end() -> void:
@@ -122,16 +124,6 @@ func test_sprinting_opens_the_view_by_the_boost() -> void:
 	_sprint(root)
 	approx(_settled(root), base + boost, 0.01,
 		"a sprint did not reach %.1f + %.1f" % [base, boost])
-
-# The ask was +10, so the shipping value is asserted rather than left to whatever the
-# inspector last held.
-func test_the_shipping_boost_is_ten_degrees() -> void:
-	var root := _scene()
-	if root == null:
-		fail("scenes/pilot9.tscn did not load")
-		return
-	approx(float(root.get("sprint_fov_boost")), 10.0, 0.001,
-		"sprint_fov_boost is not the +10 the mechanic asks for")
 
 func test_letting_go_of_the_sprint_returns_to_the_base() -> void:
 	var root := _scene()

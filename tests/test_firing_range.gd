@@ -262,3 +262,112 @@ func test_perfect_reflect_steers_onto_a_moving_shooter() -> void:
 	approx(v.length(), 28.0, 0.001, "speed is kept")
 	eq(BOLT.steer_toward(Vector3(0, 0, -28), Vector3.ZERO, Vector3(0, 0, -10), 0.5), Vector3(0, 0, -28),
 		"already on target: unchanged")
+
+
+# --- the farmer (docs/specs/range-farmer.md) ---------------------------------------------------
+
+func test_farmer_has_all_eight_spheres_on_the_right_bones() -> void:
+	var r := _range()
+	var sk: Skeleton3D = r.dummy.get_node("Visual/Farmer/Armature/Skeleton3D")
+	var on_root := 0
+	var on_legs := {}
+	for ba in sk.find_children("*", "BoneAttachment3D", false, false):
+		for m in ba.get_children():
+			if ba.bone_name == &"Bone":
+				on_root += 1
+			else:
+				on_legs[ba.bone_name] = on_legs.get(ba.bone_name, 0) + 1
+	eq(on_root, 4, "four disc spheres ride the root bone")
+	eq(on_legs.size(), 4, "every leg has a joint sphere")
+	for b in on_legs:
+		eq(on_legs[b], 1, "one joint sphere on %s" % b)
+	r.free()
+
+
+func test_farmer_joint_spheres_sit_on_their_leg_joints() -> void:
+	var r := _range()
+	var sk: Skeleton3D = r.dummy.get_node("Visual/Farmer/Armature/Skeleton3D")
+	for ba in sk.find_children("*", "BoneAttachment3D", false, false):
+		if ba.bone_name == &"Bone":
+			continue
+		var m: Node3D = ba.get_child(0)
+		check(m.position.length() < 0.05, "%s's sphere sits on its joint" % ba.bone_name)
+	r.free()
+
+
+func test_farmer_shapes_disc_and_four_legs() -> void:
+	var r := _range()
+	var sk: Skeleton3D = r.dummy.get_node("Visual/Farmer/Armature/Skeleton3D")
+	var specs: Array = DUMMY.shape_specs(sk)
+	eq(specs.size(), 5, "one disc and four legs")
+	for i in range(1, 5):
+		var xf: Transform3D = specs[i][0]
+		var h: float = specs[i][2]
+		var foot: Vector3 = xf.origin - xf.basis.y.normalized() * h * 0.5
+		var top: Vector3 = xf.origin + xf.basis.y.normalized() * h * 0.5
+		approx(foot.y, 0.0, 0.01, "leg %d reaches the ground" % i)
+		approx(top.y, DUMMY.LEG_TOP, 0.01, "leg %d reaches its top" % i)
+		var out := Vector2(foot.x, foot.z).length()
+		check(out > 2.0 and out < 2.6, "leg %d foot out on its diagonal (%.2f m)" % [i, out])
+	eq(r.dummy.get_node("Hitbox").get_child_count(), 5, "the hitbox has the same five shapes")
+	r.free()
+
+
+func test_farmer_fires_from_its_windows_toward_pilot() -> void:
+	var r := _range()
+	var muzzle: Node3D = r.dummy.get_node("Visual/Muzzle")
+	var win: MeshInstance3D = r.dummy.get_node("Visual/Farmer/Armature/Skeleton3D/Cylinder")
+	var v: PackedVector3Array = win.mesh.surface_get_arrays(1)[Mesh.ARRAY_VERTEX]
+	var mid := Vector3.ZERO
+	for p in v:
+		mid += p
+	mid /= v.size()
+	# Turned 180: the window band (model -Z) is on the body's +Z, which faces pilot.
+	var mid_body := Vector3(-mid.x, mid.y, -mid.z)
+	check(mid_body.z > 0.8, "the windows face +Z, the side that faces pilot")
+	approx(muzzle.position.y, mid_body.y, 0.05, "the muzzle is at window height")
+	check(muzzle.position.z > mid_body.z, "the muzzle is just in front of the windows")
+	check(win.get_surface_override_material(1) != null, "the windows have their own state material")
+	r.free()
+
+
+func test_farmer_leans_into_its_slide() -> void:
+	var max_rad := deg_to_rad(4.0)
+	var lean: Vector3 = DUMMY.lean_target(Vector3(4, 0, 0), 4.0, max_rad)
+	approx(lean.length(), max_rad, 0.0001, "full lean at strafe speed")
+	var up := Basis(lean.normalized(), lean.length()) * Vector3.UP
+	check(up.x > 0.0, "the top tips toward the way it is going")
+	approx(DUMMY.lean_target(Vector3(2, 0, 0), 4.0, max_rad).length(), max_rad * 0.5, 0.0001,
+		"half speed, half lean")
+	approx(DUMMY.lean_target(Vector3(9, 0, 0), 4.0, max_rad).length(), max_rad, 0.0001, "capped")
+	eq(DUMMY.lean_target(Vector3.ZERO, 4.0, max_rad), Vector3.ZERO, "still: upright")
+
+
+func test_farmer_lean_eases_back_when_frozen() -> void:
+	var r := _range()
+	var d = r.dummy
+	d.state = DUMMY.State.ACTIVE
+	d._velocity = Vector3(4, 0, 0)
+	for i in 30:
+		d._process(1.0 / 60.0)
+	check(d._lean.length() > deg_to_rad(3.0), "half a second of sliding: nearly full lean")
+	d._velocity = Vector3.ZERO
+	for i in 90:
+		d._process(1.0 / 60.0)
+	check(d._lean.length() < deg_to_rad(0.2), "stopped: back upright")
+	r.free()
+
+
+func test_perfect_reflect_homes_on_the_disc() -> void:
+	var r := _range()
+	var b = BOLT.new()
+	b.shooter = r.dummy
+	b.reflected = true
+	b.was_perfect = true
+	_root().add_child(b)
+	b.global_position = r.dummy.global_position + Vector3(0, 1.3, 10)
+	b.velocity = Vector3(0, 0, -28)
+	b._physics_process(1.0 / 60.0)
+	check(absf(b.velocity.y) < 0.01, "a bolt level with the disc centre stays level")
+	b.free()
+	r.free()

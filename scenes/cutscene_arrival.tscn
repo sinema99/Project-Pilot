@@ -5,6 +5,8 @@
 [ext_resource type="Script" path="res://scripts/cutscene/arrival_base.gd" id="3_base"]
 [ext_resource type="Script" path="res://scripts/cutscene/arrival_forest.gd" id="4_forest"]
 [ext_resource type="Script" path="res://scripts/cutscene/arrival_clouds.gd" id="5_clouds"]
+[ext_resource type="Script" path="res://scripts/cutscene/arrival_spire.gd" id="7_spire"]
+[ext_resource type="Script" path="res://scripts/cutscene/arrival_growth.gd" id="8_growth"]
 [ext_resource type="Shader" path="res://shaders/cutscene/arrival_sky.gdshader" id="6_sky"]
 [ext_resource type="Script" path="res://scripts/rendering/depth_composite.gd" id="90_composite"]
 [ext_resource type="CompositorEffect" path="res://resources/cinema_post_arrival.tres" id="91_post"]
@@ -44,7 +46,7 @@ glow_levels/5 = 0.3
 glow_intensity = 0.5
 glow_strength = 1.0
 glow_blend_mode = 0
-glow_hdr_threshold = 1.5
+glow_hdr_threshold = 4.0
 
 [sub_resource type="CompositorEffect" id="CompositorEffect_depth"]
 resource_local_to_scene = true
@@ -54,7 +56,7 @@ light_energy = 0.3
 light_radius = 0.35
 light_stretch = 1.6
 haze_color = Color(0.64, 0.74, 0.88, 1)
-haze_start = 1400.0
+haze_start = 1100.0
 haze_end = 22000.0
 haze_amount = 0.6
 haze_radius = 0.9
@@ -102,8 +104,14 @@ script = ExtResource("2_land")
 [node name="Base" type="Node3D" parent="."]
 script = ExtResource("3_base")
 
+[node name="Spire" type="Node3D" parent="."]
+script = ExtResource("7_spire")
+
 [node name="Forest" type="Node3D" parent="."]
 script = ExtResource("4_forest")
+
+[node name="Growth" type="Node3D" parent="."]
+script = ExtResource("8_growth")
 
 [node name="Clouds" type="Node3D" parent="."]
 script = ExtResource("5_clouds")

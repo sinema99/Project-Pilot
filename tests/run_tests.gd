@@ -1,7 +1,7 @@
 extends SceneTree
 
 # Headless test runner.
-#   godot --headless --path . --script tests/run_tests.gd [-- <name-filter>]
+#   godot --headless --path . --script tests/run_tests.gd [-- <filter on "file::method">]
 
 const TEST_DIR := "res://tests/"
 
@@ -36,7 +36,8 @@ func _run() -> void:
 			continue
 		var case: RefCounted = script.new()
 		for method_name in _test_methods(case):
-			if filter != "" and not method_name.contains(filter):
+			# The filter matches "file::method", so a file name (test_knight_) picks a whole file.
+			if filter != "" and not ("%s::%s" % [file_name, method_name]).contains(filter):
 				continue
 			total += 1
 			case.begin("%s::%s" % [file_name, method_name])

@@ -155,6 +155,7 @@ and nothing new is needed.
 | | PAINTED SHADING | OFF / ON | ON - added 2026-10-04, see painted-shading.md |
 | | LOOK | CEL / PIXEL | CEL - added 2026-10-06, see pixel-look.md (PIXEL FILTER is now OFF / 2X / 3X / 4X / 6X) |
 | | DITHER | OFF / ON | ON - added 2026-10-06, PIXEL look only |
+| | LOOK (2026-11-04) | RETRO / COMPOSITE | RETRO - replaces every LOOK value above; PIXEL FILTER, PAINTED SHADING, COLOUR DEPTH and CEL SCATTER left the menu, see live-composite.md |
 | CONTROLS | MOUSE SENSITIVITY | 0.25x - 2.00x, step 0.05 | 1.00x |
 | | CONTROLLER SENSITIVITY | 0.25x - 2.00x, step 0.05 | 1.00x |
 | | FOV | 60 - 110, step 5 | 75 |

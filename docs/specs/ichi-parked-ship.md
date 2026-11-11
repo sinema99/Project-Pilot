@@ -101,3 +101,12 @@ the spawn was redone the same way (children, not root):
 
 If the ship is moved again, the spawn has to follow: recompute from the ship's nose
 (`global_basis.z`) with the same 25 degree / 10 m / 12 degree numbers.
+
+### Re-spawn after the ship moved (2026-11-11)
+
+The ship had moved to (15.40, 1.29, 100.41), and the child overrides had dropped out of the scene
+again, so `test_ichi_parked_ship` was failing. The spawn was worked out again with the rule above:
+`Pilot9` at (5.41, 0.5, 99.89) (ground is -0.57 there), `character` yaw 1.3099 rad, `CameraPivot`
+yaw -1.8317. The ship's yaw had not changed, so the opening frame should look the same as before.
+Note that in a .tscn, `Transform3D(...)` lists the basis by ROWS: Ry(a) is
+(cos a, 0, sin a, 0, 1, 0, -sin a, 0, cos a, ...).

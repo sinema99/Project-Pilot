@@ -69,10 +69,11 @@ func _ready() -> void:
 
 func _physics_process(delta: float) -> void:
 	# A perfect reflect is sent "back at its shooter", and a shooter that strafes would slip out from
-	# under a straight return: it steers onto the shooter's chest as it flies.
+	# under a straight return: it steers onto the shooter's chest (its `homing_height`) as it flies.
 	if reflected and was_perfect and shooter != null and is_instance_valid(shooter):
+		var h: float = shooter.get(&"homing_height") if &"homing_height" in shooter else 1.0
 		velocity = steer_toward(velocity, global_position,
-			shooter.global_position + Vector3.UP * 1.0, PERFECT_HOMING * delta)
+			shooter.global_position + Vector3.UP * h, PERFECT_HOMING * delta)
 	global_position += velocity * delta
 	_face_velocity()
 	_age += delta

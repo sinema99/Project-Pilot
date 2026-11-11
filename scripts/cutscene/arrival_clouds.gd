@@ -4,26 +4,30 @@ extends Node3D
 # The arrival shot's weather (docs/specs/cutscene-arrival.md, spec R2-6): the storm's tail as a
 # backlit cumulus bank pouring over the top-left ridge and around the far tower, a level sea of
 # cloud pooled in the valleys behind the base (peaks rise out of it), low mist in the valleys near
-# it, spindrift streaming off the ridgelines and the deck edges, and the exhaust tower's steam. All
-# cards (shaders/cutscene/arrival_cloud.gdshader) in a few smooth cel tones, moving on the shot clock.
+# it, spindrift streaming off the ridgelines, the deck edges and the broken tower caps (the exhaust
+# tower's steam went with revision 5: the base is cold). All cards (shaders/cutscene/arrival_cloud.gdshader) in a few smooth cel tones, moving on the shot clock.
 #
 # GENERATED like ArrivalLand: no owner, nothing saved into the .tscn. Built after Base (it asks it
-# where the stacks are).
+# where the caps are broken).
 
 const CLOUD_SHADER := preload("res://shaders/cutscene/arrival_cloud.gdshader")
+## The banks' variant (spec R6-2): translucent as one sheet.
+const BANK_SHADER := preload("res://shaders/cutscene/arrival_cloud_bank.gdshader")
 
 ## The camera-facing cards: kind, frame percent (u, v) of the centre, level distance (m), width and
 ## height (m).
 const CARDS := [
-	# The bank, back to front: the last one stands round the far tower's lower shaft. Heaps.
-	[&"bank", 14.0, 10.0, 5200.0, 2600.0, 1100.0],
-	[&"bank", 6.0, 17.0, 3600.0, 1500.0, 700.0],
-	[&"bank", 22.0, 20.0, 2900.0, 1000.0, 420.0],
-	[&"bank", 29.0, 22.5, 2350.0, 640.0, 240.0],
-	[&"bank", 3.0, 30.0, 2300.0, 900.0, 380.0],
-	# Valley mist, low soft sheets: round the outpost's foot on the sea: the bright low cloud in the left valley, the long sheet down the right one.
+	# The bank, back to front: the last one stands round the far tower's lower shaft. Heaps. Since
+	# R6 (spec R6-3) it sits as low as the right bank: its top under the left range, the far tower's
+	# cap clear.
+	[&"bank", 14.0, 22.0, 5200.0, 2600.0, 1100.0],
+	[&"bank", 6.0, 29.0, 3600.0, 1500.0, 700.0],
+	[&"bank", 22.0, 32.0, 2900.0, 1000.0, 420.0],
+	[&"bank", 29.0, 34.5, 2350.0, 640.0, 240.0],
+	[&"bank", 3.0, 42.0, 2300.0, 900.0, 380.0],
+	# Valley mist, low sheets: round the outpost's foot on the sea, the long sheet down the right
+	# valley. (The left valley's went with R6: the lowered bank covers it.)
 	[&"mist", 83.0, 20.5, 6400.0, 2400.0, 260.0],
-	[&"mist", 4.0, 52.0, 1150.0, 520.0, 190.0],
 	[&"mist", 90.0, 42.0, 2700.0, 1500.0, 260.0],
 	[&"mist", 82.0, 49.0, 2000.0, 900.0, 160.0],
 	# Spindrift off the top tier, the right deck, and two far ridgelines.
@@ -31,21 +35,30 @@ const CARDS := [
 	[&"drift", 82.0, 48.4, 1500.0, 520.0, 40.0],
 	[&"drift", 72.0, 21.0, 6000.0, 2200.0, 160.0],
 	[&"drift", 42.0, 17.0, 7500.0, 2600.0, 200.0],
+	# The bank's sibling on the right (spec R4-5), not a mirror: the back heap wraps the outpost
+	# peak's foot as the left one wraps the far tower, the rest step forward to just behind the plant
+	# deck, all deeper than RightTower, which stands in front of them.
+	[&"bank", 88.0, 23.0, 6400.0, 3000.0, 950.0],
+	[&"bank", 97.0, 31.0, 4600.0, 1800.0, 650.0],
+	[&"bank", 84.0, 36.0, 3700.0, 1300.0, 420.0],
+	[&"bank", 95.0, 42.0, 2900.0, 1100.0, 330.0],
+	[&"bank", 80.0, 44.5, 2500.0, 620.0, 200.0],
 ]
 
 ## The cloud sea: its level (m), and the level distances (m) it runs from and to.
 const SEA := {y = -470.0, near = 2400.0, far = 42000.0}
 
-## The steam plume over the exhaust stacks: width and height (m), and how far up and downwind its
-## centre sits from the stacks (m).
-const PLUME := {width = 240.0, height = 240.0, up = 100.0, downwind = 60.0}
+## Spindrift off a broken cap (spec R5-6): the card's width and height (m), streaming downwind.
+const BREAK_DRIFT := Vector2(360.0, 34.0)
 
-## Per kind: mode (0 heap, 1 plume, 2 streak, 3 sea), noise tiles across the card (x, y), drift
+## The spire's spindrift card off each ledge: width and height (m), sized to read at 11 km.
+const SPIRE_DRIFT := Vector2(1300.0, 90.0)
+
+## Per kind: mode (0 heap, 1 plume (none since R5), 2 streak, 3 sea), noise tiles across the card (x, y), drift
 ## (tiles per second), lobes, wobble, coverage, softness, opacity, soft depth (m).
 const KINDS := {
-	&"bank": [0, Vector2(1.2, 0.8), Vector2(0.004, 0.0), 11.0, 0.14, 0.0, 0.0, 1.0, 150.0],
-	&"mist": [2, Vector2(1.2, 0.6), Vector2(0.006, 0.0), 0.0, 0.0, 0.3, 0.25, 0.65, 200.0],
-	&"plume": [1, Vector2(1.0, 1.0), Vector2(0.0, 0.03), 7.0, 0.12, 0.0, 0.0, 0.85, 60.0],
+	&"bank": [0, Vector2(1.2, 0.8), Vector2(0.004, 0.0), 11.0, 0.14, 0.0, 0.0, 0.5, 60.0],
+	&"mist": [2, Vector2(1.2, 0.6), Vector2(0.006, 0.0), 0.0, 0.0, 0.3, 0.04, 0.65, 200.0],
 	&"drift": [2, Vector2(0.6, 2.0), Vector2(0.04, 0.0), 0.0, 0.0, 0.45, 0.15, 0.5, 120.0],
 	&"sea": [3, Vector2(14.0, 9.0), Vector2(0.0015, 0.0), 0.0, 0.0, 0.22, 0.05, 1.0, 350.0],
 }
@@ -75,7 +88,7 @@ func _ready() -> void:
 	for kind: StringName in KINDS:
 		var k: Array = KINDS[kind]
 		var m := ShaderMaterial.new()
-		m.shader = CLOUD_SHADER
+		m.shader = BANK_SHADER if kind == &"bank" else CLOUD_SHADER
 		m.set_shader_parameter(&"noise_tex", tex)
 		m.set_shader_parameter(&"mode", k[0])
 		m.set_shader_parameter(&"scale", k[1])
@@ -91,16 +104,29 @@ func _ready() -> void:
 		m.set_shader_parameter(&"shade_color", shade_color)
 		materials[kind] = m
 	var eye := shot.camera_transform().origin
+	# The banks draw nearest first (spec R6-2): each one's sort depth mirrored inside the banks' range.
+	var near := INF
+	var far := 0.0
+	for card: Array in CARDS:
+		if card[0] == &"bank":
+			near = minf(near, card[3])
+			far = maxf(far, card[3])
 	var i := 0
 	for card: Array in CARDS:
-		_card(card[0], shot.at_distance(card[1], card[2], card[3]), Vector2(card[4], card[5]), eye, i)
+		var mi := _card(card[0], shot.at_distance(card[1], card[2], card[3]), Vector2(card[4], card[5]), eye, i)
+		if card[0] == &"bank":
+			mi.sorting_offset = 2.0 * card[3] - (near + far)
 		i += 1
-	if not base.plume_spots.is_empty():
-		var at := Vector3.ZERO
-		for p in base.plume_spots:
-			at += p / base.plume_spots.size()
-		_card(&"plume", at + Vector3(PLUME.downwind, PLUME.up, 0.0), Vector2(PLUME.width, PLUME.height), eye, i)
+	for p in base.break_spots:
+		_card(&"drift", p + Vector3(BREAK_DRIFT.x * 0.5 - 30.0, 6.0, 0.0), BREAK_DRIFT, eye, i)
 		i += 1
+	# The spire (spec R4-8): spindrift streaming downwind off its ledges in the frame. The sea laps
+	# its snowfield as it is (R4b-3), no heaps.
+	var spire := get_node_or_null(^"../Spire") as ArrivalSpire
+	if spire != null:
+		for p in spire.ledges:
+			_card(&"drift", p + Vector3(SPIRE_DRIFT.x * 0.5 - 40.0, 0.0, 0.0), SPIRE_DRIFT, eye, i)
+			i += 1
 	# The sea: one level quad over the far valleys.
 	var quad := QuadMesh.new()
 	var depth: float = SEA.far - SEA.near
@@ -115,7 +141,7 @@ func _ready() -> void:
 	add_child(mi)
 
 
-func _card(kind: StringName, centre: Vector3, size: Vector2, eye: Vector3, i: int) -> void:
+func _card(kind: StringName, centre: Vector3, size: Vector2, eye: Vector3, i: int) -> MeshInstance3D:
 	var quad := QuadMesh.new()
 	quad.size = size
 	var mi := MeshInstance3D.new()
@@ -131,6 +157,7 @@ func _card(kind: StringName, centre: Vector3, size: Vector2, eye: Vector3, i: in
 	mi.set_instance_shader_parameter(&"aspect", size.x / size.y)
 	# Blended cards sort back to front by their centres, so the bank's layers stack right.
 	add_child(mi)
+	return mi
 
 
 ## Shot time into every card.

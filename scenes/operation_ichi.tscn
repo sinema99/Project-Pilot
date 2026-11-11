@@ -52,8 +52,14 @@ sky_mode = 1
 [node name="OP_1" parent="." unique_id=1970927024 instance=ExtResource("6_map")]
 
 [node name="Pilot9" parent="." unique_id=1537782610 instance=ExtResource("1_pilot")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5076108, 2.6, 98.82546)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.414606, 0.5, 99.89063)
 body_glb = ExtResource("7_decimate")
+
+[node name="CameraPivot" parent="Pilot9" index="0"]
+transform = Transform3D(-0.2579683, 0, -0.9661534, 0, 1, 0, 0.9661534, 0, -0.2579683, 0, 1.5, 0)
+
+[node name="character" parent="Pilot9" index="5"]
+transform = Transform3D(0.2579683, 0, 0.9661534, 0, 1, 0, -0.9661534, 0, 0.2579683, 0, 0, 0)
 
 [node name="Sinestro2" parent="." unique_id=266507393 instance=ExtResource("11_ship")]
 transform = Transform3D(-0.46743682, -0.04356894, -0.8829518, -0.035653453, 0.9989013, -0.030415375, 0.88330704, 0.017263034, -0.46847668, 15.401359, 1.2872069, 100.4052)

@@ -219,3 +219,244 @@ Built 2026-10-29 the same day over nine probe passes; final frame `docs/specs/cu
 - Tests: four new (forest rule, apron/road, roof and tower jobs, own post); 12 arrival tests pass.
 - **Still open**: the back slope behind the base still reads a little busy at 1.5-3 km; the left
   valley mist is a flat grey sheet.
+
+## Revision 3 (grill, 2026-10-29)
+
+A structure pass: more detail on the building, every piece thought out and there for a reason
+(nothing random). The user also flagged the left tower: its knoll (ground at -15 m) swallowed the
+shaft, so it sat entirely in the mountain. **Nothing already built is removed**; this pass only adds
+and fixes the left tower's ground.
+
+| # | Area | Decision |
+|---|------|----------|
+| R3-1 | Left tower | The knoll goes. The front slope keeps falling, the footing lands **120-150 m below the deck** in the forest with a small cleared apron, a long ribbed shaft rises out of the trees. The cap stays where the frame has it. |
+| R3-2 | Access | One **enclosed skybridge** from the Lower deck's left chamfer into the tower shaft at deck level: a boxed truss about 12 m deep, a dark glazed strip, snow on top, the comms cable tray under it, one pier into the trees if the span is over ~150 m. No road spur. |
+| R3-3 | Fascias | **Glazing where people are** (lifts revision 2's "no windows" only for this): Mid and Tier1 get a continuous recessed glazed band under a deep overhang lip, mullions every 6 m lined up with the 48 m bays; Lower only a crew-room strip on the corner by the hangar mouth; the Right extension stays blank with louvre panels at the radiators. Daytime: glass is unlit dark steel-blue. |
+| R3-4 | Apron | **Two parked craft** on the pads (30-40 m, dark, snow on their backs, static - parked is not traffic), **3 maintenance sheds** along the back edge against the Mid wall with doors to the lane, a **cargo staging yard** by the hangar mouth (containers in 2-3 stacks, plowed rows), **2 elevator heads** where the deck reaches the levels below. Everything else under snow. |
+| R3-5 | Centre tiers | The crown is **base command**: a level glazed band and a louvred **plant enclosure** on its roof. The Mid/Tier1 rails become **skylight strips** over the ops floors on the 46 / 36 m grid, bare of snow (heat from below). One cleared **walkway** from the elevator heads across Mid to the crown. |
+| R3-6 | Right extension | A **substation** where the power cut leaves (fenced transformer yard, switch house, the line's first gantry on the deck edge); **lattice pylons** every ~250 m down the cut with three sagging wires into the mist; a **fuel farm** (4 squat tanks in a low bund wall) at the extension's apron end, a pipe rack along the duct to the apron. |
+| R3-7 | Towers | Centre is **flight control**: the raked, outward-leaning glazed cab ring under its cap. 8 radial **brackets** under every cap's skirt back to the shaft (the overhang is carried). A **service ring** with a door only where a bridge or deck meets a shaft. Comms / pad / exhaust / sensor stay. |
+| R3-8 | Legibility | **Ink by size**: massing (decks, towers, bridge, crown, tanks) keeps its crease ink; small parts (containers, sheds, mullions, brackets, pylons, rails) read by tone only; wires thin dark lines, no ink, fading with the haze; nothing under ~4 px at its distance. |
+| R3-9 | Rule | Nothing removed. Every new part names its job in a code comment; a part that can't name one isn't built. |
+
+### Built (revision 3)
+
+Built 2026-10-29 the same day over four probe passes; final frame `docs/specs/cutscene-arrival-r3.png`.
+
+- **Left tower:** the knoll row is out of `HILLS`. That alone left the ground at -84 m: the tower is on
+  the ridge's 160 m flat shelf. So the crest's two left points move back (CREST v 57/58 -> 53) and the
+  tower stands on the front slope, ground -118 m (ring -75..-152). The shaft and a plinth under the
+  footing go down to the lowest ground round it, so the downhill side doesn't float. Its apron is the
+  existing tower clearing.
+- **Skybridge** (`_build_skybridge`): from the Lower outline's nearest point to the shaft. The span is
+  only ~45 m, so there's no pier. 14 m wide, 12 m deep, floor one storey (15 m) under the deck top,
+  glass strip, a diagonal per 10 m bay, cable tray 2 m under it. It lands on the shaft's service ring.
+- **Glazing:** DECKS `glazing`. `band` (Mid, Tier1, Tier2): glass from 0.26 to 0.74 of the thickness,
+  recessed 4 m, a 2.5 m overhang lip, 2.2 m mullions 8 to a 48 m bay. `corner` (Lower): up to 96 m of
+  strip on the hangar's corner side. `louvres` (Right): a 52 m dark panel with slats over the
+  radiators, and the streaks now run down from it. Glass (0.24, 0.32, 0.42); the first, darker
+  (0.12, 0.16, 0.21) couldn't be told from the dark recesses.
+- **Apron:** craft 36 m, a lofted six-sided hull, wings, fins, legs, snow on the back and wings, nose
+  toward the next lane point. Sheds 44 x 26 x 12 m against Mid's front wall. Container yard: 2 x 4
+  blocks of 6, stacked 2-3 (seed 2329), three tones, bare tops, plowed under. The pad lift sits by
+  pad 0. The lift core stands against Mid's front wall from the Lower roof to Mid's roof + 8 m, with
+  a walkway (6 m, plowed) to a door in Tier1's wall. Skylights keep clear of both.
+- **Centre tiers:** the ops housings are now skylights (1.6 m, glass top, bars every 6 m, no drifts).
+  The plant enclosure on the crown is a 7 m louvred box with a dark open top.
+- **Plant deck:** substation yard 68 x 36 m at the cut (fence, 3 transformers, switch house), and a
+  24 m gantry on the edge. Pylons every 250 m (38 m, braced lattice), wires sagging 3%. Fuel farm: on
+  the duct's far side from the substation, the back side's only clear spot (Mid overhangs the rest).
+  The first 60 m bund didn't fit, so it's 48 m with 9 m tanks. The pipe rack runs toward the apron
+  until it meets Mid.
+- **Towers:** the control skirt is 1.3x taller, glass, with 32 mullions. Brackets: 8 fins (seam tone,
+  0.03 R thick). Light fins in wall tone read as windows on every tower, which hid the control cab.
+  The outpost's towers skip brackets and rings (under a pixel at 7 km).
+- **Ink:** `fine_*` materials have no crease pass; massing, glass and craft keep it.
+- Tests: `test_arrival_structure_pass` (left tower ground, skybridge, pylons, fuel farm, ink split);
+  13 arrival tests pass.
+- **Still open:** the hill behind the Lower deck still pokes through its roof (kept: nothing removed
+  this pass). The left tower's footing on the slope reads as a white pedestal.
+
+## Revision 4 (grill, 2026-10-30)
+
+From the user's marked-up frame of revision 3: the hill pokes through the Lower deck's roof, the
+left tower's foot still reads badly on the slope, and so does the white S-curve under it; "fix the
+mountain, make it look better"; the left cloud bank wanted on the right too; and a giant spire coming
+out of the ground, centre back, running off the top of the frame. Rev 3's rule stands: **nothing
+already built is removed**, only moved, reshaped or added.
+
+| # | Area | Decision |
+|---|------|----------|
+| R4-1 | Hill through the deck | Keep the snow hill (`HILLS[0]`), **move it back and tighten its radius** so it rises fully behind the deck's left half. No general clamp under the decks. |
+| R4-2 | Left tower foot | The white flared footing and snow apron become a **dark stepped bastion**: a retaining plinth in the foundation's dark ribbed material, stepping down the slope, its downhill face a wall. Only a thin drift line on top; the trees come right up to the wall. |
+| R4-3 | The S-curve | It is the access road's switchback, bloated by snow on the flats. Make it **read as a road**: constant narrow cleared width, a dark cut bank uphill, a plowed berm line downhill, trees tight to both edges. |
+| R4-4 | The mountain | **Shape over decoration**: one or two spurs running down from the base toward the camera with a gully between them; the forest tone follows the slope's light (sunlit faces a step lighter, shaded darker) so the landform reads through the trees; **exposed rock bands** where it is steepest (under the deck foundation, below the tower bastion). |
+| R4-5 | Right clouds | A **sibling bank, not a mirror**: 4-5 metaball heaps across the user's outline, stepping back to front, the back one wrapping the sister outpost's peak foot (as the left bank wraps the far tower), the lowest just behind the Right deck's back edge, deeper than the left bank so it stays behind RightTower. The existing mist sheets stay as its lower edge. |
+| R4-6 | Spire | An **ancient built thing that has pushed up through the ground**: dark, tapered, faceted, plainly built but older and far bigger than the base (no windows, no human-scale detail). Uneven hexagonal section, slight taper, long grooves, ledge bands holding snow; inked; the haze lifts it with height. Off the top of the frame. |
+| R4-7 | Spire's foot | About **3.5 km** out, ~350 m across, in the gap between CentreTower and RightWide. The land under it is raised into a **heaved shelf above the cloud sea**: tilted slabs, cracks running out, broken snow; the sea breaks round the shelf's edges. |
+| R4-8 | Spire's life | **Inert**: no light, no motion; only spindrift streaming off its ledges. The base's beacons stay the only life. |
+
+### Built (revision 4)
+
+Built 2026-10-30 over three probe passes; frame `docs/specs/cutscene-arrival-r4.png`. Hill moved to
+1600 m / radius 240. LeftTower `bastion = 2.6` (3 octagonal tiers, 0.62-1.0 of 88 m, plowed tops,
+drift lines, seam ribs). Road rounded (4 Chaikin passes), mesh `Road` (plowed surface, seam cut bank,
+snow berm). SPURS (two spurs + a gully) and ROCK_BANDS (under the foundation, plus one under the
+bastion); forest floor lit step at normal . sun 0.355 (the front slope is backlit, ~0.3-0.4).
+Five right bank heaps. `ArrivalSpire` (scripts/cutscene/arrival_spire.gd, node Spire): hex shaft,
+85 m ledge sections, grooves, 22 slabs; mesa shelf radius 240 with torn flanks, 11 cracks (clear map
+B), three cloud heaps hiding the shelf's lower cliffs, spindrift off the ledges. Tests:
+`test_arrival_revision_4`; **one check still fails** (the bastion's downhill clearing check) and was
+not chased down tonight.
+
+## Revision 4b (grill, 2026-10-30)
+
+The user on the rev 4 spire: "not what I wanted": it should be **farther away**, and **no rock
+mountain at its base**. This is an explicit exception to rev 3's "nothing built is removed": the
+shelf, its slabs, its cracks and its cloud heaps go.
+
+| # | Area | Decision |
+|---|------|----------|
+| R4b-1 | Distance | **Real size kept, pushed to ~11 km** (from 3.5 km), still at u 52 in the CentreTower / RightWide gap. About a third as wide on screen (~3.4% of the frame); still off the top. |
+| R4b-2 | No rocks | The mesa shelf, the 22 slabs, the 11 cracks (clear map B) and the three shelf cloud heaps are removed. |
+| R4b-3 | Foot | It stands on a **low flat snowfield** ~1.5 km across, ~30 m above the cloud sea: soft snow edges into the cloud, no cliffs, no exposed rock; the sea laps it. A thin drift where shaft meets snow. |
+| R4b-4 | Detail | **Scaled to read at distance**: ledge sections ~200 m (about 6 bands in frame), grooves ~20 m. Same hexagon, taper, snow ledges, tone steps and spindrift. |
+| R4b-5 | Haze | **Full haze**, like the far range. Ink fade pushed past 12 km. |
+
+### Built (revision 4b)
+
+Built 2026-10-30; frame `docs/specs/cutscene-arrival-r4b.png`. `SPIRE` at 11000 m, v 20.4 (the foot
+lands 28 m above the sea at -470), frame-top radius 125. The snowfield is ArrivalLand's `_field`,
+laid after the gullies so it stays level: flat 400 m, then a 500 m shoulder at grade 0.07 (open
+snow: normal y ~0.998, under the forest rule's bar) into the cloud, then falling away under it; its
+outline lobed +-25% (three sines on the angle). The first pass, a plain 750 m disc, read as a plate
+and was ~2.6 km across. ArrivalSpire: sections 200 m, ledge step 0.08, grooves 20 m, a `Drift` skirt
+at the foot, crease fade 14-20 km; no `Slabs`. Spindrift cards 1300 x 90 m. Removed: `_build_cracks`,
+the crack channel in `_fill` / `_stroke`, the shader's `crack_dark`, `SPIRE_HEAPS`. Under the full
+haze the grooves and spindrift barely read, and the shaft is near the far range's tone; it reads by
+silhouette. Tests: `test_arrival_revision_4` checks the distance, the snowfield's height over the sea,
+that it is open snow, no slabs, the drift, and 4-8 bands in frame; the arrival suite passes (the
+bastion clearing check passes now too).
+
+## Revision 5 (grill, 2026-10-30)
+
+The user: the base has been **abandoned for 200 years**: nobody works or lives there, it has grown
+over and is falling apart, "not completely destroyed", "a little more overgrown than destroyed".
+Reference: an overgrown brutalist skyline (ivy sheets down every facade, broken tops, rebar, trees on
+the roofs; the towers still stand). The parked craft, the landing pads and the blinking red beacons
+go: an explicit exception to rev 3's "nothing built is removed". Everything else built is kept,
+ruined in place. Composition, camera, terrain, forest, clouds and spire stay.
+
+| # | Area | Decision |
+|---|------|----------|
+| R5-0 | Removed | The parked craft, the pads, rings, taxi lane and pad markings, the RightWide's landing ring, every beacon (the outpost's too) and the steam plume. Nothing is plowed any more. |
+| R5-1 | Climate | **Snow stays**: the overgrowth is cold-climate. Conifer scrub and spruce on the roofs, dark moss / lichen-ivy hanging down the walls, one step greener than the spruce teal so it parts from the trees, snow sitting on top of it. |
+| R5-2 | Towers | Two take silhouette damage, the rest edge wear. **RightTower** (exhaust): about a third of the cap's rim gone in one jagged stepped wedge, rebar out of the break, the stacks snapped short, no steam. **LeftTower** (comms): the mast snapped halfway, the top leaning off it, the dish torn down onto the cap. **Centre / RightWide / FarTower**: a few bites out of the rims, a fallen bracket or two, the glazing empty black holes (a few panes left in the control cab). **Outpost**: its tallest cap broken. Nothing topples. |
+| R5-3 | Roofs | Trees **where 200 years of needles and grit collected**: dense along the foot of every wall, in the deck's corners and chamfers, in lines along the structural joints (cracks). Saplings up to ~15 m on the oldest patches, low dark scrub round them. About **30-40% of the Lower deck**, ~15% of the upper tiers, open snow roof between. **One collapse hole** in the Lower deck, ~40-60 m across where the second pad was: broken slab edge with rebar, dark inside, trees growing up out of the level below. |
+| R5-4 | Walls | **Curtains from every overhang**: under each tower cap, every deck edge, the bastion and foundation tops, uneven tongues (short fringes to 40-80 m) in vertical strips that follow the ribs. About 40-50% of the tower shafts, 25-30% of the fascias; the left tower (nearest) carries the most. Growth also **climbs ~20 m up from the forest** onto every footing and wall. Rust and water **streaks** down the bare wall between the curtains. |
+| R5-5 | Equipment | Ruined, not removed: the skybridge sags, its glass gone, the cable tray dropped at one end; sheds' roofs fallen in on two, doors gone; containers toppled and rusted, snow on them, scrub between; lift heads rusted; skylights glass-less dark slots with saplings; the plant enclosure's louvres half gone; substation overgrown, its fence half down; one fuel tank crumpled, the rest rust-streaked; pylons stand but most wires are down; the **road and the power cut are grown back** into faint scars (younger, lower trees on snow; the road keeps its cut bank); the hangar mouth's orange faded to rust, growth over its lip; formerly heated surfaces (radiators, skylights) carry snow. |
+| R5-6 | Atmosphere | Same clear day and sun. The concrete **warms to a weathered grey**, the haze starts a little closer. **8-12 birds** circle out of the left tower's broken cap and drift across the deck, the only life. Spindrift also off the broken tower edges. The spire stays inert. |
+| R5-7 | Edges | Light: **3-5 spalled bites per deck** (5-15 m) with dark ribs exposed, a couple of **dropped fascia panels** (dark gaps on the seam line), a **rubble talus** under the bigger bites (snowed over, saplings in it), one **sagging slab** on the right extension. The foundation is cracked but whole. |
+
+### Built (revision 5)
+
+Built 2026-10-30 over four probe passes; frame `docs/specs/cutscene-arrival-r5.png`.
+- **Removed:** `PADS`, `LANE`, `CRAFT_LENGTH`, the craft, the plowed / accent materials, every
+  beacon (`arrival_beacon.gdshader` deleted), the plume card. What the apron needed survives as
+  `ArrivalShot.HANGAR`, `LIFT_SITE` and `HOLE`. The Lower deck's roof is `apron`.
+- **Decks (ArrivalBase):** `BITE_COUNT` bites per deck (Lower 5, Right 4, tiers 3) on edges facing
+  the camera, 6-16 m wide, 5-12 m deep, the roof and upper fascia cut away (`_bitten`, broken faces
+  in seam via `_walls_split`), a dark floor at the groove, rebar; the Right deck's first bite is the
+  sagging slab (dropped 3.5 m, still snowed). Rubble talus under bites over 11 m. `DROPPED_PANELS`
+  (Lower 2, Right 1, Mid 1). Glazed bands are black, a third of the mullions gone. The hole: 15-point
+  ragged ring at radius 25 (0.72-1.12), a lighter 3 m slab edge over a dark 20 m shaft, rebar, one
+  slab hanging in; the roof is capped round it in two halves (`_cap_holed`).
+- **Towers:** `wear` in TOWERS. `_cap_cuts` / `_layer_cuts` cut each cap layer (step, rim, gap,
+  lower rim) with the same jagged line at stepped depths. RightTower `broken`: wedge at 0.3 rad,
+  2.1 rad wide, inner 0.28 / 0.42 / 0.5 / 0.56 of the cap (rim ~third gone); the first pass faced
+  the camera and barely changed the silhouette, so it sits on the cap's right now. Stacks inside it
+  gone, the rest snapped short. LeftTower `snapped`: mast broken at half height, the top leaning off
+  it with a yardarm, the dish lying on the rim. Others `bitten`: 2-3 bites 0.84-0.9 deep, one bracket
+  fallen. Control cab: glass on 2 of 8 faces. Outpost: tallest cap broken.
+- **Equipment:** sheds 2 and 3 roofless (inner walls, dark floor, trees); containers 1-2 high, rust /
+  steel, a quarter of the tops lying askew; skylights dark slots, two bars in three gone; plant
+  louvres half down; substation fence half down, transformers rust; one fuel tank crumpled, rust on
+  the rest; pipe rack span 4 fallen; only power spans 1 and 4 strung, others one wire hanging to the
+  ground; skybridge sags 3 m, one glass pane a side, tray torn at 72% and hanging 26 m; road surface
+  snow, no berm; bastion tops snow. Walls `C_WALL` (0.45, 0.43, 0.4), rust `C_RUST`.
+- **Growth (`ArrivalGrowth`, scripts/cutscene/arrival_growth.gd, node Growth after Forest):** roof
+  samples every 5 m scored by shelter (wall feet 32 m, corners 60 m, edge, joint lines every bay 80 m
+  in, round roof blocks, hole rim) + noise; the best 35% (low decks) / 15% (tiers) grow: three dark
+  scrub mounds each (`_mound`, no snow: the snow-tipped spruce squashed into scrub read white) and
+  one or two spruce 3-15 m by age. Tree slots (hole 16 trees 16-27 m, sheds, skylights, yards), rubble
+  saplings, scrub on the caps. Curtains on `ArrivalBase.walls`: strips 4-9 m in Markov runs (stay
+  0.75), 45% fringes 3-12 m / 55% tongues 14-80 m, snow along the top; climbing 70% up to ~20 m.
+  Moss (0.2, 0.31, 0.19): the first, darker green read as grey streaks. The strips' ragged edges fill
+  about two thirds, so the listed covers are over the spec's (shafts 0.6, left 0.75, fascias 0.38).
+  Streaks rust / water on 35% of bare stretches. Road: young trees 4-9 m across its cleared width
+  every 2.5 m (75%); the power cut 4 a row every 6 m (80%).
+- **Atmosphere:** birds in ArrivalShot (`bird_*` exports, `bird_at`): 10 dark billboard Vs wheeling
+  on a 40 m circle that drifts from 30 m over the left cap to over the Lower deck through the hold;
+  haze_start 1100 m (from 1400). Spindrift card off the broken cap (`break_spots`).
+- Tests: `test_arrival_abandoned`, `test_arrival_overgrown`, `test_arrival_birds` (the beacon and
+  roof-jobs tests went). The arrival suite passes. Load time unchanged (~8.5 s, the land dominates).
+
+## Revision 5b (2026-10-30)
+
+The user on rev 5: "I want moss and shrubbery on the building, but trees would not grow on the
+building." **No tree stands on the structure**: roof patches, the collapse hole, the roofless sheds,
+skylights, yards, tower caps and talus that fell onto a lower deck grow only scrub; the moss
+curtains, climbing growth and streaks are unchanged. Trees stay where they stand on the land: talus
+on the ground, the grown-back road and power cut.
+
+Built 2026-10-30; frame `docs/specs/cutscene-arrival-r5b.png`. ArrivalGrowth: roof samples grow 3
+scrub mounds (4 past age 0.45), 2-6 m tall by age (`scrub_height`; `tree_height` gone); `tree_slots`
+grow scrub capped at 6 m; ground talus saplings sit on the land at their own spot (they had been
+lifted to the pile's centre height on slopes). Counters `roof_clumps` / `slot_clumps`.
+`test_arrival_overgrown` checks every tree stands within 2 m of the land.
+
+## Revision 6 (grill, 2026-11-02)
+
+Cleanup only, from the user's frame: "some of the moss hanging isn't lined up, remove the birds,
+fine tune this scene, don't add anything, just clean up what we have." Grilled 7:
+
+| # | Area | Decision |
+|---|------|----------|
+| R6-1 | Moss | Hanging growth only starts at a real ledge and lies on what it hangs on. Shafts: strips only in the bays between the 16 ribs (they stand ~0.13 sr proud and cut the strips into slivers). Cap rims: the fringe stops at the lower rim's foot (below it the skirt pulls in and strips hung in the air). Skybridge: follows its sag. Deck fascias unchanged. |
+| R6-2 | Cloud opacity | Both banks ~50%, each fading as one sheet (no heap's edge showing through the one in front). |
+| R6-3 | Left bank | Down level with the right bank (top ~13% down the frame): the left range shows, the far tower's cap clear with cloud round its shaft, the low heap at the deck line behind the near tower. The right bank stays put. |
+| R6-4 | Scrub | No halos (shadows off), a step greener but darker than the moss, dense patches thinned ~a third. |
+| R6-5 | Far snow | Same snow/dark balance, but big calm shapes instead of flecks; the near slopes unchanged. |
+| R6-6 | Fog smears | Left-valley mist card removed (the lowered bank covers it); the other mist sheets get a hard cel edge, still translucent; the bank's soft fade against the far tower sharpened. |
+| R6-7 | Birds | Gone (code, exports, tests). |
+
+### Built (revision 6)
+
+Built 2026-11-02; frame `docs/specs/cutscene-arrival-r6.png`.
+
+- **Moss:** `_tower_growth` splits each shaft face at the ribs crossing it (rib half width + 0.6 m
+  clear, bays under 3 m dropped) and tags walls `kind` (`shaft` / `rim`) + `tower`; rim faces end at
+  `y_low` (were `y_low - 0.1 r`). Skybridge faces hang from the roof edge (`y1 + 0.8`, was
+  `y1 - sag`) down to 15 m under the floor (was 30) with a `sag` key; ArrivalGrowth drops each
+  strip's top by `sag * sin(pi f)`. The shafts carry visibly less moss now (the bays are narrow).
+- **Clouds:** banks use `shaders/cutscene/arrival_cloud_bank.gdshader` (`depth_draw_always`, drops
+  pixels under half alpha); both cloud shaders include `arrival_cloud.gdshaderinc`. ArrivalClouds
+  mirrors each bank card's `sorting_offset` inside the banks' distance range so they draw nearest
+  first, so only the front heap survives per pixel. Bank opacity 0.5, soft depth 60 m (was 150).
+  Left bank cards +12 v. Mist softness 0.04 (was 0.25), the [4, 52] mist card gone.
+- **Scrub:** C_SCRUB (0.13, 0.22, 0.15) (was (0.1, 0.17, 0.13)); 3 / 2 mounds a roof sample (was
+  4 / 3); the Scrub MultiMesh casts no shadow. The halos were mostly the environment glow blooming
+  the roof snow over the dark clumps: `glow_hdr_threshold` 4.0 (was 1.5), which crisps every
+  bright/dark edge in the frame.
+- **Far snow:** the flecks behind the deck were forest-floor holes, not the snow line (debug-coloured
+  to find them). ArrivalLand now stores a broad normal per vertex (`broad`, measured `broad_reach`
+  100 m out; packed in COLOR.gb for the shader). Past `broad_fade` (1800-2400 m, beyond the base, so
+  the near slopes are untouched) the snow line and the forest read it, the gully/ridge snow terms
+  fade out, and the snow jitter fades over 1500-2400 m (was 2000-6000). Out to `flat_forest_fade`
+  (3500-5000 m) flats keep their forest (`flat_k`), else the bowl behind the deck went white; past
+  it the far valleys' flats are open snow again. ArrivalForest reads the same (`far_ny`, `flat_k`).
+- **Not changed, now visible:** the lowered bank uncovers the avalanche chutes on the left slopes
+  (the thin white diagonals by the near tower's mast and at the left edge). Existing terrain, kept.
+- Tests: `test_arrival_moss_lines_up` (shaft bays clear of every rib, rim fringes no deeper than
+  the rim stack, skybridge sag); `test_arrival_birds` replaced by `test_arrival_no_birds`. Arrival
+  suite passes; the full suite's only failures are the 2 old test_ichi_parked_ship ones.

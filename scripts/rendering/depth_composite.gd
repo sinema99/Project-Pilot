@@ -52,6 +52,10 @@ extends CompositorEffect
 ## Pixels this bright (luminance, HDR) escape the near band, so glows on a dark hull stay lit; they
 ## start escaping at 60% of it. 0 = off.
 @export var dark_keep := 0.0
+## Pixels this colourful (brightest channel minus darkest, HDR) escape the near band too, so a red
+## bolt stays lit where a white hull of the same brightness does not; they start escaping at 60% of
+## it. 0 = off.
+@export var dark_keep_chroma := 0.0
 
 @export_group("Flash")
 ## 0..1, pushed every frame by the shot: lifts the near band toward the flash look.
@@ -94,7 +98,7 @@ layout(set = 0, binding = 0, std140) uniform Params {
 	vec4 dists;     // log near_end, log lit_start, log haze_start, log haze_end
 	vec4 wrap;      // log wrap_near, log wrap_far, debug, -
 	vec4 flash;     // near multiplier with the flash in rgb, log flash_start
-	vec4 extra;     // log sky distance (0 = infinite), dark keep, -, -
+	vec4 extra;     // log sky distance (0 = infinite), dark keep, dark keep chroma, -
 } pm;
 
 float log_dist(float depth, vec2 uv) {
@@ -183,6 +187,10 @@ void main() {
 	if (pm.extra.y > 0.0) {
 		float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
 		dark *= 1.0 - smoothstep(pm.extra.y * 0.6, pm.extra.y, lum);
+	}
+	if (pm.extra.z > 0.0) {
+		float chroma = max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b));
+		dark *= 1.0 - smoothstep(pm.extra.z * 0.6, pm.extra.z, chroma);
 	}
 	vec3 mult = mix(pm.dark.rgb, pm.flash.rgb, smoothstep(pm.flash.w - 0.4, pm.flash.w, L));
 	c = mix(c, c * mult + pm.lift.rgb, dark);
@@ -374,7 +382,7 @@ func _params_bytes(inv: Projection, size: Vector2i) -> PackedByteArray:
 		log(near_end), log(lit_start), log(haze_start), log(haze_end),
 		log(wrap_near), log(wrap_far), float(debug_view), 0.0,
 		mf.r, mf.g, mf.b, log(flash_start),
-		log(sky_distance) if sky_distance > 0.0 else 0.0, dark_keep, 0.0, 0.0,
+		log(sky_distance) if sky_distance > 0.0 else 0.0, dark_keep, dark_keep_chroma, 0.0,
 	])
 	return a.to_byte_array()
 
