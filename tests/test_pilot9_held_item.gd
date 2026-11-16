@@ -33,19 +33,21 @@ func _has_event(action: StringName, pred: Callable) -> bool:
 			return true
 	return false
 
-func test_equip_is_bound_to_r_and_dpad_right() -> void:
+# The pad button moved to d-pad down on 2026-11-12, when d-pad right became the staff's slot
+# (docs/specs/pilot9-revolver.md).
+func test_equip_is_bound_to_r_and_dpad_down() -> void:
 	check(InputMap.has_action(&"equip"), "project.godot has no `equip` action")
 	if not InputMap.has_action(&"equip"):
 		return
 	check(_has_event(&"equip", func(ev): return ev is InputEventKey and ev.physical_keycode == KEY_R),
 		"`equip` should be on R")
-	check(_has_event(&"equip", func(ev): return ev is InputEventJoypadButton and ev.button_index == JOY_BUTTON_DPAD_RIGHT),
-		"`equip` should be on d-pad right")
+	check(_has_event(&"equip", func(ev): return ev is InputEventJoypadButton and ev.button_index == JOY_BUTTON_DPAD_DOWN),
+		"`equip` should be on d-pad down")
 
-func test_starting_item_is_the_staff() -> void:
+func test_starting_item_is_the_rifle() -> void:
 	var ps := load(PILOT_TSCN) as PackedScene
 	var fresh := ps.instantiate()
-	eq(fresh.starting_item, load(STAFF), "pilot9 should start with the staff")
+	eq(fresh.starting_item, load("res://resources/items/rifle.tres"), "pilot9 should start with the rifle")
 	fresh.free()
 
 func test_spawns_holstered_and_hidden() -> void:
@@ -142,8 +144,8 @@ func test_staff_carries_its_own_hold() -> void:
 		return
 	var staff: HeldItem = load(STAFF)
 	var skel := pilot.get_node("character/Armature/GeneralSkeleton") as Skeleton3D
-	eq(staff.hold_rotations.size(), HOLDER.ARM_BONES.size(), "the staff should hold every arm bone")
-	eq(HOLDER.pose_from_rotations(staff.hold_rotations, skel).size(), HOLDER.ARM_BONES.size(),
+	eq(staff.hold_rotations.size(), 4, "the staff should hold the four right-arm bones")
+	eq(HOLDER.pose_from_rotations(staff.hold_rotations, skel).size(), 4,
 		"every bone in the staff's hold should resolve on pilot9's skeleton")
 	pilot.toggle_drawn()
 	pilot.item_holder._refresh_pose()

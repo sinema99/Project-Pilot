@@ -594,10 +594,10 @@ func _build_road() -> void:
 	portal = Vector3(p.x, height(p.x, p.y), p.y)
 	portal_out = out
 	var path := PackedVector2Array([p, p + out * r.out])
-	var sign := -1.0
+	var leg_sign := -1.0
 	for k in r.legs:
-		path.append(path[path.size() - 1] + e * sign * r.leg + out * r.advance)
-		sign = -sign
+		path.append(path[path.size() - 1] + e * leg_sign * r.leg + out * r.advance)
+		leg_sign = -leg_sign
 	# Rounded through the hairpins (spec R4-3: a road, not a zig-zag scar), both ends kept.
 	for k in 4:
 		var rounded := PackedVector2Array([path[0]])

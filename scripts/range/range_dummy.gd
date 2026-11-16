@@ -85,6 +85,8 @@ var _muzzle: Marker3D = null
 var _hitbox: Area3D = null
 var _flash := 0.0
 var _recoil := 0.0
+## A bullet's shove on the visual only (metres), settling back; the path is untouched.
+var _shove := Vector3.ZERO
 ## What it moved last physics frame over the frame time, world space.
 var _velocity := Vector3.ZERO
 ## The current lean as an axis in its own frame, length in radians.
@@ -92,6 +94,8 @@ var _lean := Vector3.ZERO
 
 
 func _ready() -> void:
+	# AIRFRAME draws it as a character: flat-lit, in the CHARACTER PIXELS grid.
+	set_meta(&"airframe_character", true)
 	_rng.randomize()
 	add_to_group(&"range_dummy")
 	sync_to_physics = false
@@ -263,6 +267,11 @@ func take_hit(amount: float, kind: StringName, point: Vector3) -> void:
 		return
 	_flash = 1.0
 	_recoil = 1.0
+	if kind == &"bullet":
+		var away := global_position - point
+		away.y = 0.0
+		if away.length() > 0.01:
+			_shove = away.normalized() * clampf(amount / 25.0, 0.5, 2.0) * 0.14
 	anime_hold.accent(&"hit", 1.0 if kind == &"reflect_perfect" else 0.0)
 	hit.emit(amount, kind, point)
 
@@ -290,6 +299,8 @@ func _process(delta: float) -> void:
 	var wobble := Basis.from_euler(Vector3(sin(_recoil * 40.0) * 0.12 * _recoil, 0.0,
 		cos(_recoil * 33.0) * 0.12 * _recoil))
 	var lean := Basis(_lean.normalized(), _lean.length()) if _lean.length() > 1e-5 else Basis()
+	_shove = _shove.move_toward(Vector3.ZERO, delta * 0.7)
+	_visual.position = global_basis.inverse() * _shove
 	_visual.basis = lean * wobble
 
 

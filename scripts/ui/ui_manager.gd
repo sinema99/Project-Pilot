@@ -17,6 +17,10 @@ const SCREENS := {
 	&"shell": {"path": "res://scenes/ui/shell.tscn", "pauses": true},
 	&"confirm": {"path": "res://scenes/ui/confirm_dialog.tscn", "pauses": true},
 	&"settings": {"path": "res://scenes/ui/settings_screen.tscn", "pauses": true},
+	# Runs over a live world: no pause, and it draws its own dim and is never the hologram. See
+	# docs/specs/inventory.md.
+	&"inventory": {"path": "res://scenes/ui/inventory_screen.tscn", "pauses": false, "dim": false,
+		"hologram": false},
 }
 
 const DIM_COLOR := Color(0, 0, 0, 0.65)
@@ -177,6 +181,19 @@ func to_main_menu() -> void:
 func is_menu_showing() -> bool:
 	return not stack.is_empty() or not shell_enabled or is_instance_valid(_holo)
 
+## True when a screen on `screens` wants the flat dim behind it (every screen but the inventory,
+## which dims itself).
+static func wants_dim(screens: Array) -> bool:
+	for screen_name: StringName in screens:
+		if SCREENS.get(screen_name, {}).get("dim", true):
+			return true
+	return false
+
+## True while a screen is open over the world. World prompts (the interaction panel) hide, and
+## ground items stop bidding.
+func hides_world_prompts() -> bool:
+	return not stack.is_empty()
+
 # --- internals ----------------------------------------------------------------
 
 func _on_confirm_accepted() -> void:
@@ -195,7 +212,8 @@ func _apply(state: Dictionary) -> void:
 	stack.assign(state["stack"])
 	if not is_instance_valid(_holo):
 		_holo = null
-	if _holo == null and was_empty and not stack.is_empty():
+	if _holo == null and was_empty and not stack.is_empty() \
+			and SCREENS.get(stack.back(), {}).get("hologram", true):
 		_holo = _pick_hologram()
 		if _holo != null:
 			_holo.tree_exiting.connect(_on_hologram_gone, CONNECT_ONE_SHOT)
@@ -204,7 +222,7 @@ func _apply(state: Dictionary) -> void:
 	if _holo != null:
 		_apply_hologram(state)
 		return
-	_set_dim(not stack.is_empty())
+	_set_dim(wants_dim(stack))
 	get_tree().paused = state["paused"]
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED if state["cursor_captured"] else Input.MOUSE_MODE_VISIBLE
 	# Only the top screen may hold focus, or arrow keys would walk into a list

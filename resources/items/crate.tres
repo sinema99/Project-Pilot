@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="ItemDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/inventory/item_def.gd" id="1_def"]
+
+[resource]
+script = ExtResource("1_def")
+id = &"crate"
+display_name = "CRATE"
+size = Vector2i(3, 3)
+max_stack = 1
+color = Color(0.55, 0.42, 0.26, 1)
+mech_only = true
+category = &"gear"
+description = "Cargo crate. Too big for your pack: carry it to a vehicle."
+weight = 15.0

@@ -46,7 +46,7 @@ func test_defaults() -> void:
 		fail("could not instance pilot9")
 		return
 	near(p.camera_shoulder_offset, 0.25, 0.0001, "offset is 0.25 m (DayZ camera)")
-	near(p.camera_shoulder_swap_time, 0.25, 0.0001, "swap takes 0.25 s")
+	near(p.camera_shoulder_swap_time, 0.5, 0.0001, "swap takes 0.5 s")
 	eq(p._shoulder_target_side(), 1.0, "starts on the right shoulder")
 
 func test_swap_flips_and_persists_across_a_wall_run() -> void:
@@ -64,15 +64,18 @@ func test_swap_flips_and_persists_across_a_wall_run() -> void:
 	p.is_wall_running = false
 	eq(p._shoulder_target_side(), -1.0, "after the run the chosen side is back")
 
-func test_ease_reaches_the_target_in_the_swap_time() -> void:
-	var pos := 0.6
+func test_swap_spring_starts_slow_and_lands_in_the_swap_time() -> void:
+	var x := 0.6
+	var v := 0.0
+	var first := PILOT._camera_state_spring(x, v, -0.6, 1.0 / 60.0, 0.5)
+	check(absf(first.x - x) < 0.04, "first frame barely moves, got %f" % absf(first.x - x))
 	var t := 0.0
-	while t < 0.25 - 0.0001:
-		pos = PILOT._shoulder_ease(pos, -0.6, 1.0 / 60.0, 0.25)
+	while t < 0.5 - 0.0001:
+		var s: Vector2 = PILOT._camera_state_spring(x, v, -0.6, 1.0 / 60.0, 0.5)
+		x = s.x
+		v = s.y
 		t += 1.0 / 60.0
-	check(absf(pos - -0.6) < 0.6 * 2.0 * 0.05, "near the far side after 0.25 s, got %f" % pos)
-	check(pos < 0.0, "and across the middle")
-	eq(PILOT._shoulder_ease(0.6, -0.6, 1.0, 0.25), -0.6, "a huge step lands exactly, never past")
+	check(absf(x - -0.6) < 0.6 * 2.0 * 0.03, "near the far side after 0.5 s, got %f" % x)
 
 func test_arm_sits_at_the_offset_after_settling() -> void:
 	var p := _scene()

@@ -17,15 +17,23 @@
 [ext_resource type="Material" path="res://resources/pilot_cel_character.tres" id="16_pilotchar"]
 [ext_resource type="Script" uid="uid://ckfev1euksn1e" path="res://scripts/reflect/reflect_test_emitter.gd" id="17_reflectemitter"]
 [ext_resource type="PackedScene" path="res://scenes/pipe_hall.tscn" id="18_pipehall"]
-[ext_resource type="PackedScene" uid="uid://8wpgfx11baee" path="res://scenes/habitat.tscn" id="19_habitat"]
-[ext_resource type="PackedScene" path="res://scenes/habitat_parts.tscn" id="20_habitatparts"]
 [ext_resource type="PackedScene" path="res://scenes/firing_range.tscn" id="21_firingrange"]
 [ext_resource type="Script" uid="uid://bo4aoofkxdqs4" path="res://scripts/rendering/pixel_world.gd" id="30_pixelworld"]
 [ext_resource type="Script" uid="uid://c3xxrq8p6qwou" path="res://scripts/rendering/pixel_look.gd" id="31_pixellook"]
 [ext_resource type="PackedScene" uid="uid://ces1m5kofa4ig" path="res://assets/pilot9_decimate.glb" id="32_decimate"]
 [ext_resource type="Script" uid="uid://ctoduvbsbv7t" path="res://scripts/pilot_switcher.gd" id="33_switcher"]
 [ext_resource type="PackedScene" uid="uid://qbdbdseixki0" path="res://assets/vanguard_1.glb" id="34_vanguard"]
-[ext_resource type="Script" path="res://scripts/rendering/retro_look.gd" id="35_retrolook"]
+[ext_resource type="Script" uid="uid://bd8gbt2se4aeb" path="res://scripts/rendering/retro_look.gd" id="35_retrolook"]
+[ext_resource type="Script" uid="uid://ed0ppecc2yxi" path="res://scripts/rendering/airframe_look.gd" id="36_airframe"]
+[ext_resource type="Script" uid="uid://ce01kbsqpwy14" path="res://scripts/inventory/world_item.gd" id="37_worlditem"]
+[ext_resource type="Resource" path="res://resources/items/ration.tres" id="38_ration"]
+[ext_resource type="Resource" path="res://resources/items/battery.tres" id="39_battery"]
+[ext_resource type="Resource" path="res://resources/items/medkit.tres" id="40_medkit"]
+[ext_resource type="Resource" path="res://resources/items/backpack.tres" id="41_backpack"]
+[ext_resource type="Resource" path="res://resources/items/rifle_crate.tres" id="41_crate"]
+[ext_resource type="PackedScene" path="res://scenes/speeder.tscn" id="42_speeder"]
+[ext_resource type="Script" uid="uid://bdcjolpxsyx6k" path="res://scripts/speeder_course.gd" id="43_speedercourse"]
+[ext_resource type="Script" path="res://scripts/inventory/world_crate.gd" id="44_worldcrate"]
 
 [sub_resource type="Sky" id="Sky_cel"]
 sky_material = ExtResource("3_sky")
@@ -99,12 +107,6 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -134, 1.5, 0)
 
 [node name="PipeHall" parent="." unique_id=1039057271 instance=ExtResource("18_pipehall")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -99, 4, 84)
-
-[node name="Habitat" parent="." unique_id=1039057272 instance=ExtResource("19_habitat")]
-transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, 288, -16, 0)
-
-[node name="HabitatParts" parent="." unique_id=1039057273 instance=ExtResource("20_habitatparts")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 200, -16, 300)
 
 [node name="FiringRange" parent="." unique_id=1039057274 instance=ExtResource("21_firingrange")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -150)
@@ -287,8 +289,27 @@ script = ExtResource("15_rail")
 [node name="EXIA" parent="." unique_id=612094488 instance=ExtResource("10_mech")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6, 0.04, -12)
 
+[node name="Crate1" type="Node3D" parent="." unique_id=866138123]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3, 0, -8.5)
+script = ExtResource("44_worldcrate")
+
+[node name="Crate2" type="Node3D" parent="." unique_id=420897383]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.5, 0, -9.8)
+script = ExtResource("44_worldcrate")
+
+[node name="Crate3" type="Node3D" parent="." unique_id=750429327]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -9.2, 0, -8.6)
+script = ExtResource("44_worldcrate")
+
 [node name="Vanguard1" parent="." unique_id=1039057275 instance=ExtResource("34_vanguard")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -26, 0, -19)
+
+[node name="Speeder1" parent="." unique_id=1427705113 instance=ExtResource("42_speeder")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4, 0.45, 4)
+
+[node name="SpeederCourse" type="Node3D" parent="." unique_id=925606741]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 150, 0, 0)
+script = ExtResource("43_speedercourse")
 
 [node name="ApplyCelGround" type="Node" parent="." unique_id=997651511]
 script = ExtResource("2_applier")
@@ -305,7 +326,7 @@ derive_from_surfaces = true
 [node name="ApplyCelMech" type="Node" parent="." unique_id=612094489]
 script = ExtResource("2_applier")
 material = ExtResource("5_char")
-targets = Array[NodePath]([NodePath("../EXIA/Model"), NodePath("../Vanguard1")])
+targets = Array[NodePath]([NodePath("../EXIA/Model"), NodePath("../Vanguard1"), NodePath("../Speeder1/Tilt/Model"), NodePath("../SpeederCourse/Speeder2/Tilt/Model")])
 derive_from_surfaces = true
 
 [node name="PilotSwitcher" type="Node" parent="." unique_id=530713256]
@@ -321,3 +342,37 @@ script = ExtResource("31_pixellook")
 [node name="RetroLook" type="Node" parent="." unique_id=1730582214]
 script = ExtResource("35_retrolook")
 floor_paths = Array[NodePath]([NodePath("../TrainingV"), NodePath("../JumpGrid/Slab"), NodePath("../JumpGrid/Rails/Floor"), NodePath("../JumpGrid/Vaults/Floor"), NodePath("../FiringRange/Slab")])
+
+[node name="AirframeLook" type="Node" parent="." unique_id=1730582215 node_paths=PackedStringArray("sun")]
+script = ExtResource("36_airframe")
+sun = NodePath("../Sun")
+intensity = 0.75
+
+[node name="TestLoot" type="Node3D" parent="." unique_id=901235561]
+editor_description = "TEST CONTENT for the inventory (docs/specs/inventory.md): delete this node when real loot exists."
+
+[node name="Ration" type="Node3D" parent="TestLoot" unique_id=1713249107]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.7, 0, 1.6)
+script = ExtResource("37_worlditem")
+def = ExtResource("38_ration")
+count = 3
+
+[node name="Battery" type="Node3D" parent="TestLoot" unique_id=1058684438]
+transform = Transform3D(0.8660254, 0, 0.5, 0, 1, 0, -0.5, 0, 0.8660254, -0.7, 0, 1.7)
+script = ExtResource("37_worlditem")
+def = ExtResource("39_battery")
+
+[node name="Backpack" type="Node3D" parent="TestLoot"]
+transform = Transform3D(0.8660254, 0, -0.5, 0, 1, 0, 0.5, 0, 0.8660254, 1.3, 0, 0.6)
+script = ExtResource("37_worlditem")
+def = ExtResource("41_backpack")
+
+[node name="Medkit" type="Node3D" parent="TestLoot" unique_id=398755603]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 2.2)
+script = ExtResource("37_worlditem")
+def = ExtResource("40_medkit")
+
+[node name="RifleCrate" type="Node3D" parent="TestLoot" unique_id=1098259981]
+transform = Transform3D(0.7071068, 0, 0.7071068, 0, 1, 0, -0.7071068, 0, 0.7071068, -1.5, 0, 0.8)
+script = ExtResource("37_worlditem")
+def = ExtResource("41_crate")

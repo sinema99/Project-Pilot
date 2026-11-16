@@ -126,7 +126,7 @@ func test_hands_are_blocked_on_the_wall() -> void:
 	check(not ITEM_HOLDER.arm_override_for(&"wall_climb"), "the staff hold pose runs on a climb")
 	for path in ["res://scripts/items/equip_anim.gd", "res://scripts/items/reflect_spin.gd"]:
 		var src := FileAccess.get_file_as_string(path)
-		var at := src.find("func _blocked_by_state()")
+		var at := maxi(src.find("func _blocked_by_state()"), src.find("func blocked_by_state()"))
 		check(at != -1 and src.find("is_wall_climbing", at) != -1 \
 			and src.find("is_wall_climbing", at) < src.find("\nfunc ", at + 1),
 			"%s does not block on a wall climb" % path.get_file())

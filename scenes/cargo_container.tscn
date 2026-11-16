@@ -1,0 +1,6 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/cargo_container.gd" id="1_cargo"]
+
+[node name="CargoContainer" type="StaticBody3D"]
+script = ExtResource("1_cargo")

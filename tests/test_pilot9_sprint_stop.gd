@@ -231,10 +231,10 @@ func test_the_toggle_still_has_one_writer() -> void:
 		var stripped := line.strip_edges()
 		if stripped.begins_with("sprint_toggled ="):
 			writes += 1
-	eq(writes, 6,
-		"sprint_toggled is written somewhere new - it should be assigned in exactly six " +
+	eq(writes, 7,
+		"sprint_toggled is written somewhere new - it should be assigned in exactly seven " +
 		"places: the press flip, the `walk` clear, the stop clear and the tredge lock (all in " +
-		"_update_sprint_toggle()/_update_sprint_stop()), plus _end_dash() and " +
+		"_update_sprint_toggle()/_update_sprint_stop()), plus _end_dash(), begin_carry() and " +
 		"_end_verbs_for_boarding()")
 	var stop_body := _body(text, "func _update_sprint_stop")
 	check(stop_body.contains("input_dir == Vector2.ZERO"),

@@ -403,7 +403,10 @@ func try_start() -> bool:
 		return false
 	var blocked := _blocked_by_state()
 	var frozen: bool = _pilot.frozen
-	if not can_start(phase == Phase.IDLE, _holder.item_instance != null, _holder.is_drawn,
+	# Only an item that can reflect (the staff): with the revolver out, left mouse does nothing.
+	var spinnable: bool = _holder.item_instance != null and _holder.held_item != null \
+		and _holder.held_item.can_reflect
+	if not can_start(phase == Phase.IDLE, spinnable, _holder.is_drawn,
 			frozen, blocked):
 		return false
 	phase = Phase.SPIN

@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="ItemDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/inventory/item_def.gd" id="1_def"]
+
+[resource]
+script = ExtResource("1_def")
+id = &"backpack"
+display_name = "BACKPACK"
+size = Vector2i(4, 4)
+max_stack = 1
+color = Color(0.42, 0.4, 0.22, 1)
+container_size = Vector2i(6, 4)
+slot = &"back"
+category = &"gear"
+description = "Olive canvas rucksack with leather straps. Carries a 6x4 load on your back."
+weight = 1.2

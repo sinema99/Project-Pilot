@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="ItemDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/inventory/item_def.gd" id="1_def"]
+
+[resource]
+script = ExtResource("1_def")
+id = &"cowboy_hat"
+display_name = "COWBOY HAT"
+size = Vector2i(2, 2)
+max_stack = 1
+color = Color(0.27, 0.16, 0.09, 1)
+slot = &"head"
+category = &"gear"
+description = "A brown cattleman. Keeps the snow off."
+weight = 0.4

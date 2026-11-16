@@ -312,6 +312,7 @@ func _texture(size: Vector2i) -> RID:
 
 ## The small buffer the streak lives in: quarter width, half height.
 static func streak_size(size: Vector2i) -> Vector2i:
+	@warning_ignore("integer_division")
 	return Vector2i(maxi(size.x / 4, 1), maxi(size.y / 2, 1))
 
 
@@ -370,7 +371,7 @@ func _render_callback(callback_type: int, render_data: RenderData) -> void:
 		return
 	_ensure_textures(size)
 	var small := streak_size(size)
-	var seed := floorf(Time.get_ticks_msec() / 1000.0 * grain_fps)
+	var grain_seed := floorf(Time.get_ticks_msec() / 1000.0 * grain_fps)
 	for view in buffers.get_view_count():
 		var color := buffers.get_color_layer(view)
 		_dispatch("copy", [_image(0, color), _image(1, _src)], PackedFloat32Array(), size)
@@ -395,5 +396,5 @@ func _render_callback(callback_type: int, render_data: RenderData) -> void:
 		push.append_array(_vec4(highlight_tint, contrast))
 		push.append_array(PackedFloat32Array([saturation, vignette_strength, vignette_start, vignette_end]))
 		push.append_array(PackedFloat32Array([aberration, aberration_start, grain, grain_floor]))
-		push.append_array(PackedFloat32Array([fmod(seed, 1000.0), soften, bleed, bleed_amount]))
+		push.append_array(PackedFloat32Array([fmod(grain_seed, 1000.0), soften, bleed, bleed_amount]))
 		_dispatch("composite", [_image(0, color), _sampled(1, _src), _sampled(2, a)], push, size)

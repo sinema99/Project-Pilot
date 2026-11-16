@@ -25,6 +25,7 @@ const WHITE_WORN := Color(0.72, 0.72, 0.68)
 const RUST := Color(0.32, 0.15, 0.07)
 const RUST_DARK := Color(0.20, 0.09, 0.05)
 const GRIME := Color(0.04, 0.035, 0.03)
+const SCUFF := Color(0.24, 0.24, 0.26)
 const AMBER := Color(1.0, 0.62, 0.10)
 const RED := Color(1.0, 0.12, 0.08)
 
@@ -287,14 +288,19 @@ static func _blob(img: Image, r: Rect2i, rng: RandomNumberGenerator) -> void:
 static func _scuff(img: Image, r: Rect2i, rng: RandomNumberGenerator) -> void:
 	var w := r.size.x
 	var h := r.size.y
-	for strand in 3:
-		var yy := rng.randf_range(1.0, h - 2.0)
-		var slope := rng.randf_range(-0.25, 0.25)
-		var x0 := rng.randi_range(0, w / 3)
-		for xx in range(x0, w - rng.randi_range(0, w / 3)):
+	# Tyre marks: two near-parallel unbroken 2 px strands in a dark floor grey (2026-11-14 review: the
+	# old broken 1 px near-black strands read as black slashes, since decals are alpha-cut, not blended).
+	var slope := rng.randf_range(-0.12, 0.12)
+	var base_y := rng.randf_range(1.0, maxf(1.0, h - 6.0))
+	var x0 := rng.randi_range(0, w / 4)
+	var x1 := w - rng.randi_range(0, w / 4)
+	for strand in 2:
+		var yy := base_y + strand * 3.0
+		for xx in range(x0, x1):
 			yy += slope
-			if rng.randf() < 0.82:
-				_put(img, r, xx, int(round(yy)), GRIME)
+			var c := SCUFF.darkened(rng.randf() * 0.15)
+			_put(img, r, xx, clampi(int(round(yy)), 0, h - 1), c)
+			_put(img, r, xx, clampi(int(round(yy)) + 1, 0, h - 1), c)
 
 
 static func _streak(img: Image, r: Rect2i, rng: RandomNumberGenerator) -> void:

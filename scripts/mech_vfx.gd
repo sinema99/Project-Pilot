@@ -23,11 +23,11 @@ func _ready() -> void:
 	_puff = Pilot9Vfx._radial([0.0, 1.0], [Color(1, 1, 1, 1), Color(1, 1, 1, 0)])
 
 ## A dust ring on the floor at `world`, `scale` times the sprint's.
-func footfall(world: Vector3, scale: float = 1.0) -> void:
+func footfall(world: Vector3, footfall_scale: float = 1.0) -> void:
 	if _puff == null:
 		_puff = Pilot9Vfx._radial([0.0, 1.0], [Color(1, 1, 1, 1), Color(1, 1, 1, 0)])
-	var p := Pilot9Vfx.dust_burst("Footfall", COUNT, RADIAL_SPEED * scale, LIFE, Vector3.ZERO, 0.0,
-		Vector3.ZERO, Vector3.UP, PUFF_SIZE * scale, COLOR, _puff)
+	var p := Pilot9Vfx.dust_burst("Footfall", COUNT, RADIAL_SPEED * footfall_scale, LIFE, Vector3.ZERO, 0.0,
+		Vector3.ZERO, Vector3.UP, PUFF_SIZE * footfall_scale, COLOR, _puff)
 	p.visibility_aabb = VISIBILITY
 	p.top_level = true
 	add_child(p, true)

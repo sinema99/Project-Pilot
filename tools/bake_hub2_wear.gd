@@ -10,12 +10,6 @@ extends SceneTree
 
 const OUT := "res://assets/hub2_wear"
 
-# Decals per 100 m^2 of face, and a hard cap.
-const DENSITY_WALL := 2.6
-const DENSITY_FLOOR := 1.0
-const DENSITY_CEIL := 1.4
-const CAP := 14000
-
 func _initialize() -> void:
 	var t0 := Time.get_ticks_msec()
 	var scn: Node = (load("res://assets/hub2.glb") as PackedScene).instantiate()
@@ -28,12 +22,12 @@ func _initialize() -> void:
 		var err := ResourceSaver.save(baked[mesh_name], "%s/%s.res" % [OUT, mesh_name], ResourceSaver.FLAG_COMPRESS)
 		print("saved %s: %s" % [mesh_name, error_string(err)])
 	var atlas := Hub2DecalAtlas.build()
-	var placed: Dictionary = bake.scatter(atlas, DENSITY_WALL, DENSITY_FLOOR, DENSITY_CEIL, CAP)
+	var placed: Dictionary = bake.scatter(atlas)
 	print("decals saved: ", error_string(ResourceSaver.save(placed["mesh"], OUT + "/decals.res", ResourceSaver.FLAG_COMPRESS)))
 	print("sheet: ", error_string(ResourceSaver.save(ImageTexture.create_from_image(atlas["color"]), OUT + "/decals_color.res")),
 		" ", error_string(ResourceSaver.save(ImageTexture.create_from_image(atlas["glow"]), OUT + "/decals_glow.res")))
 	# A copy for looking at.
-	(atlas["color"] as Image).save_png("C:/Users/panac/AppData/Local/Temp/claude/eb02f964d13f4351/25adf0ab-052a-491e-b8ed-3ddcd707e2a8/scratchpad/hub2_sheet.png")
+	(atlas["color"] as Image).save_png("C:/Users/panac/AppData/Local/Temp/claude/eb02f964d13f4351/8a9a6e43-d06b-4e30-8660-74bdb54a69c3/scratchpad/hub2_sheet.png")
 	print("baked in %.1f s" % [(Time.get_ticks_msec() - t0) / 1000.0])
 	scn.free()
 	quit()

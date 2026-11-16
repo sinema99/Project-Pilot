@@ -1,21 +1,22 @@
 extends "res://tests/test_case.gd"
 
-# Covers turn-to-face: pilot9 aims his body at where he is travelling instead of welding it
-# to camera-back, so a forward-only clip (the crouch walk, and whatever follows it) is
-# correct in every direction. See docs/specs/pilot9-turn-to-face.md.
+# Covers the facing rule. Since 2026-11-11 (docs/specs/pilot9-strafe-return.md) walk, run,
+# sprint and the air are stock Real Controller strafe - camera-back, S backpedals - and only
+# the forward-only-clip states (crouch, tredge, vault) turn him toward travel.
+# face_travel_direction = true restores the 2026-09-07 turn-to-face everywhere
+# (docs/specs/pilot9-turn-to-face.md), and the tests for that mode are kept.
 #
 # Two things here are worth more than the rest.
 #
-# The first is that the new rotation target is a GENERALISATION of the stock one, not a
-# replacement: for straight-forward input, atan2(direction.x, direction.z) and
-# camera_pivot.rotation.y + PI are the same angle. That equality is what says the 180 degree
-# basis baked into the `character` node is still being respected, and a sign slip in the
-# atan2 breaks it - so it is asserted directly, at several camera yaws, rather than trusted.
+# The first is that the face-travel target is a GENERALISATION of the stock one: for
+# straight-forward input, atan2(direction.x, direction.z) and camera_pivot.rotation.y + PI are
+# the same angle. That equality is what says the 180 degree basis baked into the `character`
+# node is respected by both, so it is asserted directly, at several camera yaws.
 #
 # The second is the X sign on the blend position. pilot9's mesh faces its own +Z but his
 # local +X points to his LEFT, so travel toward his right is -basis.x. Get that backwards and
 # he leans the wrong way through every turn, which on play reads as a bad blend space rather
-# than as a wrong sign - the kind of failure that gets debugged in the wrong file for an hour.
+# than as a wrong sign.
 #
 # The scene is driven without entering the SceneTree: @onready node references are wired by
 # hand in _rig(), and input state is set the way _handle_movement_input would have.
@@ -200,13 +201,76 @@ func test_no_input_blends_to_idle_even_with_stale_direction() -> void:
 	var blend: Vector2 = _anim(n)._travel_blend()
 	approx(blend.length(), 0.0, BLEND_TOL, "no input must blend to idle at (0, 0)")
 
-func test_strafe_mode_feeds_input_space() -> void:
+func test_strafe_steady_state_blend_is_input_space() -> void:
+	# Welded to camera-back, the body-frame blend reads exactly what stock RC's input-space
+	# feed read - including S at (0, -1), which is the backpedal.
+	for stick in [Vector2(0, -1), Vector2(0, 1), Vector2(1, 0), Vector2(-1, 0),
+			Vector2(1, 1).normalized(), Vector2(-1, -1).normalized()]:
+		var n := _scene()
+		if n == null:
+			fail("could not instantiate %s" % PILOT_TSCN)
+			return
+		_set_input(n, 0.7, stick)
+		n.character.rotation.y = wrapf(0.7 + PI, -PI, PI)
+		var blend: Vector2 = _anim(n)._travel_blend()
+		approx(blend.x, stick.x, BLEND_TOL, "strafe blend x for stick %s" % stick)
+		approx(blend.y, -stick.y, BLEND_TOL, "strafe blend y for stick %s" % stick)
+
+# --- the strafe default ----------------------------------------------------
+
+func test_strafe_is_the_default() -> void:
 	var n := _scene()
 	if n == null:
 		fail("could not instantiate %s" % PILOT_TSCN)
 		return
-	_set_input(n, 0.7, Vector2(1, -1))
-	n.face_travel_direction = false
-	var blend: Vector2 = _anim(n)._travel_blend()
-	approx(blend.x, 1.0, BLEND_TOL, "strafe mode feeds input_dir.x straight through")
-	approx(blend.y, 1.0, BLEND_TOL, "strafe mode feeds -input_dir.y straight through")
+	check(not n.face_travel_direction, "face_travel_direction should ship false (strafe)")
+	check(not n._faces_travel(), "standing locomotion should not face travel by default")
+
+func test_backpedal_keeps_him_facing_the_camera_way() -> void:
+	var n := _scene()
+	if n == null:
+		fail("could not instantiate %s" % PILOT_TSCN)
+		return
+	_set_input(n, -2.1, Vector2(0, 1))   # S
+	n.character.rotation.y = 0.0
+	_angle_eq(_settle(n), wrapf(-2.1 + PI, -PI, PI),
+		"S must backpedal (camera-back facing), not turn him toward the camera")
+
+# The crouch left this list 2026-11-15 (four-way crouch jog, docs/specs/pilot9-crouch-kneel.md).
+func test_tredge_faces_travel() -> void:
+	for flag in ["is_tredging"]:
+		var n := _scene()
+		if n == null:
+			fail("could not instantiate %s" % PILOT_TSCN)
+			return
+		_set_input(n, 0.7, Vector2(1, 0))
+		n.set(flag, true)
+		n.character.rotation.y = 0.0
+		_angle_eq(_settle(n), atan2(n.direction.x, n.direction.z),
+			"%s has a forward-only clip and must face travel" % flag)
+
+func test_vault_faces_the_vault_line_not_the_camera() -> void:
+	var n := _scene()
+	if n == null:
+		fail("could not instantiate %s" % PILOT_TSCN)
+		return
+	_set_input(n, 0.7, Vector2(1, 0))
+	n.is_vaulting = true
+	n._vault_dir = Vector3(-1, 0, 0)
+	n.character.rotation.y = 0.0
+	_angle_eq(_settle(n), atan2(-1.0, 0.0), "the vault must face _vault_dir")
+
+func test_backward_sprint_is_a_run() -> void:
+	var n := _scene()
+	if n == null:
+		fail("could not instantiate %s" % PILOT_TSCN)
+		return
+	for stick in [Vector2(0, 1), Vector2(1, 1).normalized(), Vector2(-0.3, 0.2)]:
+		n.input_dir = stick
+		check(not n._sprint_direction_ok(), "stick %s has a backward part - no sprint clip for it" % stick)
+	for stick in [Vector2(0, -1), Vector2(1, 0), Vector2(-1, -1).normalized()]:
+		n.input_dir = stick
+		check(n._sprint_direction_ok(), "stick %s should still sprint" % stick)
+	n.input_dir = Vector2(0, 1)
+	n.is_tredging = true
+	check(n._sprint_direction_ok(), "facing travel there is no backward")

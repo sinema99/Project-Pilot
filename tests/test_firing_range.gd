@@ -138,9 +138,17 @@ func test_dummy_faces_pilot_and_stays_in_bounds() -> void:
 	var r := _range()
 	var d = r.dummy
 	var pilot := (load(PILOT_TSCN) as PackedScene).instantiate()
+	# The dummy faces the first `reflect_target`; pilots other tests left in the tree would
+	# otherwise be the one it turns to in a full-suite run.
+	var others: Array[Node] = []
+	for n in _root().get_tree().get_nodes_in_group(&"reflect_target"):
+		others.append(n)
+		n.remove_from_group(&"reflect_target")
 	_root().add_child(pilot)
 	pilot.global_position = r.global_position + Vector3(0, 0, 14)
 	r.enter(pilot)
+	if not pilot.is_in_group(&"reflect_target"):
+		pilot.add_to_group(&"reflect_target")
 	d.state = DUMMY.State.ACTIVE
 	var inside := true
 	for i in 600:
@@ -153,6 +161,9 @@ func test_dummy_faces_pilot_and_stays_in_bounds() -> void:
 	to.y = 0.0
 	var facing: Vector3 = d.global_transform.basis.z
 	check(facing.dot(to.normalized()) > 0.99, "it faces pilot")
+	for n in others:
+		if is_instance_valid(n):
+			n.add_to_group(&"reflect_target")
 	pilot.free()
 	r.free()
 

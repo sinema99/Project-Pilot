@@ -26,23 +26,10 @@ func _scene() -> Node:
 		_pilot.toggle_hat()
 	return _pilot
 
-func _press_hat() -> InputEventAction:
-	var ev := InputEventAction.new()
-	ev.action = &"hat"
-	ev.pressed = true
-	return ev
+func test_h_is_no_longer_bound() -> void:
+	check(not InputMap.has_action(&"hat"), "the hat is worn through the HEAD slot now, not an H key")
 
-func test_hat_is_bound_to_h() -> void:
-	check(InputMap.has_action(&"hat"), "project.godot has no `hat` action")
-	if not InputMap.has_action(&"hat"):
-		return
-	var found := false
-	for ev in InputMap.action_get_events(&"hat"):
-		if ev is InputEventKey and ev.physical_keycode == KEY_H:
-			found = true
-	check(found, "`hat` should be on H")
-
-func test_spawns_off_on_the_head() -> void:
+func test_spawns_worn_on_the_head() -> void:
 	var pilot := _scene()
 	if pilot == null:
 		fail("could not instance pilot9")
@@ -54,7 +41,10 @@ func test_spawns_off_on_the_head() -> void:
 	eq(h.head_socket.bone_name, "Head", "hat socket bone")
 	check(h.head_socket.bone_idx >= 0, "Head should resolve on pilot9's skeleton")
 	eq(h.hat.get_parent(), h.head_socket, "the hat sits in the head socket")
-	check(not pilot.is_hat_on() and not h.hat.visible, "he should spawn without it")
+	var fresh := (load(PILOT_TSCN) as PackedScene).instantiate()
+	(Engine.get_main_loop() as SceneTree).root.add_child(fresh)
+	check(fresh.is_hat_on() and fresh.hat_holder.hat.visible, "a new pilot wears the hat from the HEAD slot")
+	fresh.queue_free()
 
 func test_toggle_shows_and_hides_it() -> void:
 	var pilot := _scene()
@@ -66,19 +56,16 @@ func test_toggle_shows_and_hides_it() -> void:
 	pilot.toggle_hat()
 	check(not pilot.is_hat_on() and not pilot.hat_holder.hat.visible, "a second takes it off")
 
-func test_h_reaches_only_the_pilot_being_played() -> void:
+func test_head_slot_drives_the_hat() -> void:
 	var pilot := _scene()
 	if pilot == null:
 		fail("could not instance pilot9")
 		return
-	pilot._input(_press_hat())
-	check(pilot.is_hat_on(), "H should put it on")
-	pilot._input(_press_hat())
-	check(not pilot.is_hat_on(), "H again should take it off")
-	pilot.frozen = true
-	pilot._input(_press_hat())
-	check(not pilot.is_hat_on(), "a parked (frozen) pilot ignores H")
-	pilot.frozen = false
+	var worn := Inventory.unequip(Inventory.SLOT_HEAD)
+	check(not pilot.is_hat_on(), "emptying the HEAD slot takes the hat off")
+	Inventory.equip(Inventory.SLOT_HEAD, worn)
+	check(pilot.is_hat_on(), "wearing it again puts the hat back on")
+	pilot.toggle_hat()
 
 func test_felt_and_band_are_brown_cel() -> void:
 	var pilot := _scene()

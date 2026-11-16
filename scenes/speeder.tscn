@@ -1,0 +1,54 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/speeder.gd" id="1_speeder"]
+[ext_resource type="PackedScene" path="res://assets/speeder1.glb" id="2_model"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_body"]
+size = Vector3(1, 0.72, 3)
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_cam"]
+radius = 0.3
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_interact"]
+radius = 2.6
+
+[node name="Speeder" type="CharacterBody3D"]
+script = ExtResource("1_speeder")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.43, 0)
+shape = SubResource("BoxShape3D_body")
+
+[node name="Tilt" type="Node3D" parent="."]
+top_level = true
+physics_interpolation_mode = 2
+
+[node name="Model" parent="Tilt" instance=ExtResource("2_model")]
+rotation = Vector3(0, 1.5707964, 0)
+
+[node name="CameraPivot" type="Node3D" parent="."]
+top_level = true
+physics_interpolation_mode = 2
+
+[node name="CameraPitch" type="Node3D" parent="CameraPivot"]
+
+[node name="SpringArm3D" type="SpringArm3D" parent="CameraPivot/CameraPitch"]
+shape = SubResource("SphereShape3D_cam")
+spring_length = 4.5
+margin = 0.2
+
+[node name="Camera3D" type="Camera3D" parent="CameraPivot/CameraPitch/SpringArm3D"]
+current = false
+far = 5000.0
+
+[node name="HandoverCamera" type="Camera3D" parent="."]
+top_level = true
+physics_interpolation_mode = 2
+current = false
+far = 5000.0
+
+[node name="InteractionArea" type="Area3D" parent="."]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="InteractionArea"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
+shape = SubResource("SphereShape3D_interact")

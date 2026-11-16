@@ -54,7 +54,7 @@ func _row_for(tab: Control, key: StringName) -> Control:
 func test_the_window_never_grows_with_the_settings_rows() -> void:
 	var shell := _host(SHELL)
 	var window: Control = shell.window()
-	shell._show_tab(3, 0, false)
+	shell._show_tab(2, 0, false)
 	_sort(shell)
 	eq(window.size, Vector2(1280, 800), "the window should be exactly 1280 x 800")
 	var bounds := window.get_global_rect()
@@ -95,36 +95,36 @@ func test_q_and_e_wrap_and_every_tab_is_reachable_by_click() -> void:
 	var shell := _host(SHELL)
 	eq(shell.active_tab(), 0, "the shell should open on GAME")
 	shell._show_tab(shell.active_tab() - 1, -1)
-	eq(shell.active_tab(), 3, "Q on the first tab should wrap to the last")
+	eq(shell.active_tab(), 2, "Q on the first tab should wrap to the last")
 	shell._show_tab(shell.active_tab() + 1, 1)
 	eq(shell.active_tab(), 0, "E on the last tab should wrap to the first")
 	# The regression for "you cannot tab back": from SETTINGS, every tab must be one click away.
-	shell._show_tab(3, 0, false)
+	shell._show_tab(2, 0, false)
 	var tabs: Array[Button] = shell.window().tab_buttons()
-	eq(tabs.size(), 4, "there should be a tab button per tab")
+	eq(tabs.size(), 3, "there should be a tab button per tab")
 	for i in tabs.size():
-		shell._show_tab(3, 0, false)
+		shell._show_tab(2, 0, false)
 		tabs[i].pressed.emit()
 		eq(shell.active_tab(), i, "clicking tab %d should switch to it from SETTINGS" % i)
 	_free_all()
 
 func test_each_tab_remembers_its_row_until_the_menu_closes() -> void:
 	var shell := _host(SHELL)
-	shell._show_tab(3, 0, false)
-	var settings: Control = shell.body(3)
+	shell._show_tab(2, 0, false)
+	var settings: Control = shell.body(2)
 	# SHADOW QUALITY: not RENDER SCALE at [5], which the default-on pixel filter disables and so
 	# cannot hold focus - see docs/specs/pixel-world.md.
 	var fifth: Control = settings.rows()[6]
 	fifth.grab_focus()
 	shell._show_tab(0, -1)
-	shell._show_tab(3, 1)
+	shell._show_tab(2, 1)
 	eq(shell.get_viewport().gui_get_focus_owner(), fifth, "coming back should restore the fifth row")
 	# Close and reopen: the shell starts on GAME, first row.
 	shell.present(true)
 	eq(shell.active_tab(), 0, "reopening should start on GAME")
 	eq(shell.get_viewport().gui_get_focus_owner(), shell.body(0).get_child(0),
 		"reopening should focus the first GAME row")
-	shell._show_tab(3, 0, false)
+	shell._show_tab(2, 0, false)
 	eq(shell.get_viewport().gui_get_focus_owner(), settings.rows()[0],
 		"reopening should have forgotten the fifth SETTINGS row")
 	_free_all()
@@ -139,22 +139,22 @@ func test_the_settings_screen_has_no_tab_strip() -> void:
 
 func test_the_dropdown_is_gone() -> void:
 	var shell := _host(SHELL)
-	shell._show_tab(3, 0, false)
+	shell._show_tab(2, 0, false)
 	var top_level := 0
-	var pending: Array[Node] = [shell.body(3)]
+	var pending: Array[Node] = [shell.body(2)]
 	while not pending.is_empty():
 		var node: Node = pending.pop_back()
 		if node is Control and (node as Control).top_level:
 			top_level += 1
 		pending.append_array(node.get_children())
 	eq(top_level, 0, "the SETTINGS tab should not create a floating top-level control")
-	check(shell.body(3).get("_options_panel") == null, "the dropdown's panel is removed")
+	check(shell.body(2).get("_options_panel") == null, "the dropdown's panel is removed")
 	_free_all()
 
 func test_a_selector_clamps_and_reports_its_end() -> void:
 	var shell := _host(SHELL)
-	shell._show_tab(3, 0, false)
-	var tab: Control = shell.body(3)
+	shell._show_tab(2, 0, false)
+	var tab: Control = shell.body(2)
 	var row := _row_for(tab, &"vsync")
 	Settings.set_value(&"vsync", "adaptive")
 	tab.refresh()

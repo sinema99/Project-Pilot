@@ -18,9 +18,9 @@ func _tree() -> SceneTree:
 # --- settings ------------------------------------------------------------------
 
 func test_look_rows() -> void:
-	eq(SETTINGS.values_of(&"look"), ["retro", "composite"], "RETRO / COMPOSITE")
-	# 2026-10-21: RETRO is the default while the user judges it (docs/specs/retro-look.md).
-	eq(SETTINGS.defaults()[&"look"], "retro", "the game boots in the RETRO look")
+	eq(SETTINGS.values_of(&"look"), ["retro", "composite", "airframe"], "RETRO / COMPOSITE / AIRFRAME")
+	# 2026-11-11: AIRFRAME is the default (docs/specs/airframe-trial.md).
+	eq(SETTINGS.defaults()[&"look"], "airframe", "the game boots in the AIRFRAME look")
 
 func test_dither_row_is_gone() -> void:
 	check(not SETTINGS.keys().has(&"dither"), "no DITHER row - the reference has no pattern")

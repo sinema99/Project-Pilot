@@ -15,7 +15,7 @@ func _skeleton_meshes(pilot: Node) -> Array[Node]:
 	var skel := pilot.get_node("character/Armature/GeneralSkeleton")
 	var out: Array[Node] = []
 	for c in skel.get_children():
-		if c is MeshInstance3D:
+		if c is MeshInstance3D and c.name != &"CarriedCrate":  # the carry prop is rigid, not body
 			out.append(c)
 	return out
 
@@ -45,9 +45,11 @@ func _rig() -> Dictionary:
 	_tree().root.add_child(root)
 	return {"root": root, "a": a, "b": b, "sw": sw}
 
-func _press_key(sw: Node, keycode: Key) -> void:
+# Shift+number since 2026-11-12: plain 1 / 2 draw pilot9's weapons (docs/specs/pilot9-revolver.md).
+func _press_key(sw: Node, keycode: Key, shift: bool = true) -> void:
 	var ev := InputEventKey.new()
 	ev.physical_keycode = keycode
+	ev.shift_pressed = shift
 	ev.pressed = true
 	sw._unhandled_input(ev)
 
@@ -102,15 +104,21 @@ func test_first_pilot_is_played_on_load() -> void:
 		"the pause hologram opens on the played pilot")
 	r.root.free()
 
+func test_plain_number_keys_leave_the_pilots_alone() -> void:
+	var r := _rig()
+	_press_key(r.sw, KEY_2, false)
+	check(r.a.controlled and r.b.frozen, "a plain 2 is the revolver, not a pilot switch")
+	r.root.free()
+
 func test_2_and_1_swap_control() -> void:
 	var r := _rig()
 	_press_key(r.sw, KEY_2)
-	check(r.b.controlled and not r.b.frozen and r.a.frozen, "2 hands control to B")
+	check(r.b.controlled and not r.b.frozen and r.a.frozen, "Shift+2 hands control to B")
 	check(r.b.camera_3d.current and not r.a.camera_3d.current, "2 moves the view to B")
 	check(r.b.hologram.is_in_group(&"hologram_host") and not r.a.hologram.is_in_group(&"hologram_host"),
 		"the hologram host follows")
 	_press_key(r.sw, KEY_1)
-	check(r.a.controlled and r.b.frozen, "1 hands control back to A")
+	check(r.a.controlled and r.b.frozen, "Shift+1 hands control back to A")
 	check(r.a.camera_3d.current, "1 moves the view back to A")
 	_press_key(r.sw, KEY_3)
 	check(r.a.controlled, "a key with no pilot behind it does nothing")

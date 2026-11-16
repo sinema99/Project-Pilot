@@ -34,19 +34,24 @@ static func say(node: Node, text: String) -> void:
 		hud.show_message(text)
 
 func _ready() -> void:
+	var plate := Ps1Plate.new()
+	plate.position = Vector2(24, 20)
+	add_child(plate)
+	var margin := MarginContainer.new()
+	for side in [&"margin_left", &"margin_right"]:
+		margin.add_theme_constant_override(side, 10)
+	for side in [&"margin_top", &"margin_bottom"]:
+		margin.add_theme_constant_override(side, 6)
+	plate.add_child(margin)
 	var box := VBoxContainer.new()
-	box.position = Vector2(24, 20)
-	add_child(box)
-	_clock_label = Label.new()
-	_clock_label.add_theme_font_size_override(&"font_size", 22)
+	margin.add_child(box)
+	_clock_label = Ps1Plate.make_label(20, Ps1Plate.CYAN)
 	box.add_child(_clock_label)
-	_message_label = Label.new()
-	_message_label.add_theme_font_size_override(&"font_size", 28)
+	_message_label = Ps1Plate.make_label(22)
 	box.add_child(_message_label)
 	if debug_keys:
-		var keys := Label.new()
+		var keys := Ps1Plate.make_label(12, Color(0.45, 0.62, 0.62))
 		keys.text = "F1-F3 rest pads   F12 double jump"
-		keys.modulate = Color(1, 1, 1, 0.45)
 		box.add_child(keys)
 
 func _process(delta: float) -> void:

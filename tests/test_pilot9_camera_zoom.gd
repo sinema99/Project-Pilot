@@ -1,6 +1,7 @@
 extends "res://tests/test_case.gd"
 
-# Covers the scroll-wheel zoom. See docs/specs/pilot9-camera-zoom.md.
+# Covers the camera framing curves (and, since 2026-11-12, that the wheel no longer zooms).
+# See docs/specs/pilot9-camera-zoom.md and docs/specs/mech-stash.md.
 #
 # The feature is the clamp and the direction; the guard is that the wheel never touches
 # camera_distance, because that is what the body-hide check divides by.
@@ -37,45 +38,23 @@ func _wheel(root: Node, button: MouseButton) -> void:
 	e.factor = 1.0
 	root.call("_unhandled_input", e)
 
-func test_wheel_up_pulls_in_and_wheel_down_pushes_out() -> void:
+# The wheel zoom was removed 2026-11-12 (docs/specs/mech-stash.md, decision 9): the camera is
+# locked at camera_distance and the wheel belongs to the interaction panel's option list.
+func test_wheel_no_longer_zooms() -> void:
 	var root := _scene()
 	check(root != null, "pilot9.tscn did not instantiate")
 	if root == null:
 		return
 	var start := float(root.get("target_camera_distance"))
-	_wheel(root, MOUSE_BUTTON_WHEEL_UP)
-	check(float(root.get("target_camera_distance")) < start, "wheel up did not zoom in")
-	_wheel(root, MOUSE_BUTTON_WHEEL_DOWN)
-	_wheel(root, MOUSE_BUTTON_WHEEL_DOWN)
-	check(float(root.get("target_camera_distance")) > start, "wheel down did not zoom out")
-
-func test_zoom_is_clamped_both_ways() -> void:
-	var root := _scene()
-	check(root != null, "pilot9.tscn did not instantiate")
-	if root == null:
-		return
-	for i in 100:
+	approx(start, float(root.get("camera_distance")), 0.0001, "the arm does not start at camera_distance")
+	approx(float(root.get("camera_distance")), 2.0, 0.0001, "the locked arm is 2 m")
+	for i in 5:
 		_wheel(root, MOUSE_BUTTON_WHEEL_UP)
-	approx(float(root.get("target_camera_distance")), float(root.get("camera_zoom_min")), 0.0001,
-		"zooming in went past camera_zoom_min")
-	for i in 100:
+	approx(float(root.get("target_camera_distance")), start, 0.0001, "wheel up still zooms")
+	for i in 5:
 		_wheel(root, MOUSE_BUTTON_WHEEL_DOWN)
-	approx(float(root.get("target_camera_distance")), float(root.get("camera_zoom_max")), 0.0001,
-		"zooming out went past camera_zoom_max")
-
-# Zooming out from close in must not blink his body out while the arm catches up.
-func test_zoom_never_rewrites_the_body_hide_reference() -> void:
-	var root := _scene()
-	check(root != null, "pilot9.tscn did not instantiate")
-	if root == null:
-		return
-	var authored := float(root.get("camera_distance"))
-	for i in 10:
-		_wheel(root, MOUSE_BUTTON_WHEEL_DOWN)
-	approx(float(root.get("camera_distance")), authored, 0.0001,
-		"the wheel rewrote camera_distance")
-	check(float(root.get("camera_zoom_min")) > 0.3 * authored,
-		"camera_zoom_min sits under the body-hide line - zooming all the way in hides him")
+	approx(float(root.get("target_camera_distance")), start, 0.0001, "wheel down still zooms")
+	check(not root.has_method("_zoom_camera"), "the zoom function is still there")
 
 # --- framing ----------------------------------------------------------------
 

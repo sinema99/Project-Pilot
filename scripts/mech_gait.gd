@@ -365,16 +365,20 @@ static func plate_vector(ctx: Context, side: String) -> Vector3:
 ##   counter        spine.001's yaw against the hips, degrees
 ##   shoulder_drop  both shoulders, degrees
 ##   arms[side]     {pitch (+ forward), elbow (+ more bend), adduct (+ in), curl}, degree deltas
-##   feet[side]     {z (ball, relative to the standing hip z), h (ball above the floor),
-##                   plate (+ tip up, deg), stilt (absolute lean, deg)}
+##   feet[side]     {x (ball, absolute, mech space), z (ball, relative to the standing hip z),
+##                   h (ball above the floor), plate (+ tip up, deg), stilt (absolute lean, deg)}
+##   leg_yaw        the whole lower body yawed about the vertical through the spine bone, degrees:
+##                  balls, foot bones and knee poles. A diagonal pairs it with yaw / counter (see
+##                  diagonal()). docs/specs/exia-aim-control.md.
 static func standing_spec(ctx: Context) -> Dictionary:
 	var arms := {}
 	var feet := {}
 	for s in [".L", ".R"]:
 		arms[s] = {pitch = 0.0, elbow = 0.0, adduct = 0.0, curl = 0.0}
-		feet[s] = {z = ctx.stand_ball_z[s], h = 0.0, plate = 0.0, stilt = ctx.stand_stilt[s]}
+		feet[s] = {x = ctx.g0[ctx.idx["toe" + s + ".001"]].origin.x, z = ctx.stand_ball_z[s], h = 0.0,
+			plate = 0.0, stilt = ctx.stand_stilt[s]}
 	return {hip_h = ctx.stand_hip_h, sway = 0.0, hip_dz = 0.0, lean = 0.0, yaw = 0.0, roll = 0.0,
-		counter = 0.0, shoulder_drop = 0.0, arms = arms, feet = feet}
+		counter = 0.0, shoulder_drop = 0.0, leg_yaw = 0.0, arms = arms, feet = feet}
 
 ## A deep copy of `spec`, so a pose function can edit it freely.
 static func copy_spec(spec: Dictionary) -> Dictionary:
@@ -420,7 +424,10 @@ static func gait_spec(ctx: Context, g: Gait, u: float) -> Dictionary:
 			curl = g.hand_curl * f_fore,
 		}
 		var st := leg_state(g, u if s == ".L" else u + 0.5, ctx.plate_len[s])
-		spec.feet[s] = {z = st.z, h = st.h, plate = st.plate, stilt = st.stilt}
+		spec.feet[s].z = st.z
+		spec.feet[s].h = st.h
+		spec.feet[s].plate = st.plate
+		spec.feet[s].stilt = st.stilt
 	return spec
 
 # --- the solve ---------------------------------------------------------------------
@@ -487,7 +494,7 @@ static func pose_from(ctx: Context, spec: Dictionary) -> Dictionary:
 			"hand.L", "hand.R":
 				basis = _rx(-spec.arms[s].curl) * inherited
 			"thigh.L", "thigh.R":
-				var leg := _solve_leg(ctx, s, spec.feet[s], no[b])
+				var leg := _solve_leg(ctx, s, spec.feet[s], no[b], spec.get("leg_yaw", 0.0))
 				for key in leg.want:
 					want[key] = leg.want[key]
 				balls[name] = leg.ball
@@ -519,7 +526,8 @@ const CANOPY_CANCEL := 0.7
 ##
 ## The knee bends in the plane the standing pose's knee sits in (ctx.pole), so the standing foot
 ## spec gives back MECH_standing's leg exactly.
-static func _solve_leg(ctx: Context, s: String, foot_spec: Dictionary, hip: Vector3) -> Dictionary:
+static func _solve_leg(ctx: Context, s: String, foot_spec: Dictionary, hip: Vector3,
+		leg_yaw: float = 0.0) -> Dictionary:
 	var thigh: int = ctx.idx["thigh" + s]
 	var shin: int = ctx.idx["shin" + s]
 	var foot: int = ctx.idx["foot" + s]
@@ -527,12 +535,20 @@ static func _solve_leg(ctx: Context, s: String, foot_spec: Dictionary, hip: Vect
 	var tip: int = ctx.idx["toe" + s + ".001"]
 	var plate_vec := plate_vector(ctx, s)
 
-	var ball := Vector3(ctx.g0[tip].origin.x, ctx.floor_y + foot_spec.h, ctx.hip_z + foot_spec.z)
+	var ball := Vector3(foot_spec.get("x", ctx.g0[tip].origin.x), ctx.floor_y + foot_spec.h,
+		ctx.hip_z + foot_spec.z)
+	# The leg yaw turns the whole lower body about the vertical through the spine bone - the same
+	# pivot the hips' own yaw turns the thigh heads about - so a diagonal is the straight cycle
+	# rotated, feet and all.
+	var turn := _ry(leg_yaw)
+	var pivot: Vector3 = ctx.g0[ctx.spine].origin
+	pivot.y = ball.y
+	ball = pivot + turn * (ball - pivot)
 	# The stilt (foot + toe, ankle to ball) leans as one piece about the ball.
 	var v_up: Vector3 = ctx.g0[foot].origin - ctx.g0[tip].origin
-	var tilt := _rx(-(foot_spec.stilt - ctx.stand_stilt[s]))
+	var tilt := turn * _rx(-(foot_spec.stilt - ctx.stand_stilt[s]))
 	var ankle := ball + tilt * v_up
-	var plate := _rx(-foot_spec.plate)
+	var plate := turn * _rx(-foot_spec.plate)
 
 	var a: float = (ctx.g0[shin].origin - ctx.g0[thigh].origin).length()
 	var b: float = (ctx.g0[foot].origin - ctx.g0[shin].origin).length()
@@ -543,7 +559,7 @@ static func _solve_leg(ctx: Context, s: String, foot_spec: Dictionary, hip: Vect
 	var base := to_ankle.normalized()
 	var cos_a := clampf((a * a + d * d - b * b) / (2.0 * a * d), -1.0, 1.0)
 	var alpha := acos(cos_a)
-	var pole: Vector3 = ctx.pole[s]
+	var pole: Vector3 = turn * ctx.pole[s]
 	var perp := pole - base * base.dot(pole)
 	perp = perp.normalized() if perp.length() > 0.001 else Vector3(0.0, 0.0, 1.0)
 	var knee := hip + a * (cos_a * base + sin(alpha) * perp)
@@ -631,3 +647,146 @@ static func bake(ctx: Context, standing: Animation, length: float, loop: bool,
 static func build(ctx: Context, standing: Animation, g: Gait) -> Animation:
 	return bake(ctx, standing, g.length, true,
 		func(c: Context, t: float) -> Dictionary: return gait_spec(c, g, t / g.length))
+
+# --- the step gaits: strafe and back walk (docs/specs/exia-aim-control.md) -----------------
+#
+# A run cycle is authored along the nose. These move along any axis in the ground plane: a planted
+# ball slides through the mech opposite `dir` at exactly `speed`, and the swing carries it back to
+# its landing spot. Each foot stays on its own side, so the legs never cross - the trail foot lands
+# just inside where the lead one lifted, which is the step-close of a heavy side-step.
+
+class StepGait extends RefCounted:
+	var clip := "MECH_strafe_L"
+	var dir := Vector2(1.0, 0.0)  # travel in the mech's ground plane: (x = left, y = nose)
+	var speed := 6.0
+	var length := 0.8
+	var contact := 0.42
+	var widen := 0.25            # each ball this much further out than standing
+	var lift := 0.5
+	var swing_slope := 0.4       # share of the stance's slide the swing keeps at its ends
+	var hip_drop := 0.2          # below standing
+	var hip_bob := 0.08          # lowest a beat after each plant
+	var lean := 0.0
+	var roll := 0.0              # + = the left side up (Rz): into a leftward strafe is negative
+	var sway := 0.06             # over the planted foot
+	var plate_land := 0.0        # - = tip down as it lands
+	var plate_lift := 0.0        # + = tip up as it leaves
+	var arm_out := 0.0           # abduction, both arms
+	var arm_swing := 4.0         # opposite the legs
+	var elbow := 0.0             # extra bend, both arms
+	var leg_yaw := 0.0           # a diagonal bake: see diagonal()
+
+static func strafe(left: bool) -> StepGait:
+	var g := StepGait.new()
+	g.clip = "MECH_strafe_L" if left else "MECH_strafe_R"
+	g.dir = Vector2(1.0 if left else -1.0, 0.0)
+	g.roll = -3.0 * g.dir.x
+	g.lean = 2.0
+	g.arm_out = 6.0
+	return g
+
+## The 5 m/s back walk; `leg_yaw` +-45 and 5.5 m/s for the diagonals.
+static func back(leg_yaw: float = 0.0) -> StepGait:
+	var g := StepGait.new()
+	g.clip = "MECH_back"
+	if leg_yaw > 0.0:
+		g.clip = "MECH_back_diag_R"
+	elif leg_yaw < 0.0:
+		g.clip = "MECH_back_diag_L"
+	g.dir = Vector2(0.0, -1.0)
+	g.speed = 5.0 if leg_yaw == 0.0 else 5.5
+	g.length = 1.1
+	g.contact = 0.6
+	g.widen = 0.0
+	g.lift = 0.4
+	g.hip_drop = 0.25
+	g.hip_bob = 0.06
+	g.lean = 3.0
+	g.sway = 0.08
+	g.plate_land = -8.0
+	g.plate_lift = 10.0
+	g.arm_swing = 8.0
+	g.elbow = 10.0
+	g.leg_yaw = leg_yaw
+	return g
+
+## One foot of a step gait at its own phase `p` (0 = its plant): `a`, the ball's offset along `dir`
+## from its stance centre; its height; the plate pitch; and whether it is down.
+static func step_leg(g: StepGait, p: float, _plate_len: float) -> Dictionary:
+	p = fposmod(p, 1.0)
+	var cf := g.contact / g.length
+	var reach := g.speed * g.contact * 0.5
+	if p < cf:
+		var w := p / cf
+		var plate := 0.0
+		if w < 0.25 and g.plate_land != 0.0:
+			plate = lerpf(g.plate_land, 0.0, smooth(w / 0.25))
+		elif w > 0.7 and g.plate_lift != 0.0:
+			var k := (w - 0.7) / 0.3
+			plate = g.plate_lift * k * k
+		return {a = reach - g.speed * p * g.length, h = 0.0, plate = plate, planted = true}
+	var q := (p - cf) / (1.0 - cf)
+	# The ends keep a share of the stance's slide, so the foot does not stop dead on lifting and is
+	# already moving with the floor as it lands.
+	var m := -g.swing_slope * g.speed * (g.length - g.contact)
+	return {
+		a = _hermite(-reach, m, reach, m, q),
+		h = g.lift * sin(PI * q),
+		plate = lerpf(g.plate_lift, g.plate_land, smooth(q / 0.85)),
+		planted = false,
+	}
+
+static func step_gait_spec(ctx: Context, g: StepGait, u: float) -> Dictionary:
+	var spec := standing_spec(ctx)
+	var low := 0.5 + 0.5 * cos(2.0 * TAU * (u - 0.05))
+	spec.hip_h = ctx.stand_hip_h - g.hip_drop - g.hip_bob * low
+	spec.lean = g.lean
+	spec.roll = g.roll
+	# Over the planted foot: the left is down through the first half.
+	spec.sway = g.sway * cos(TAU * (u - 0.2))
+	var swing := cos(TAU * u)
+	var j := jolt_at(fposmod(u * g.length, g.length * 0.5), 0.05)
+	spec.shoulder_drop = 1.5 * j
+	for s in [".L", ".R"]:
+		var side := 1.0 if s == ".L" else -1.0
+		var st := step_leg(g, u if s == ".L" else u + 0.5, ctx.plate_len[s])
+		var f: Dictionary = spec.feet[s]
+		f.x += g.widen * side + g.dir.x * st.a
+		var flat_z: float = f.z + g.dir.y * st.a
+		var b := ball_on_floor(flat_z, st.plate, ctx.plate_len[s])
+		f.z = b.x
+		f.h = b.y + st.h
+		f.plate = st.plate
+		# Arms swing against the legs: the right forward as the left plants.
+		spec.arms[s].pitch = -g.arm_swing * swing * side
+		spec.arms[s].adduct = -g.arm_out
+		spec.arms[s].elbow = g.elbow
+	return diagonal(spec, g.leg_yaw)
+
+## The impact of a plant `t` seconds after it, 0..1, peaking at `peak`.
+static func jolt_at(t: float, peak: float) -> float:
+	var x := t / peak
+	return x * exp(1.0 - x)
+
+## `spec` turned into a diagonal: hips and legs yawed `deg` toward the travel, the chest
+## (spine.001 up) turned back by the same amount so the canopy stays on the nose.
+static func diagonal(spec: Dictionary, deg: float) -> Dictionary:
+	if deg == 0.0:
+		return spec
+	spec.leg_yaw += deg
+	spec.yaw += deg
+	spec.counter -= deg
+	return spec
+
+static func build_step(ctx: Context, standing: Animation, g: StepGait) -> Animation:
+	return bake(ctx, standing, g.length, true,
+		func(c: Context, t: float) -> Dictionary: return step_gait_spec(c, g, t / g.length))
+
+## A run cycle baked with its legs yawed `deg` (+ = toward the left, W+A).
+static func build_diagonal(ctx: Context, standing: Animation, g: Gait, deg: float) -> Animation:
+	return bake(ctx, standing, g.length, true,
+		func(c: Context, t: float) -> Dictionary: return diagonal(gait_spec(c, g, t / g.length), deg))
+
+## The clip name of `g`'s diagonal toward `side` (".L" = W+A).
+static func diagonal_clip(g: Gait, side: String) -> String:
+	return g.clip + "_diag" + ("_L" if side == ".L" else "_R")

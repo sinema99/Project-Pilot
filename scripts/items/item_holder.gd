@@ -8,10 +8,15 @@ extends Node
 const _ArmPoseModifier := preload("res://scripts/items/arm_pose_modifier.gd")
 
 const HAND_BONE := &"RightHand"
+## The camera pitch the up / down aim poses were solved at, degrees.
+const AIM_POSE_PITCH_DEG := 40.0
 
 ## The bones the hold pose may set. The blockout rig has no finger bones, so the fist is whatever
 ## the hand mesh is.
-const ARM_BONES: PackedStringArray = ["RightShoulder", "RightUpperArm", "RightLowerArm", "RightHand"]
+## The first four are the right arm and must stay first (equip_anim.gd indexes them); the left arm
+## follows, used only by a two-handed item like the rifle.
+const ARM_BONES: PackedStringArray = ["RightShoulder", "RightUpperArm", "RightLowerArm", "RightHand",
+	"LeftShoulder", "LeftUpperArm", "LeftLowerArm", "LeftHand"]
 
 ## The per-move list: AnimationTree states the arm override may run in while drawn - and then
 ## only at running pace, see run_factor(). Anything not
@@ -159,6 +164,11 @@ func owns(node: Node) -> bool:
 func arm_target() -> float:
 	if not is_drawn:
 		return 0.0
+	# A placed aim (aim_ik) holds in every move he can aim in, the air included: the per-move off
+	# list is about the hip carry, and an aim with the arms left to the jump clip points nowhere.
+	var gp: Node = _body.get(&"gunplay") if _body != null else null
+	if gp != null and held_item != null and held_item.aim_ik and gp.aim_pose > 0.001:
+		return 1.0
 	return drawn_arm_target()
 
 
@@ -168,9 +178,29 @@ func drawn_arm_target() -> float:
 	if item_instance == null or arm_modifier == null or arm_modifier.pose.is_empty():
 		return 0.0
 	if _body == null:
-		return 1.0 if arm_override_for(_current_state()) else 0.0
+		return 1.0 if item_holds_in(held_item, _current_state()) else 0.0
 	var v: Vector3 = _body.velocity
-	return arm_target_for(_current_state(), Vector2(v.x, v.z).length(), _body.walk_speed, _body.speed)
+	return item_target_for(held_item, _current_state(), Vector2(v.x, v.z).length(),
+		_body.walk_speed, _body.speed)
+
+
+## The drawn arm's target for `item` in `state` at `horizontal` m/s: the per-move list, the item's
+## own off list, then the run gate unless the item holds at any pace.
+static func item_target_for(item: HeldItem, state: StringName, horizontal: float, walk: float,
+		run: float) -> float:
+	if not item_holds_in(item, state):
+		return 0.0
+	if item != null and item.hold_at_any_speed:
+		return 1.0
+	return run_factor(horizontal, walk, run)
+
+
+## Whether `item`'s hold may run in `state`: the holder's per-move list, minus the item's own
+## off list. The pace gate is separate (run_factor), and skipped by hold_at_any_speed.
+static func item_holds_in(item: HeldItem, state: StringName) -> bool:
+	if not arm_override_for(state):
+		return false
+	return item == null or not item.hold_off_states.has(state)
 
 
 ## The drawn arm's target in `state` at `horizontal` m/s: the per-move list, then the run gate.
@@ -191,7 +221,125 @@ func _current_state() -> StringName:
 ## moves the arm live. Four bones - nothing to cache.
 func _refresh_pose() -> void:
 	if arm_modifier != null:
-		arm_modifier.pose = pose_from_rotations(held_item.hold_rotations, _skeleton) 			if held_item != null else {}
+		arm_modifier.pose = current_pose() if held_item != null else {}
+		arm_modifier.weights = gun_weights()
+		arm_modifier.twist = aim_twist()
+		_refresh_ik()
+
+
+## Feeds the aim IK: on for an item with aim_ik, weighted by the gun's aim pose (it lets go across a
+## reload), aimed at what the crosshair is on - never nearer than 6 m (a close wall does not
+## cross the barrel's eyes) and never further than 25 m, where the barrel converges.
+func _refresh_ik() -> void:
+	var gp: Node = _body.get(&"gunplay") if _body != null else null
+	if gp == null or held_item == null or not held_item.aim_ik:
+		arm_modifier.ik_item = null
+		arm_modifier.ik_weight = 0.0
+		return
+	arm_modifier.ik_item = held_item
+	arm_modifier.ik_weight = gp.aim_pose
+	arm_modifier.ik_body = _body.get(&"character")
+	arm_modifier.ik_aim_point = aim_point_world()
+
+
+## The world point the crosshair is on: the camera ray's first hit within 80 m, else 40 m out.
+func aim_point_world() -> Vector3:
+	var cam: Camera3D = _body.get(&"camera_3d") if _body != null else null
+	if cam == null:
+		return Vector3.ZERO
+	# Under free-look the frame frozen at the press, so the gun keeps aiming where it was.
+	var view: Transform3D = _body.aim_view_transform() if _body.has_method(&"aim_view_transform") \
+		else cam.global_transform
+	var from := view.origin
+	var dir := -view.basis.z
+	var dist := 40.0
+	var world: World3D = cam.get_world_3d()
+	if world != null and world.direct_space_state != null:
+		var q := PhysicsRayQueryParameters3D.create(from, from + dir * 80.0, 1 | 256)
+		q.exclude = [_body.get_rid()] if _body is CollisionObject3D else []
+		var hit := world.direct_space_state.intersect_ray(q)
+		if not hit.is_empty():
+			dist = from.distance_to(hit.position)
+	return from + dir * clampf(dist, 6.0, 25.0)
+
+
+## The bladed stance this frame: the item's aim_twist_deg scaled by the gun's aim pose (it lets go
+## across a reload and eases in with the arms). Bone index -> radians.
+func aim_twist() -> Dictionary:
+	var gp: Node = _body.get(&"gunplay") if _body != null else null
+	if gp == null or held_item == null or held_item.aim_twist_deg.is_empty() or _skeleton == null:
+		return {}
+	var out := {}
+	for bone_name in held_item.aim_twist_deg:
+		var idx := _skeleton.find_bone(bone_name)
+		if idx >= 0:
+			out[idx] = deg_to_rad(held_item.aim_twist_deg[bone_name]) * gp.aim_pose
+	return out
+
+
+## The hold pose at this frame's pace: hold_rotations, or - for an item with idle_rotations - the
+## idle pose blended into it by run_factor (0 at walking pace or slower, 1 running).
+func current_pose() -> Dictionary:
+	var pose := hip_pose()
+	var gp: Node = _body.get(&"gunplay") if _body != null else null
+	if gp == null or held_item.gun == null:
+		return pose
+	if gp.aim_pose > 0.001 and not held_item.aim_rotations.is_empty() and not held_item.aim_ik:
+		pose = blend_poses(pose, aim_pose_at(held_item, _skeleton, _pitch_deg()), gp.aim_pose)
+	var progress: float = gp.reload_progress()
+	if progress >= 0.0 and gp.reload_fx != null:
+		pose = gp.reload_fx.overlay(pose, held_item.gun.display_name, progress,
+			gp._reload_empty, _skeleton)
+	return pose
+
+
+## The aim pose for a camera `pitch_deg` up (positive) or down: the middle pose blended toward the
+## up or down one by pitch / AIM_POSE_PITCH_DEG, either missing leaves the middle pose.
+static func aim_pose_at(item: HeldItem, skel: Skeleton3D, pitch_deg: float) -> Dictionary:
+	var mid := pose_from_rotations(item.aim_rotations, skel)
+	var side: Dictionary = item.aim_rotations_up if pitch_deg >= 0.0 else item.aim_rotations_down
+	if side.is_empty():
+		return mid
+	return blend_poses(mid, pose_from_rotations(side, skel),
+		clampf(absf(pitch_deg) / AIM_POSE_PITCH_DEG, 0.0, 1.0))
+
+
+## The camera's pitch in degrees, up positive (the orbit pivot's own x rotation).
+func _pitch_deg() -> float:
+	if _body == null or _body.get(&"camera_pivot") == null:
+		return 0.0
+	return rad_to_deg(_body.camera_pivot.rotation.x)
+
+
+## Per-bone fade weights the reload asks for (empty when none is running).
+func gun_weights() -> Dictionary:
+	var gp: Node = _body.get(&"gunplay") if _body != null else null
+	if gp == null or gp.reload_fx == null or gp.reload_progress() < 0.0:
+		return {}
+	return gp.reload_fx.weights
+
+
+## The hip hold at this frame's pace (the pose before the aim and the reload).
+func hip_pose() -> Dictionary:
+	var run := pose_from_rotations(held_item.hold_rotations, _skeleton)
+	if held_item.idle_rotations.is_empty():
+		return run
+	var w := 1.0
+	if _body != null:
+		var v: Vector3 = _body.velocity
+		w = run_factor(Vector2(v.x, v.z).length(), _body.walk_speed, _body.speed)
+	return blend_poses(pose_from_rotations(held_item.idle_rotations, _skeleton), run, w)
+
+
+## bone index -> Quaternion, `a` slerped toward `b` by `w`. A bone only one of them has is kept as is.
+static func blend_poses(a: Dictionary, b: Dictionary, w: float) -> Dictionary:
+	var out := {}
+	for bone in a:
+		out[bone] = (a[bone] as Quaternion).slerp(b[bone], w) if b.has(bone) else a[bone]
+	for bone in b:
+		if not out.has(bone):
+			out[bone] = b[bone]
+	return out
 
 
 func _process(_delta: float) -> void:

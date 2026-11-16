@@ -1,6 +1,7 @@
 extends Node
-## Hands control between the pilots in a scene: 1 plays the first in `pilots`, 2 the second, and
-## so on up to 9. The first is the one played on load. Each pilot is a pilot9 with set_controlled().
+## Hands control between the pilots in a scene: Shift+1 plays the first in `pilots`, Shift+2 the
+## second, and so on up to 9 (plain 1 / 2 draw pilot9's weapons since 2026-11-12, see
+## docs/specs/pilot9-revolver.md). The first is the one played on load. Each pilot is a pilot9 with set_controlled().
 ## See docs/specs/pilot-switch.md.
 
 @export var pilots: Array[NodePath] = []
@@ -16,7 +17,7 @@ func _ready() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	var key := event as InputEventKey
-	if key == null or not key.pressed or key.echo:
+	if key == null or not key.pressed or key.echo or not key.shift_pressed:
 		return
 	var index := key.physical_keycode - KEY_1
 	if index >= 0 and index < mini(pilots.size(), 9):

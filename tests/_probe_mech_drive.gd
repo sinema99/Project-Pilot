@@ -42,6 +42,9 @@ func _initialize() -> void:
 	floor_body.position = Vector3(0.0, -0.5, 0.0)
 	root.add_child(floor_body)
 	exia = load("res://scenes/mech.tscn").instantiate()
+	# This script is the old camera-relative control's; the aim-forward drive is
+	# tests/_probe_mech_aim_drive.gd.
+	exia.aim_lock = false
 	root.add_child(exia)
 	pilot = StubPilot.new()
 	root.add_child(pilot)

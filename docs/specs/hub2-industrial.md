@@ -73,3 +73,8 @@ Probe: `tests/_probe_hub2_wear_shot.gd` (windowed shots at world positions).
 `wear` (0 clean .. 1.5) and the palette uniforms on the surface material; `DENSITY_*` / `CAP` in
 the bake tool; `grime_height`. Rust was cut back once after the first probe shot (a vertical rust
 stripe in every wall corner read as too much).
+
+## Pass 2 (2026-11-13)
+
+Decal placement is now rule-based plus hand-placed key spots (see the worklog 2026-11-13). Knobs moved from
+`DENSITY_*` / `CAP` to `GRID_U`, `REACH_*`, `MAX_*` and `KEY_SPOTS` in `scripts/hub2_wear_bake.gd`.

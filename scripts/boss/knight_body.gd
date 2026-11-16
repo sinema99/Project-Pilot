@@ -145,6 +145,8 @@ var _tail := PackedInt32Array()
 
 
 func _ready() -> void:
+	# AIRFRAME draws it as a character: flat-lit, in the CHARACTER PIXELS grid.
+	set_meta(&"airframe_character", true)
 	model = (load(PILOT_GLB) as PackedScene).instantiate() as Node3D
 	model.name = &"Rig"
 	model.scale = Vector3.ONE * body_scale

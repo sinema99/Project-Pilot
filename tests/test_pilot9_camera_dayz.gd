@@ -39,12 +39,12 @@ func test_framing_defaults_match_the_screenshot() -> void:
 	if p == null:
 		fail("could not instance pilot9")
 		return
-	approx(p.camera_distance, 1.7, 0.0001, "arm is 1.7 m")
+	approx(p.camera_distance, 2.0, 0.0001, "arm is 2 m (locked since 2026-11-12, was 1.7)")
 	approx(p.camera_shoulder_offset, 0.25, 0.0001, "shoulder is 0.25 m")
 	approx(p.camera_neutral_pitch, -15.0, 0.0001, "neutral pitch is -15 deg")
-	check(p.face_travel_direction, "the control model is unchanged: he still turns to face travel")
+	check(not p.face_travel_direction, "strafe locomotion since 2026-11-11 - free-look turns the camera, not him")
 	check(p.camera_zoom_min > 0.3 * p.camera_distance,
-		"the zoom floor must stay clear of the body-hide line at the 1.7 m reference")
+		"the framing curve's floor must stay clear of the body-hide line")
 	# Eye at about his head height (capsule top ~1.96 m): pivot plus the neutral orbit's rise.
 	# Was ~0.3 m over his head until 2026-11-11 (pivot_raise 0.6 -> 0.3, user: "a little high").
 	p._camera_mode_length = p.camera_distance
@@ -52,7 +52,7 @@ func test_framing_defaults_match_the_screenshot() -> void:
 	var eye_y: float = pivot_y + sin(deg_to_rad(-p.camera_neutral_pitch)) * p.camera_distance
 	check(eye_y > 1.8 and eye_y < 2.1, "the eye sits at about his head height (%.2f m)" % eye_y)
 	var eye_back: float = cos(deg_to_rad(p.camera_neutral_pitch)) * p.camera_distance
-	approx(eye_back, 1.64, 0.05, "and ~1.6 m behind him")
+	approx(eye_back, 1.93, 0.05, "and ~1.9 m behind him (2 m arm at -15 deg)")
 
 func test_the_view_starts_at_the_neutral_pitch() -> void:
 	var p := _scene()
@@ -152,11 +152,12 @@ func test_the_camera_effects_ship_zeroed() -> void:
 		return
 	for prop in [&"sprint_fov_boost", &"dash_fov_boost", &"camera_sway_vertical",
 			&"camera_sway_lateral", &"camera_sway_roll", &"landing_dip_full_jump",
-			&"landing_dip_max", &"camera_sprint_pullback", &"camera_crouch_drop",
+			&"landing_dip_max", &"camera_sprint_pullback",
 			&"wall_run_camera_roll", &"reflect_fov_scale"]:
 		approx(float(p.get(prop)), 0.0, 0.0, "%s ships at 0" % prop)
 	check(not p.camera_dash_lag, "the dash camera lag ships off")
 	check(p.rail_camera_swing_rate > 0.0, "the rail swing is kept")
+	approx(p.camera_crouch_drop, 0.25, 0.001, "the crouch drop ships ON (2026-11-15 rev 3, the shallower walk)")
 
 func test_bindings() -> void:
 	check(InputMap.has_action(&"free_look"), "free_look exists")

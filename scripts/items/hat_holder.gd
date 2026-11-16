@@ -139,6 +139,7 @@ static func cut_above(mesh: ArrayMesh, skin: Skin, head_bone: int, to_hat: Trans
 		var index = arrays[Mesh.ARRAY_INDEX]
 		if index == null:
 			index = PackedInt32Array(range(verts.size()))
+		@warning_ignore("integer_division")
 		var per := (bones as PackedInt32Array).size() / maxi(verts.size(), 1)
 		# Per vertex: its hat-space height if it is head, else -INF.
 		var height := PackedFloat32Array()
@@ -157,6 +158,7 @@ static func cut_above(mesh: ArrayMesh, skin: Skin, head_bone: int, to_hat: Trans
 		var island := _islands(verts, index)
 		# Per piece: its hat-space x range, for which side of the head it is on.
 		var span := {}
+		@warning_ignore("integer_division")
 		for t in (index as PackedInt32Array).size() / 3:
 			for k in 3:
 				var v: int = index[t * 3 + k]
@@ -184,6 +186,7 @@ static func cut_above(mesh: ArrayMesh, skin: Skin, head_bone: int, to_hat: Trans
 		var island: PackedInt32Array = info["island"]
 		var span: Dictionary = info["span"]
 		var kept := PackedInt32Array()
+		@warning_ignore("integer_division")
 		for t in index.size() / 3:
 			var a: int = index[t * 3]
 			var b: int = index[t * 3 + 1]
@@ -219,6 +222,7 @@ static func _islands(verts: PackedVector3Array, index: PackedInt32Array) -> Pack
 			_join(parent, i, at[key])
 		else:
 			at[key] = i
+	@warning_ignore("integer_division")
 	for t in index.size() / 3:
 		_join(parent, index[t * 3], index[t * 3 + 1])
 		_join(parent, index[t * 3], index[t * 3 + 2])

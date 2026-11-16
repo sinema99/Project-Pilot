@@ -11,7 +11,6 @@ extends Control
 const TABS := [
 	{"label": "GAME", "scene": "res://scenes/ui/tabs/tab_game.tscn"},
 	{"label": "ABILITIES", "scene": "res://scenes/ui/tabs/tab_abilities.tscn"},
-	{"label": "INVENTORY", "scene": "res://scenes/ui/tabs/tab_inventory.tscn"},
 	{"label": "SETTINGS", "scene": "res://scenes/ui/tabs/tab_settings.tscn"},
 ]
 

@@ -162,9 +162,10 @@ func play_tab_switch(direction: int) -> void:
 	_slide.modulate.a = 0.0
 	_slide_tween = _tween()
 	_slide_tween.set_parallel(true)
-	_slide_tween.tween_property(_slide, "modulate:a", 1.0, SLIDE_TIME)
-	_slide_tween.tween_method(_set_slide_margins.bind(left, right), 0.0, 1.0, SLIDE_TIME)\
-		.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	_slide_tween.tween_method(func(t: float) -> void:
+		_slide.modulate.a = floorf(t * 3.0) / 3.0 if t < 1.0 else 1.0, 0.0, 1.0, SLIDE_TIME)
+	_slide_tween.tween_method(func(t: float) -> void:
+		_set_slide_margins(floorf(t * 3.0) / 3.0 if t < 1.0 else 1.0, left, right), 0.0, 1.0, SLIDE_TIME)
 
 func _set_slide_margins(t: float, left: float, right: float) -> void:
 	_slide.add_theme_constant_override("margin_left", roundi(lerpf(left, SLIDE_BASE, t)))
@@ -236,10 +237,8 @@ func present() -> void:
 	modulate.a = 0.0
 	scale = Vector2(OPEN_FROM_SCALE, OPEN_FROM_SCALE)
 	_fade_tween = _tween()
-	_fade_tween.set_parallel(true)
-	_fade_tween.tween_property(self, "modulate:a", 1.0, OPEN_TIME).set_ease(Tween.EASE_OUT)
-	_fade_tween.tween_property(self, "scale", Vector2.ONE, OPEN_TIME)\
-		.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	# Low-framerate open: three hard steps, no smooth tween.
+	_fade_tween.tween_method(_open_step, 0.0, 1.0, OPEN_TIME)
 
 ## The flat close. Input goes dead at once (the game is already running underneath); the window
 ## fades over CLOSE_TIME and `dismissed` says it may be hidden.
@@ -251,8 +250,18 @@ func dismiss() -> void:
 		viewport.gui_release_focus()
 	process_mode = Node.PROCESS_MODE_DISABLED
 	_fade_tween = _tween()
-	_fade_tween.tween_property(self, "modulate:a", 0.0, CLOSE_TIME)
+	_fade_tween.tween_method(_close_step, 0.0, 1.0, CLOSE_TIME)
 	_fade_tween.tween_callback(dismissed.emit)
+
+## `t` 0..1 snapped to thirds: the PS1 menu pops open in steps.
+func _open_step(t: float) -> void:
+	var k := floorf(t * 3.0) / 3.0 if t < 1.0 else 1.0
+	modulate.a = k
+	var sc := lerpf(OPEN_FROM_SCALE, 1.0, k)
+	scale = Vector2(sc, sc)
+
+func _close_step(t: float) -> void:
+	modulate.a = 1.0 - (floorf(t * 3.0) / 3.0 if t < 1.0 else 1.0)
 
 ## A confirm dialog is over this window: dim it a further ~30 %.
 func set_behind_dialog(on: bool) -> void:

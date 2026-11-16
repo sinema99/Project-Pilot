@@ -1,7 +1,8 @@
 extends "res://tests/test_case.gd"
 
-# Covers pilot9's crouch: the C / controller-B toggle, the crouch_walk clip lifted out of
-# assets/pilot9.glb, and the `crouch` state scripts/pilot9_build_scene.gd builds for it.
+# Covers pilot9's crouch: the C / controller-B toggle, the kneel and crouch-jog clips
+# scripts/crouch_bake.gd generates (2026-11-15 - the Blender crouch_walk is scrapped), and the
+# `crouch` state scripts/pilot9_build_scene.gd builds for them. docs/specs/pilot9-crouch-kneel.md.
 #
 # The failure mode these are pointed at is the quiet one. AnimationTree.set() stores an
 # unknown parameter path without complaining, and an advance_expression naming a property
@@ -14,11 +15,7 @@ extends "res://tests/test_case.gd"
 const PILOT_TSCN := "res://scenes/pilot9.tscn"
 const BUILDER := preload("res://scripts/pilot9_build_scene.gd")
 const ANIM_SCRIPT := preload("res://scripts/pilot9_animation.gd")
-
-# From the 2026-09-06 PILOT9.glb export: the Blender action "P.crouchwalk", 0.983 s at
-# 30 fps. Asserted loosely - the user re-authors this clip - but a collapse to zero is the
-# documented import failure and has to stay red.
-const CROUCH_CLIP_LENGTH := 0.983
+const BAKE := preload("res://scripts/crouch_bake.gd")
 
 var _instances: Array[Node] = []
 
@@ -71,66 +68,145 @@ func test_crouch_is_bound_to_C_and_to_controller_B() -> void:
 	check(has_key, "'crouch' has no C key binding (physical_keycode KEY_C)")
 	check(has_pad, "'crouch' has no controller B binding (JOY_BUTTON_B)")
 
-# --- the clip came across from the GLB -------------------------------------
+# --- the generated clips ---------------------------------------------------
 
-func test_crouch_walk_clip_is_in_the_library() -> void:
+func _baked_names() -> Array:
+	var names: Array = [BAKE.KNEEL]
+	names.append_array(BAKE.JOGS.keys())
+	return names
+
+func test_the_blender_crouch_walk_is_gone() -> void:
 	var root := _scene()
 	if root == null:
 		fail("scenes/pilot9.tscn did not load")
 		return
 	var ap := root.get_node_or_null("AnimationPlayer") as AnimationPlayer
-	if ap == null:
-		fail("no AnimationPlayer")
-		return
-	check(ap.has_animation("crouch_walk"),
-		"no 'crouch_walk' in the library - pilot9_build_scene.gd::_ensure_glb_clips did not " +
-		"run, or the Blender action is no longer named P.crouchwalk (see GLB_CLIPS)")
+	check(ap != null and not ap.has_animation(&"crouch_walk"),
+		"crouch_walk is scrapped (user, 2026-11-15) - the builder should delete it from the library")
+	check(not BUILDER.GLB_CLIPS.has("P_crouchwalk"), "P_crouchwalk is still lifted out of the GLB")
 
-func test_crouch_walk_loops_and_has_real_length() -> void:
+func test_the_generated_clips_are_in_the_library_and_loop() -> void:
 	var root := _scene()
 	if root == null:
 		fail("scenes/pilot9.tscn did not load")
 		return
 	var ap := root.get_node_or_null("AnimationPlayer") as AnimationPlayer
-	if ap == null or not ap.has_animation("crouch_walk"):
-		fail("no crouch_walk clip to inspect")
-		return
-	var a := ap.get_animation("crouch_walk")
-	check(a.length > 0.1,
-		"crouch_walk is %.3fs - a zero-length clip is the documented import failure" % a.length)
-	approx(a.length, CROUCH_CLIP_LENGTH, 0.5,
-		"crouch_walk's duration moved a long way from the export it was wired against; " +
-		"re-check the Blender action")
-	eq(a.loop_mode, Animation.LOOP_LINEAR,
-		"crouch_walk must loop - Godot's importer defaults every clip to LOOP_NONE, so " +
-		"GLB_CLIPS has to set it or the cycle plays once and freezes mid-stride")
+	for name in _baked_names():
+		check(ap.has_animation(name), "no '%s' in the library - _ensure_crouch_state did not run" % name)
+		if ap.has_animation(name):
+			eq(ap.get_animation(name).loop_mode, Animation.LOOP_LINEAR, "%s must loop" % name)
+	for name in BAKE.JOGS:
+		if ap.has_animation(name):
+			approx(ap.get_animation(name).length, BAKE.CYCLE, 0.001,
+				"%s must be one cycle long - the blend space keeps the four in step only if they match" % name)
 
-func test_crouch_walk_tracks_all_bind_to_real_bones() -> void:
+# "Don't touch the upper body": the clips key nothing above the hips, and the state's filter is
+# exactly the keyed bones, so the idle owns the spine, head and arms.
+func test_the_clips_key_only_the_hips_and_legs() -> void:
 	var root := _scene()
 	if root == null:
 		fail("scenes/pilot9.tscn did not load")
 		return
 	var ap := root.get_node_or_null("AnimationPlayer") as AnimationPlayer
 	var skel := root.get_node_or_null("%GeneralSkeleton") as Skeleton3D
-	if ap == null or skel == null or not ap.has_animation("crouch_walk"):
-		fail("crouch_walk or the skeleton is missing")
-		return
-	var a := ap.get_animation("crouch_walk")
-	check(a.get_track_count() > 0, "crouch_walk has no tracks at all")
-	var broken: PackedStringArray = []
-	for t in a.get_track_count():
-		var path := str(a.track_get_path(t))
-		# A GLB clip only plays unedited because the retargeter rewrites its track paths
-		# onto the same unique-named skeleton RC's clips address. If an import stops doing
-		# that they revert to Armature/Skeleton3D and resolve to nothing from root_node.
-		if not path.begins_with("%GeneralSkeleton:"):
-			broken.append("path '%s' lost its unique-name prefix" % path)
+	for name in _baked_names():
+		if not ap.has_animation(name):
 			continue
-		var bone := path.get_slice(":", 1)
-		if bone != "" and skel.find_bone(bone) == -1:
-			broken.append(bone)
-	check(broken.is_empty(),
-		"crouch_walk tracks that do not land on the retargeted rig: %s" % str(broken))
+		var a := ap.get_animation(name)
+		var stray: PackedStringArray = []
+		for t in a.get_track_count():
+			var bone := str(a.track_get_path(t)).get_slice(":", 1)
+			if not bone in BAKE.BONES or skel.find_bone(bone) < 0:
+				stray.append(bone)
+		check(stray.is_empty(), "%s keys bones outside the legs: %s" % [name, str(stray)])
+
+func _pose_at(skel: Skeleton3D, a: Animation, t: float) -> void:
+	skel.reset_bone_poses()
+	for i in a.get_track_count():
+		var bone := skel.find_bone(str(a.track_get_path(i)).get_slice(":", 1))
+		if a.track_get_type(i) == Animation.TYPE_POSITION_3D:
+			skel.set_bone_pose_position(bone, a.position_track_interpolate(i, t))
+		else:
+			skel.set_bone_pose_rotation(bone, a.rotation_track_interpolate(i, t))
+
+func _global(skel: Skeleton3D, bone_name: String) -> Vector3:
+	var i := skel.find_bone(bone_name)
+	var xf := Transform3D()
+	while i >= 0:
+		xf = skel.get_bone_pose(i) * xf
+		i = skel.get_bone_parent(i)
+	return xf.origin
+
+func test_the_kneel_is_right_knee_down_left_foot_forward() -> void:
+	var root := _scene()
+	if root == null:
+		fail("scenes/pilot9.tscn did not load")
+		return
+	var ap := root.get_node_or_null("AnimationPlayer") as AnimationPlayer
+	var skel := root.get_node_or_null("%GeneralSkeleton") as Skeleton3D
+	if not ap.has_animation(BAKE.KNEEL):
+		fail("no kneel clip")
+		return
+	var r := BAKE.rig(skel, ap.get_animation(&"idle"))
+	_pose_at(skel, ap.get_animation(BAKE.KNEEL), 0.0)
+	var r_knee := _global(skel, "RightLowerLeg")
+	var l_knee := _global(skel, "LeftLowerLeg")
+	var l_foot := _global(skel, "LeftFoot")
+	approx(r_knee.y - r.ground, BAKE.KNEEL_KNEE_HEIGHT, 0.01, "the right knee is on the ground")
+	approx(l_foot.y, r.ground, 0.01, "the left foot is planted")
+	check(l_foot.z > r_knee.z + 0.5, "the left foot is ahead of the right knee")
+	check(l_knee.y > 0.35, "the front knee is up (%.2f)" % l_knee.y)
+	# Rev 2 (2026-11-15, the user's Arma reference): a tall kneel - the rear knee almost straight
+	# under its hip, the legs close together, not the old splayed low tripod.
+	var r_hip := _global(skel, "RightUpperLeg")
+	check(absf(r_hip.z - r_knee.z) < 0.15, "the right knee is under its hip (%.2f)" % (r_hip.z - r_knee.z))
+	check(absf(r_knee.x - l_foot.x) < 0.25, "the legs stay close together (%.2f)" % absf(r_knee.x - l_foot.x))
+	check(r.hips_pos.y - _global(skel, "Hips").y < JOG_DEPTH_FLOOR,
+		"the kneel stands taller than the jog")
+
+const JOG_DEPTH_FLOOR := 0.36
+
+# The knee scrapes the floor if the jog is too deep for the rig (found at 0.40, 2026-11-15).
+func test_the_jog_keeps_the_knees_and_feet_off_the_floor() -> void:
+	var root := _scene()
+	if root == null:
+		fail("scenes/pilot9.tscn did not load")
+		return
+	var ap := root.get_node_or_null("AnimationPlayer") as AnimationPlayer
+	var skel := root.get_node_or_null("%GeneralSkeleton") as Skeleton3D
+	var r := BAKE.rig(skel, ap.get_animation(&"idle"))
+	for name in BAKE.JOGS:
+		if not ap.has_animation(name):
+			fail("no %s" % name)
+			continue
+		var a := ap.get_animation(name)
+		var lowest_knee := INF
+		var lowest_foot := INF
+		for i in 31:
+			_pose_at(skel, a, a.length * i / 30.0)
+			for side in ["Left", "Right"]:
+				lowest_knee = minf(lowest_knee, _global(skel, side + "LowerLeg").y)
+				lowest_foot = minf(lowest_foot, _global(skel, side + "Foot").y)
+		check(lowest_knee - r.ground > 0.1, "%s folds a knee into the floor (%.3f)" % [name, lowest_knee])
+		check(lowest_foot > r.ground - 0.02, "%s sinks a foot (%.3f)" % [name, lowest_foot])
+
+# Strafing crouched: the planted foot slides back under him at the design speed, so a TimeScale of
+# ground speed / DESIGN_SPEED keeps it still on the ground.
+func test_a_planted_foot_moves_at_the_design_speed() -> void:
+	var root := _scene()
+	if root == null:
+		fail("scenes/pilot9.tscn did not load")
+		return
+	var ap := root.get_node_or_null("AnimationPlayer") as AnimationPlayer
+	var skel := root.get_node_or_null("%GeneralSkeleton") as Skeleton3D
+	var a := ap.get_animation(&"crouch_jog_forward")
+	var t0 := BAKE.CYCLE * BAKE.STANCE * 0.25
+	var t1 := BAKE.CYCLE * BAKE.STANCE * 0.5
+	_pose_at(skel, a, t0)
+	var z0 := _global(skel, "LeftFoot").z
+	_pose_at(skel, a, t1)
+	var z1 := _global(skel, "LeftFoot").z
+	approx((z0 - z1) / (t1 - t0), BAKE.DESIGN_SPEED, 0.2, "the planted left foot's speed back under him")
 
 # --- the state machine -----------------------------------------------------
 
@@ -145,52 +221,54 @@ func test_state_machine_has_a_crouch_state() -> void:
 		return
 	check(sm.has_node("crouch"), "the locomotion state machine has no 'crouch' state")
 
-func test_crouch_state_plays_crouch_walk_through_a_timescale() -> void:
+func test_the_crouch_state_is_legs_over_the_idle() -> void:
 	var root := _scene()
-	if root == null:
-		fail("scenes/pilot9.tscn did not load")
-		return
-	var sm := _state_machine(root)
+	var sm := _state_machine(root) if root != null else null
 	if sm == null or not sm.has_node("crouch"):
 		fail("no crouch state to inspect")
 		return
 	var bt := sm.get_node("crouch") as AnimationNodeBlendTree
-	check(bt != null, "the crouch state is not a blend tree")
-	if bt == null:
+	var idle := bt.get_node("Idle") as AnimationNodeAnimation
+	check(idle != null and idle.animation == &"idle", "the crouch's upper body is not the standing idle")
+	var legs := bt.get_node(BUILDER.CROUCH_LEGS_NODE) as AnimationNodeBlend2
+	check(legs != null and legs.filter_enabled, "the legs layer is not a filtered Blend2")
+	if legs:
+		for b in BAKE.BONES:
+			check(legs.is_path_filtered(NodePath(BAKE.PREFIX + b)), "%s is not in the legs filter" % b)
+		check(not legs.is_path_filtered(NodePath(BAKE.PREFIX + "Spine")), "the spine must stay the idle's")
+	var jog := bt.get_node(BUILDER.CROUCH_JOG_NODE) as AnimationNodeBlendSpace2D
+	check(jog != null and jog.get_blend_point_count() == 4, "the jog is not a four-way blend space")
+	check(bt.get_node(BUILDER.CROUCH_SCALE_NODE) is AnimationNodeTimeScale, "no jog TimeScale")
+	check(bt.get_node(BUILDER.CROUCH_MOVE_NODE) is AnimationNodeBlend2, "no kneel/jog Blend2")
+
+# The seam that fails silently: pilot9_animation.gd writes hard-coded parameter paths every
+# frame, and AnimationTree.set() on a path that does not exist is a no-op, not an error.
+func test_the_parameter_paths_match_what_the_feed_writes() -> void:
+	var st := BUILDER.CROUCH_STATE
+	eq(ANIM_SCRIPT.CROUCH_LEGS, "parameters/%s/%s/blend_amount" % [st, BUILDER.CROUCH_LEGS_NODE], "legs path")
+	eq(ANIM_SCRIPT.CROUCH_MOVE, "parameters/%s/%s/blend_amount" % [st, BUILDER.CROUCH_MOVE_NODE], "move path")
+	eq(ANIM_SCRIPT.CROUCH_JOG, "parameters/%s/%s/blend_position" % [st, BUILDER.CROUCH_JOG_NODE], "jog path")
+	eq(ANIM_SCRIPT.CROUCH_SCALE, "parameters/%s/%s/scale" % [st, BUILDER.CROUCH_SCALE_NODE], "scale path")
+
+func test_the_tree_actually_exposes_those_parameters() -> void:
+	var root := _scene()
+	var at := root.get_node_or_null("AnimationTree") as AnimationTree if root != null else null
+	if at == null:
+		fail("no AnimationTree")
 		return
-	var scale_node := bt.get_node(BUILDER.CROUCH_SCALE_NODE) as AnimationNodeTimeScale
-	check(scale_node != null,
-		"the crouch state has no '%s' AnimationNodeTimeScale - pilot9 has a crouch walk " % BUILDER.CROUCH_SCALE_NODE +
-		"and no crouch idle, so standing still is a scale of 0 rather than a second clip")
-	var clip := bt.get_node("Clip") as AnimationNodeAnimation
-	check(clip != null, "the crouch state has no 'Clip' animation node")
-	if clip:
-		eq(str(clip.animation), "crouch_walk", "the crouch state plays the wrong clip")
+	var names := {}
+	for p in at.get_property_list():
+		names[String(p.name)] = true
+	for path in [ANIM_SCRIPT.CROUCH_LEGS, ANIM_SCRIPT.CROUCH_MOVE, ANIM_SCRIPT.CROUCH_JOG, ANIM_SCRIPT.CROUCH_SCALE]:
+		check(names.has(path), "the AnimationTree exposes no '%s'" % path)
 
-# The seam that fails silently: pilot9_animation.gd writes one hard-coded parameter path
-# every frame, and AnimationTree.set() on a path that does not exist is a no-op, not an
-# error. Rebuild the path from the builder's own constants and demand the two still meet.
-func test_the_timescale_parameter_path_matches_what_the_feed_writes() -> void:
-	var expected := "parameters/%s/%s/scale" % [BUILDER.CROUCH_STATE, BUILDER.CROUCH_SCALE_NODE]
-	eq(ANIM_SCRIPT.CROUCH_SCALE, expected,
-		"scripts/pilot9_animation.gd writes a TimeScale parameter the builder does not " +
-		"create; the crouch would transition but never advance, with nothing in the log")
-
-func test_the_tree_actually_exposes_that_parameter() -> void:
+func test_crouched_he_strafes_like_he_does_standing() -> void:
 	var root := _scene()
 	if root == null:
 		fail("scenes/pilot9.tscn did not load")
 		return
-	var at := root.get_node_or_null("AnimationTree") as AnimationTree
-	if at == null:
-		fail("no AnimationTree")
-		return
-	var found := false
-	for p in at.get_property_list():
-		if String(p.name) == ANIM_SCRIPT.CROUCH_SCALE:
-			found = true
-			break
-	check(found, "the AnimationTree exposes no '%s' - nothing drives the crouch cycle" % ANIM_SCRIPT.CROUCH_SCALE)
+	root.is_crouching = true
+	check(not root._faces_travel(), "the crouch is four-way now - it must not turn him to face travel")
 
 # --- the transitions in and out --------------------------------------------
 
@@ -228,9 +306,10 @@ func test_the_controller_exposes_is_crouching_and_crouch_speed() -> void:
 		"scripts/pilot9.gd has no 'is_crouching' - every crouch advance_expression silently never fires")
 	check(props.has("crouch_speed"), "scripts/pilot9.gd has no 'crouch_speed'")
 	if props.has("crouch_speed") and props.has("speed"):
-		check(is_equal_approx(root.get("crouch_speed"), root.get("speed")),
-			"crouch_speed (%s) should match the run speed (%s)"
-			% [root.get("crouch_speed"), root.get("speed")])
+		# 2026-11-15 rev 4: the crouch walks at walking pace (the DayZ crouch walk).
+		check(is_equal_approx(root.get("crouch_speed"), root.get("walk_speed")),
+			"crouch_speed (%s) should match the walk speed (%s)"
+			% [root.get("crouch_speed"), root.get("walk_speed")])
 	if props.has("is_crouching"):
 		check(root.get("is_crouching") == false, "pilot9 must not start crouched")
 

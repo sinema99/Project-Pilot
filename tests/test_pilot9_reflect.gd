@@ -21,6 +21,11 @@ func _scene() -> Node:
 			loop.root.add_child(_pilot)
 	_pilot.reflect_spin.cancel()
 	_pilot.frozen = false
+	# Reflect needs the staff; the default loadout carries the rifle on 1.
+	var slots: Array[HeldItem] = [load("res://resources/items/staff.tres"), load("res://resources/items/revolver.tres")]
+	_pilot.weapon_slots = slots
+	if _pilot.item_holder.held_item != slots[0]:
+		_pilot.set_item(slots[0])
 	if not _pilot.is_item_drawn():
 		_pilot.toggle_drawn()
 	return _pilot

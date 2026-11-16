@@ -53,8 +53,13 @@ func test_every_clip_is_built_with_its_length_and_loop() -> void:
 		"MECH_run": [1.2, true], "MECH_sprint": [1.0, true], "MECH_stand_idle": [4.0, true],
 		"MECH_turn_step": [1.0, true], "MECH_stop_L": [1.0, false], "MECH_stop_R": [1.0, false],
 		"MECH_jump_crouch": [0.25, false], "MECH_jump_air": [1.2, true], "MECH_land": [0.6, false],
+		# docs/specs/exia-aim-control.md
+		"MECH_run_diag_L": [1.2, true], "MECH_run_diag_R": [1.2, true],
+		"MECH_sprint_diag_L": [1.0, true], "MECH_sprint_diag_R": [1.0, true],
+		"MECH_strafe_L": [0.8, true], "MECH_strafe_R": [0.8, true], "MECH_back": [1.1, true],
+		"MECH_back_diag_L": [1.1, true], "MECH_back_diag_R": [1.1, true],
 	}
-	eq(_clips.size(), expect.size(), "nine built clips")
+	eq(_clips.size(), expect.size(), "eighteen built clips")
 	for name in expect:
 		check(_clips.has(name), "%s is built" % name)
 		if not _clips.has(name):
@@ -282,7 +287,7 @@ func _in_tree(n: Node) -> Node:
 	_live.append(n)
 	return n
 
-func test_f_at_a_sprint_queues_the_exit() -> void:
+func test_a_full_hold_at_a_sprint_queues_the_exit() -> void:
 	var exia: Node3D = _in_tree(MechScene.instantiate())
 	var pilot: _StubPilot = _in_tree(_StubPilot.new())
 	exia.pilot = pilot
@@ -292,9 +297,10 @@ func test_f_at_a_sprint_queues_the_exit() -> void:
 	check(exia.exit_pending, "too fast: the exit waits")
 	check(not exia.sprint_toggled, "and the sprint is dropped so it brakes")
 	eq(exia.pilot, pilot, "the pilot is still aboard")
-	eq(exia.prompt_label.text, "EXIT...", "the prompt says it is waiting")
-	exia._request_exit()
-	check(not exia.exit_pending, "F again calls it off")
+	eq(exia.prompt_text, "EXIT...", "the prompt says it is waiting")
+	# Since 2026-11-12 the exit is a hold: letting go of F calls the wait off.
+	exia.step_exit_hold(false, 0.016)
+	check(not exia.exit_pending, "letting go of F calls it off")
 
 # The blocked-spot fallback needs physics steps to see a blocker, so it is checked by
 # tests/_probe_mech_drive.gd. Synchronously the space is empty and the answer is ExitPoint.

@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="ItemDef" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/inventory/item_def.gd" id="1_def"]
+[ext_resource type="Resource" path="res://resources/items/rifle.tres" id="2_held"]
+
+[resource]
+script = ExtResource("1_def")
+id = &"rifle"
+display_name = "RIFLE"
+size = Vector2i(6, 2)
+max_stack = 1
+color = Color(0.6, 0.5, 0.35, 1)
+slot = &"weapon"
+held_item = ExtResource("2_held")
+category = &"gear"
+description = "A heavy anti-materiel rifle. Not loaded yet."
+weight = 4.5

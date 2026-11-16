@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="GunDef" format=3]
+
+[ext_resource type="Script" path="res://scripts/items/gun_def.gd" id="1_gun"]
+
+[resource]
+script = ExtResource("1_gun")
+display_name = "RIFLE"
+damage = 50.0
+magazine = 10
+fire_interval = 0.35
+reload_time = 2.5
+aim_fov_cut = 0.28
+range_m = 200.0
+recoil_pitch_deg = 1.6
+shake_deg = 0.9
+ejects_casings = true
+bloom_per_shot = 0.3

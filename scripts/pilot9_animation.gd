@@ -6,7 +6,8 @@
 ##
 ## 1. The blend position is the travel direction in BODY space, not input space - see
 ##    _travel_blend(). Required by turn-to-face; docs/specs/pilot9-turn-to-face.md.
-## 2. The crouch TimeScale at the bottom of _process. RC has no crouch.
+## 2. The crouch's kneel/jog mix, jog direction and jog rate - see _drive_crouch(). RC has no
+##    crouch; docs/specs/pilot9-crouch-kneel.md.
 ## 3. The `air_jumped` listener. RC has no double jump.
 ## 4. The slide TimeScale beside the crouch's, which plays the slide clip at the rate the
 ##    controller reads its distance curve at and freezes it on the hold pose, and the
@@ -24,16 +25,22 @@
 ##    docs/specs/pilot9-tredge.md.
 extends Node
 
-## The scale on the `crouch` state's TimeScale node, built by
-## scripts/pilot9_build_scene.gd::_ensure_crouch_state(). AnimationTree.set() stores an
-## unknown parameter path silently rather than erroring, so a rename on either side stops
-## the crouch cycle advancing with nothing in the log - hence the const, and
+## The `crouch` state's nodes, built by scripts/pilot9_build_scene.gd::_ensure_crouch_state().
+## AnimationTree.set() stores an unknown parameter path silently rather than erroring, so a
+## rename on either side freezes the crouch with nothing in the log - hence the consts, and
 ## tests/test_pilot9_crouch.gd asserting the two halves still meet.
-const CROUCH_SCALE := "parameters/crouch/CrouchScale/scale"
-
-## Below this the eased scale is snapped to a dead stop. lerp() only ever approaches its
-## target, and a crouch clip creeping forward at 0.3% speed reads as a drift, not a hold.
-const CROUCH_SCALE_EPSILON := 0.01
+## CROUCH_LEGS: the legs layer over the idle, held at 1. CROUCH_MOVE: kneel (0) <-> jog (1).
+const CROUCH_LEGS := "parameters/crouch/CrouchLegs/blend_amount"
+const CROUCH_MOVE := "parameters/crouch/CrouchMove/blend_amount"
+const CROUCH_JOG := "parameters/crouch/CrouchJog/blend_position"
+const CROUCH_SCALE := "parameters/crouch/CrouchJogScale/scale"
+const CROUCH_BAKE := preload("res://scripts/crouch_bake.gd")
+## The grilled timings (docs/specs/pilot9-crouch-kneel.md): up off the knee the moment he moves,
+## down onto it the moment he stops too (2026-11-15: the 0.15 s still-delay read as a pause), a
+## little slower.
+const CROUCH_RISE_TIME := 0.12
+const CROUCH_KNEEL_TIME := 0.25
+const CROUCH_KNEEL_DELAY := 0.0
 
 ## The `slide` state's TimeScale, built by scripts/pilot9_build_scene.gd::_ensure_slide_state().
 ## Same silent-rename hazard as CROUCH_SCALE, with a different symptom: the clip would run
@@ -90,6 +97,9 @@ var target_direction: Vector2 = Vector2.ZERO
 ## running. Re-armed every frame the `slide` state is not the one playing, so a slide the
 ## state machine enters twice is seeked twice. See _sync_slide_clip().
 var _slide_clip_synced: bool = false
+## The kneel/jog mix before easing (0 kneel, 1 jog), and how long the stick has been let go.
+var _crouch_move: float = 0.0
+var _crouch_still: float = 0.0
 
 func _ready() -> void:
 	if player != null and player.has_signal("air_jumped"):
@@ -131,10 +141,11 @@ func _process(delta: float) -> void:
 	var smooth_walk_run = lerp(current_walk_run, target_walk_run, delta * 8.0)
 	animation_tree.set("parameters/Locomotion/WalkRunBlend/blend_amount", smooth_walk_run)
 
-	# Facing travel there is no backward, so the gate that suppressed a sprint while
-	# reversing only means anything in strafe mode.
+	# Stock RC's gate: no backward sprint clips, so a reversing sprint plays the run blend. Facing
+	# travel there is no backward. pilot9.gd::_requested_speed drops is_sprinting by the same rule,
+	# so this is belt and braces - the clip and the speed agree even if one of them changes.
 	var is_moving_backward = player.input_dir.y > 0
-	var target_speed = 1.0 if (is_sprinting and (player.face_travel_direction or not is_moving_backward)) else 0.0
+	var target_speed = 1.0 if (is_sprinting and (player._faces_travel() or not is_moving_backward)) else 0.0
 	var current_speed = animation_tree.get("parameters/Locomotion/SpeedBlend/blend_amount")
 	var smooth_speed = lerp(current_speed, target_speed, delta * 8.0)
 	animation_tree.set("parameters/Locomotion/SpeedBlend/blend_amount", smooth_speed)
@@ -151,10 +162,13 @@ func _process(delta: float) -> void:
 ## expressed in his own frame. Forward sits at (0, 1) in every one of them.
 ##
 ## Stock RC feeds input space, which is the same thing only while the body is welded to
-## camera-back. Facing travel, the body IS the frame: steady state this reads (0, 1) and
-## only run_forward plays, and the sideways clips come alive exactly during a pivot, while
-## the body still lags the heading. That lean is what keeps a hard 180 from reading as a
-## skate, and it is the reason the blend is not simply pinned to forward.
+## camera-back - so strafing (the shipping mode since 2026-11-11) at steady state this reads
+## exactly what stock read, backpedal at (0, -1). It is used in every mode anyway because it
+## stays honest while the body is still turning: back to camera-back after a slide or a dash,
+## input space would play run_backward over a body that is still facing the old way.
+## Facing travel, the body IS the frame: steady state this reads (0, 1) and only run_forward
+## plays, and the sideways clips come alive exactly during a pivot, while the body still lags
+## the heading. That lean is what keeps a hard 180 from reading as a skate.
 ##
 ## The negated X is not a typo. pilot9's mesh faces its own +Z but its local +X points to
 ## his LEFT - the 180 degree basis on the `character` node - so travel toward his right is
@@ -166,11 +180,13 @@ func _process(delta: float) -> void:
 ## CharacterBody, so the two agree - and local is readable without the node being in a tree,
 ## which is what makes this testable headlessly.
 func _travel_blend() -> Vector2:
-	if not player.face_travel_direction:
-		return Vector2(player.input_dir.x, -player.input_dir.y)
 	# `direction` and `input_strength` are last frame's when frozen (handle_frozen_movement
 	# clears input_dir and nothing else), so without this he keeps running on the spot.
 	if player.input_dir == Vector2.ZERO:
+		return Vector2.ZERO
+	# Aimed with a gun: the standing-aim pose whatever the stick does - he glides, his legs do not
+	# run (the camera sits over his shoulder, so nobody sees them).
+	if player.gunplay != null and player.gunplay.body_locked():
 		return Vector2.ZERO
 	# Yaw only, not the mesh's whole basis. Since 2026-09-11 the `character` node also carries
 	# a slope pitch and roll (pilot9.gd::_align_model_to_slope), and those tip b.x and b.z out
@@ -196,19 +212,37 @@ func _drive_tredge(delta: float) -> void:
 	animation_tree.set(TREDGE_BLEND, lerpf(float(current), target, minf(delta * 8.0, 1.0)))
 	animation_tree.set(TREDGE_SCALE, player.tredge_clip_rate())
 
-## Added on top of RC. pilot9 has a crouch WALK clip and no crouch IDLE, so the state plays
-## the one cycle through a TimeScale and this eases the scale to 0 when he is not actually
-## moving: he holds the pose he stopped on instead of marching on the spot. Crouched, the
-## state owns him whether or not he moves - the scale is about the cycle, not the state.
+## Added on top of RC: the crouch's legs. Kneeling still, jogging moving - the four jog cycles
+## blended on the same body-space travel the run uses (he strafes crouched like he does standing),
+## at ground speed / the bake's design speed so the planted foot never skates. Out of the crouch
+## the mix is snapped to "moving or not", so the state is entered on the right pose.
 func _drive_crouch(delta: float) -> void:
-	var current: Variant = animation_tree.get(CROUCH_SCALE)
-	if current == null:
+	if animation_tree.get(CROUCH_MOVE) == null:
 		return   # crouch state absent - an old pilot9.tscn built before _ensure_crouch_state
-	var target := 1.0 if (player.is_crouching and player.input_dir != Vector2.ZERO) else 0.0
-	var smooth: float = lerp(float(current), target, delta * 8.0)
-	if smooth < CROUCH_SCALE_EPSILON:
-		smooth = 0.0
-	animation_tree.set(CROUCH_SCALE, smooth)
+	animation_tree.set(CROUCH_LEGS, 1.0)
+	var moving: bool = player.input_dir != Vector2.ZERO
+	_crouch_still = 0.0 if moving else _crouch_still + delta
+	if not player.is_crouching:
+		_crouch_move = 1.0 if moving else 0.0
+	elif moving:
+		_crouch_move = move_toward(_crouch_move, 1.0, delta / CROUCH_RISE_TIME)
+	elif _crouch_still >= CROUCH_KNEEL_DELAY:
+		_crouch_move = move_toward(_crouch_move, 0.0, delta / CROUCH_KNEEL_TIME)
+	var move_mix := smoothstep(0.0, 1.0, _crouch_move)
+	animation_tree.set(CROUCH_MOVE, move_mix)
+	var lean = player.get(&"crouch_lean")
+	if lean != null:
+		lean.crouch_target = 1.0 if player.is_crouching and player.is_on_floor() else 0.0
+		lean.move = move_mix
+		var holder = player.get(&"item_holder")
+		var arm = holder.get(&"arm_modifier") if holder != null else null
+		lean.aim = arm.ik_weight if arm != null else 0.0
+	# Stopped, the blend position is held - it is the jog he rises into, not the kneel.
+	if moving:
+		var current: Vector2 = animation_tree.get(CROUCH_JOG)
+		animation_tree.set(CROUCH_JOG, current.lerp(_travel_blend(), minf(delta * 10.0, 1.0)))
+	var h := Vector2(player.velocity.x, player.velocity.z).length()
+	animation_tree.set(CROUCH_SCALE, clampf(h / CROUCH_BAKE.DESIGN_SPEED, 0.0, 2.0))
 
 ## Runs the slide clip at the controller's own rate, and freezes it on the hold pose. The
 ## controller decides both - `is_slide_holding` is set the frame `_slide_time` reaches the

@@ -21,6 +21,10 @@ const SettingsScript := preload("res://scripts/settings.gd")
 # exactly window / block. Shown dimmed with OVERRIDDEN_TEXT. See docs/specs/pixel-world.md.
 const PIXEL_OVERRIDDEN_KEYS: Array[StringName] = [&"msaa", &"render_scale"]
 const OVERRIDDEN_TEXT := "PIXEL FILTER ON"
+# AIRFRAME's PIXEL FILTER row under RETRO / COMPOSITE, which stay sharp. See
+# docs/specs/airframe-pixel-filter.md.
+const AIRFRAME_ONLY_TEXT := "AIRFRAME ONLY"
+const NEEDS_FILTER_TEXT := "NEEDS PIXEL FILTER"
 
 # Settings keys with no row of their own: Settings.HIDDEN_KEYS, the rows that left with CEL and PIXEL
 # (docs/specs/live-composite.md).
@@ -197,8 +201,14 @@ func _refresh_row(key: StringName) -> void:
 			control.sync(label, value)
 		elif PIXEL_OVERRIDDEN_KEYS.has(key):
 			_sync_maybe_disabled(control, key, label, value,
-				SettingsScript.effective_pixel_size(Settings.pixel_size, Settings.pixel_look_size, Settings.look) > 0,
-				OVERRIDDEN_TEXT)
+				_pixel_block() > 0, OVERRIDDEN_TEXT)
+		elif key == &"pixel_airframe_size":
+			_sync_maybe_disabled(control, key, label, value, Settings.look != "airframe",
+				AIRFRAME_ONLY_TEXT)
+		elif key == &"pixel_char_size":
+			_sync_maybe_disabled(control, key, label, value,
+				Settings.look != "airframe" or Settings.pixel_airframe_size == 0,
+				AIRFRAME_ONLY_TEXT if Settings.look != "airframe" else NEEDS_FILTER_TEXT)
 		else:
 			control.sync(label, value, _can_step(key, -1), _can_step(key, 1))
 		return
@@ -210,6 +220,12 @@ func _sync_maybe_disabled(control: Control, key: StringName, label: String, valu
 		control.sync(label, disabled_text, false, false)
 	else:
 		control.sync(label, value, _can_step(key, -1), _can_step(key, 1))
+
+## The block size PixelWorld is drawing at, as far as the menu can tell. The main menu has no
+## AirframeLook, so it reads AIRFRAME's own size there - the size trial will open at.
+func _pixel_block() -> int:
+	return SettingsScript.effective_pixel_size(Settings.pixel_size, Settings.pixel_look_size,
+		Settings.look, Settings.pixel_airframe_size, true)
 
 ## The Settings key a row reads and writes. Itself, except PIXEL FILTER, which edits the active
 ## look's own block size (PIXEL's has no OFF and defaults to 4X).
@@ -248,7 +264,7 @@ func _format_value(key: StringName, value: Variant) -> String:
 			return "%.2f" % value
 		&"render_scale":
 			return "%d%%" % roundi(float(value) * 100.0)
-		&"pixel_size":
+		&"pixel_size", &"pixel_airframe_size", &"pixel_char_size":
 			return "OFF" if int(value) == 0 else "%dX" % int(value)
 		&"colour_depth":
 			return "FULL" if int(value) == 0 else str(value)
@@ -275,7 +291,7 @@ func _step(direction: int, key: StringName) -> void:
 			Settings.step_value(key, direction)
 			_refresh_row(key)
 			_queue_display_confirm(old_window_mode, old_resolution)
-		&"pixel_size", &"look":
+		&"pixel_size", &"pixel_airframe_size", &"pixel_char_size", &"look":
 			Settings.step_value(_bound_key(key), direction)
 			_sync_all()
 		_:

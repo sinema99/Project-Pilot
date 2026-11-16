@@ -215,3 +215,60 @@ func test_reseed_absorbs_a_yaw_snap() -> void:
 	n.character.rotation.y = 2.0
 	n._reseed_body_lean()
 	approx(n._body_lean_target(DT, true).y, 0.0, 0.0001, "a reseeded yaw snap still rolled him")
+
+# --- direction-aware (docs/specs/pilot9-strafe-return.md) ---------------------
+
+# Holds a velocity of `speed` along `dir` (world) for `frames` with the body facing +Z.
+# Returns the extreme pitch and roll seen.
+func _hold_velocity(n: Node, vel: Vector3, frames: int) -> Vector2:
+	var extreme := Vector2.ZERO
+	n.velocity = vel
+	for i in frames:
+		_tick(n)
+		if absf(n.character.rotation.x) > absf(extreme.x):
+			extreme.x = n.character.rotation.x
+		if absf(n.character.rotation.z) > absf(extreme.y):
+			extreme.y = n.character.rotation.z
+	return extreme
+
+func test_backpedal_start_pitches_back() -> void:
+	var n := _scene()
+	var peak := _hold_velocity(n, Vector3(0, 0, -n.body_lean_pitch_full_gap), 120)
+	check(peak.x < 0.0, "starting a backpedal pitched him FORWARD, toward the camera")
+	approx(-peak.x, deg_to_rad(n.body_lean_pitch_back_max), deg_to_rad(n.body_lean_pitch_back_max) * 0.1,
+		"a full backpedal start should peak at the back cap")
+	approx(peak.y, 0.0, 0.0001, "a straight backpedal rolled him")
+
+func test_backpedal_stop_pitches_forward() -> void:
+	var n := _scene()
+	n.velocity = Vector3(0, 0, -7.5)
+	n._reseed_body_lean()
+	var peak := _hold_velocity(n, Vector3.ZERO, 120)
+	check(peak.x > 0.0, "braking a backpedal should lean him forward, into the stop")
+
+func test_strafe_start_rolls_toward_the_strafe() -> void:
+	# His left is +X (mesh faces +Z); leaning left is negative roll.
+	var n := _scene()
+	var left := _hold_velocity(n, Vector3(7.5, 0, 0), 60)
+	check(left.y < 0.0, "a strafe to his left rolled him right")
+	approx(left.x, 0.0, 0.0001, "a pure strafe pitched him")
+	var m := _scene()
+	var right := _hold_velocity(m, Vector3(-7.5, 0, 0), 60)
+	check(right.y > 0.0, "a strafe to his right rolled him left")
+	var s := _scene()
+	var full := _hold_velocity(s, Vector3(s.body_lean_pitch_full_gap, 0, 0), 120)
+	check(absf(full.y) <= deg_to_rad(s.body_lean_roll_max) * 1.1,
+		"the strafe roll broke the roll cap (%f deg)" % rad_to_deg(full.y))
+
+func test_constant_speed_carve_still_holds_no_pitch() -> void:
+	var n := _scene()
+	n.velocity = Vector3(0, 0, 7.5)
+	n._reseed_body_lean()
+	var extreme := 0.0
+	for i in 120:
+		n.character.rotation.y += PI * DT
+		var yaw: float = n.character.rotation.y
+		n.velocity = Vector3(sin(yaw), 0.0, cos(yaw)) * 7.5
+		_tick(n)
+		extreme = maxf(extreme, absf(n.character.rotation.x))
+	approx(extreme, 0.0, 0.0001, "a constant-speed carve pitched him")

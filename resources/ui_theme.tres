@@ -1,8 +1,8 @@
 [gd_resource type="Theme" format=3 uid="uid://ceakpamk0cju5"]
 
-[ext_resource type="FontFile" uid="uid://c8o15vyf28ygy" path="res://assets/fonts/BarlowCondensed-Regular.ttf" id="1_regular"]
-[ext_resource type="FontFile" uid="uid://b7q84xxvqx6lt" path="res://assets/fonts/BarlowCondensed-Medium.ttf" id="2_medium"]
-[ext_resource type="FontFile" uid="uid://dyo2rnaipi8h2" path="res://assets/fonts/BarlowCondensed-SemiBold.ttf" id="3_semibold"]
+[ext_resource type="FontFile" path="res://assets/fonts/PixelifySans.ttf" id="1_regular"]
+[ext_resource type="FontFile" path="res://assets/fonts/PixelifySans.ttf" id="2_medium"]
+[ext_resource type="FontFile" path="res://assets/fonts/PixelifySans.ttf" id="3_semibold"]
 
 [sub_resource type="FontVariation" id="FontVariation_body"]
 base_font = ExtResource("2_medium")
@@ -23,7 +23,7 @@ base_font = ExtResource("3_semibold")
 spacing_glyph = 4
 
 [sub_resource type="StyleBoxLine" id="StyleBoxLine_rule"]
-color = Color(0.251, 0.949, 0.902, 0.4)
+color = Color(0.0, 0.42, 0.42, 1)
 
 [sub_resource type="FontVariation" id="FontVariation_hint"]
 base_font = ExtResource("2_medium")
@@ -34,12 +34,12 @@ content_margin_left = 8.0
 content_margin_top = 2.0
 content_margin_right = 8.0
 content_margin_bottom = 2.0
-draw_center = false
+bg_color = Color(0.0, 0.14, 0.16, 1)
 border_width_left = 1
 border_width_top = 1
 border_width_right = 1
 border_width_bottom = 1
-border_color = Color(0.251, 0.949, 0.902, 0.6)
+border_color = Color(0.251, 0.949, 0.902, 1)
 
 [sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_tab"]
 content_margin_left = 14.0
@@ -58,27 +58,27 @@ base_font = ExtResource("3_semibold")
 spacing_glyph = 3
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_grabber"]
-bg_color = Color(0.251, 0.949, 0.902, 0.5)
+bg_color = Color(0.251, 0.949, 0.902, 1)
 
 [sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_scroll"]
 
 [resource]
 default_font = ExtResource("1_regular")
-default_font_size = 20
+default_font_size = 17
 Body/base_type = &"Label"
 Body/colors/font_color = Color(0.91, 0.945, 0.949, 1)
-Body/font_sizes/font_size = 20
+Body/font_sizes/font_size = 17
 Body/fonts/font = SubResource("FontVariation_body")
 BodyDim/base_type = &"Label"
 BodyDim/colors/font_color = Color(0.91, 0.945, 0.949, 0.5)
-BodyDim/font_sizes/font_size = 20
+BodyDim/font_sizes/font_size = 17
 BodyDim/fonts/font = SubResource("FontVariation_body")
 Button/colors/font_color = Color(0.91, 0.945, 0.949, 1)
 Button/colors/font_disabled_color = Color(0.91, 0.945, 0.949, 0.35)
 Button/colors/font_focus_color = Color(0.91, 0.945, 0.949, 1)
 Button/colors/font_hover_color = Color(0.91, 0.945, 0.949, 1)
 Button/colors/font_pressed_color = Color(0.91, 0.945, 0.949, 1)
-Button/font_sizes/font_size = 26
+Button/font_sizes/font_size = 22
 Button/fonts/font = SubResource("FontVariation_row")
 Button/styles/disabled = SubResource("StyleBoxEmpty_row")
 Button/styles/focus = SubResource("StyleBoxEmpty_row")
@@ -87,17 +87,17 @@ Button/styles/normal = SubResource("StyleBoxEmpty_row")
 Button/styles/pressed = SubResource("StyleBoxEmpty_row")
 DialogTitle/base_type = &"Label"
 DialogTitle/colors/font_color = Color(0.251, 0.949, 0.902, 1)
-DialogTitle/font_sizes/font_size = 28
+DialogTitle/font_sizes/font_size = 24
 DialogTitle/fonts/font = SubResource("FontVariation_tab")
 HSeparator/constants/separation = 1
 HSeparator/styles/separator = SubResource("StyleBoxLine_rule")
 HintKey/base_type = &"Label"
 HintKey/colors/font_color = Color(0.251, 0.949, 0.902, 1)
-HintKey/font_sizes/font_size = 16
+HintKey/font_sizes/font_size = 14
 HintKey/fonts/font = SubResource("FontVariation_hint")
 HintLabel/base_type = &"Label"
 HintLabel/colors/font_color = Color(0.91, 0.945, 0.949, 0.5)
-HintLabel/font_sizes/font_size = 16
+HintLabel/font_sizes/font_size = 14
 HintLabel/fonts/font = SubResource("FontVariation_hint")
 Keycap/base_type = &"PanelContainer"
 Keycap/styles/panel = SubResource("StyleBoxFlat_keycap")
@@ -111,7 +111,7 @@ MenuRow/colors/font_focus_color = Color(0, 0, 0, 0)
 MenuRow/colors/font_hover_color = Color(0, 0, 0, 0)
 MenuRow/colors/font_pressed_color = Color(0, 0, 0, 0)
 MenuRow/colors/text = Color(0.91, 0.945, 0.949, 1)
-MenuRow/font_sizes/font_size = 26
+MenuRow/font_sizes/font_size = 22
 MenuRow/fonts/font = SubResource("FontVariation_row")
 MenuRow/styles/disabled = SubResource("StyleBoxEmpty_row")
 MenuRow/styles/focus = SubResource("StyleBoxEmpty_row")
@@ -124,7 +124,7 @@ MenuTab/colors/font_disabled_color = Color(0, 0, 0, 0)
 MenuTab/colors/font_focus_color = Color(0, 0, 0, 0)
 MenuTab/colors/font_hover_color = Color(0, 0, 0, 0)
 MenuTab/colors/font_pressed_color = Color(0, 0, 0, 0)
-MenuTab/font_sizes/font_size = 24
+MenuTab/font_sizes/font_size = 20
 MenuTab/fonts/font = SubResource("FontVariation_tab")
 MenuTab/styles/disabled = SubResource("StyleBoxEmpty_tab")
 MenuTab/styles/focus = SubResource("StyleBoxEmpty_tab")
@@ -134,11 +134,11 @@ MenuTab/styles/pressed = SubResource("StyleBoxEmpty_tab")
 PanelContainer/styles/panel = SubResource("StyleBoxEmpty_panel")
 ScreenTitle/base_type = &"Label"
 ScreenTitle/colors/font_color = Color(0.251, 0.949, 0.902, 1)
-ScreenTitle/font_sizes/font_size = 40
+ScreenTitle/font_sizes/font_size = 34
 ScreenTitle/fonts/font = SubResource("FontVariation_title")
 SectionHeader/base_type = &"Label"
 SectionHeader/colors/font_color = Color(0.251, 0.949, 0.902, 1)
-SectionHeader/font_sizes/font_size = 18
+SectionHeader/font_sizes/font_size = 15
 SectionHeader/fonts/font = SubResource("FontVariation_header")
 VScrollBar/styles/grabber = SubResource("StyleBoxFlat_grabber")
 VScrollBar/styles/grabber_highlight = SubResource("StyleBoxFlat_grabber")

@@ -124,7 +124,7 @@ static func _brim(theta: float, u: float, top: bool) -> Vector3:
 ## -- strips: each is one smooth group, an Array of row Callables (theta -> Vector3) ----------
 
 static func _felt_strips() -> Array:
-	var underside := [func(t: float) -> Vector3: return Vector3.ZERO]
+	var underside := [func(_t: float) -> Vector3: return Vector3.ZERO]
 	for u in [0.0, 0.25, 0.5, 0.75, 1.0]:
 		underside.append(_brim_row(u, false))
 	var rim := [_brim_row(1.0, false), _brim_row(1.0, true)]

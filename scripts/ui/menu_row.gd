@@ -21,7 +21,8 @@ const PRESS_TIME := 0.04
 ## How long the pressed look is held after a keyboard confirm, so the dim is always seen.
 const KEY_FLASH := 0.09
 const NUDGE := 6.0
-const BAR_WIDTH := 3.0
+const BAR_WIDTH := 4.0
+const BLINK_MS := 450
 const IDLE_ALPHA := 0.7
 const DISABLED_ALPHA := 0.35
 const FILL_ALPHA := 0.16
@@ -123,6 +124,8 @@ func _process(delta: float) -> void:
 	_flash = maxf(_flash - delta, 0.0)
 	var new_sel := move_toward(selected_amount, sel_target, delta / SELECT_TIME)
 	var new_press := move_toward(pressed_amount, press_target, delta / PRESS_TIME)
+	if is_selected() and not tab_mode:
+		queue_redraw()
 	if new_sel != selected_amount or new_press != pressed_amount:
 		selected_amount = new_sel
 		pressed_amount = new_press
@@ -142,12 +145,23 @@ func _gui_input(event: InputEvent) -> void:
 func _confirm() -> void:
 	pressed.emit()
 
+## Selection steps in quarters, like a low-framerate menu: no smooth tween on screen.
+func quarter_step(v: float) -> float:
+	return roundf(v * 4.0) / 4.0
+
 func _draw() -> void:
 	var accent := accent_color()
-	if selected_amount > 0.0 and not tab_mode:
-		var k := selected_amount * press_scale()
-		draw_rect(Rect2(Vector2.ZERO, size), Color(accent, FILL_ALPHA * k))
-		draw_rect(Rect2(0.0, 0.0, BAR_WIDTH, size.y), Color(accent, k))
+	var sel := quarter_step(selected_amount)
+	if sel > 0.0 and not tab_mode:
+		var k := sel * press_scale()
+		# Two hard bands, no blend: lighter top half, darker bottom half.
+		var half := floorf(size.y * 0.5)
+		draw_rect(Rect2(0.0, 0.0, size.x, half), Color(accent, FILL_ALPHA * 1.7 * k))
+		draw_rect(Rect2(0.0, half, size.x, size.y - half), Color(accent, FILL_ALPHA * 0.8 * k))
+		# The selector blinks on a fixed beat while the row rests selected.
+		@warning_ignore("integer_division")
+		if sel < 1.0 or int(Time.get_ticks_msec() / BLINK_MS) % 2 == 0:
+			draw_rect(Rect2(0.0, 0.0, BAR_WIDTH, size.y), Color(accent, k))
 	_draw_content()
 
 ## The label. Left-aligned text sits after the bar and nudges right when selected; centred text
@@ -162,7 +176,7 @@ func _draw_content() -> void:
 		draw_string(font, Vector2(label_x(), y), text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, text_color())
 
 func label_x() -> float:
-	return float(get_theme_stylebox(&"normal").get_margin(SIDE_LEFT)) + NUDGE * selected_amount
+	return float(get_theme_stylebox(&"normal").get_margin(SIDE_LEFT)) + NUDGE * quarter_step(selected_amount)
 
 func _baseline(font: Font, font_size: int) -> float:
 	return (size.y - font.get_height(font_size)) * 0.5 + font.get_ascent(font_size)

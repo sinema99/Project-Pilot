@@ -30,14 +30,17 @@ func _make_scene(with_sun: bool) -> Dictionary:
 # --- the switch ------------------------------------------------------------------
 
 func test_look_row() -> void:
-	eq(SETTINGS.values_of(&"look"), ["retro", "composite"], "RETRO / COMPOSITE")
-	eq(SETTINGS.defaults()[&"look"], "retro", "the game still boots in RETRO")
+	# AIRFRAME joined as the default (docs/specs/airframe-trial.md).
+	eq(SETTINGS.values_of(&"look"), ["retro", "composite", "airframe"], "RETRO / COMPOSITE / AIRFRAME")
+	eq(SETTINGS.defaults()[&"look"], "airframe", "the game boots in AIRFRAME")
 
-func test_old_looks_load_as_retro() -> void:
+func test_old_looks_load_as_the_default() -> void:
 	for old: String in ["cel", "pixel"]:
-		var out := SETTINGS.sanitise({"version": SETTINGS.CONFIG_VERSION, &"look": old})
-		eq(out[&"look"], "retro", old + " loads as RETRO")
-	var kept := SETTINGS.sanitise({"version": SETTINGS.CONFIG_VERSION, &"look": "composite"})
+		var out := SETTINGS.sanitise({"version": SETTINGS.CONFIG_VERSION, &"look": old,
+				SETTINGS.AIRFRAME_FLAG: true})
+		eq(out[&"look"], "airframe", old + " loads as the default")
+	var kept := SETTINGS.sanitise({"version": SETTINGS.CONFIG_VERSION, &"look": "composite",
+			SETTINGS.AIRFRAME_FLAG: true})
 	eq(kept[&"look"], "composite", "COMPOSITE survives a reload")
 
 func test_removed_rows_cannot_come_back_from_a_save() -> void:

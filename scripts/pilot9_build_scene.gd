@@ -55,7 +55,8 @@ const HEIGHT_TOLERANCE := 0.02        # metres of drift before the capsule is wo
 # "loop"- the importer defaults every clip to LOOP_NONE regardless of content, so a cycle
 #         has to say so here or it plays once and freezes.
 const GLB_CLIPS := {
-	"P_crouchwalk": {"as": &"crouch_walk", "loop": Animation.LOOP_LINEAR},
+	# P_crouchwalk (crouch_walk) was SCRAPPED 2026-11-15 - the crouch is generated in code now
+	# (scripts/crouch_bake.gd, docs/specs/pilot9-crouch-kneel.md). Still in the GLB; not lifted.
 	# P_sitting (the climb-into-the-cockpit clip for the mech handover, not wired yet) is
 	# absent from the 2026-09-21 export - flagged to the user, not silently re-added. If it
 	# comes back in a later export, restore this entry:
@@ -110,11 +111,18 @@ const FBX_CLIPS := {
 }
 
 const CROUCH_STATE := &"crouch"
-const CROUCH_CLIP := &"crouch_walk"
-## AnimationTree parameter scripts/pilot9_animation.gd writes each frame. Kept next to
-## the builder that creates the node, because renaming either half silently stops the
-## crouch cycle advancing - set() on a path that does not exist is not an error.
-const CROUCH_SCALE_NODE := "CrouchScale"
+## The scrapped Blender crouch walk. Only named so a rebuild deletes it from the library.
+const CROUCH_OLD_CLIP := &"crouch_walk"
+const CROUCH_BAKE := preload("res://scripts/crouch_bake.gd")
+## The crouch state's nodes scripts/pilot9_animation.gd writes each frame. Kept next to
+## the builder that creates them, because renaming either half silently freezes the crouch -
+## set() on a path that does not exist is not an error. tests/test_pilot9_crouch.gd pins both.
+## CrouchLegs: the legs layer over the idle (filtered to crouch_bake.gd's BONES, amount 1).
+## CrouchMove: kneel (0) <-> jog (1). CrouchJog: the four-way blend space. CrouchJogScale: its rate.
+const CROUCH_LEGS_NODE := "CrouchLegs"
+const CROUCH_MOVE_NODE := "CrouchMove"
+const CROUCH_JOG_NODE := "CrouchJog"
+const CROUCH_SCALE_NODE := "CrouchJogScale"
 
 const SLIDE_STATE := &"slide"
 const SLIDE_CLIP := &"slide"
@@ -685,33 +693,75 @@ func _ensure_run_arm_swing(root: Node) -> bool:
 
 # -- crouch ---------------------------------------------------------------------------
 
-# Adds (or replaces) the `crouch` state and its transitions on the locomotion state
-# machine. The state is a two-node blend tree - the clip through an AnimationNodeTimeScale
-# - because pilot9 has a crouch WALK and no crouch IDLE. Standing still, the scale is
-# eased to 0 by scripts/pilot9_animation.gd and he holds the pose he stopped on; marching
-# on the spot is what that avoids. A Mixamo "Crouch Idle" would let this become a proper
-# blend instead, and the TimeScale can go the day it exists.
+# Bakes the crouch's five clips (scripts/crouch_bake.gd: the right-knee kneel and four crouch-jog
+# cycles) and adds (or replaces) the `crouch` state and its transitions. See
+# docs/specs/pilot9-crouch-kneel.md.
+#
+# The state is the standing idle with a legs layer over it: CrouchLegs is a Blend2 filtered to
+# the bones the bake keys (Hips and the legs) at amount 1, so the spine, head, arms - and the
+# gun the arms hold - are exactly the idle's, crouched or not. The legs layer is CrouchMove,
+# kneel (0) to jog (1); the jog is a four-way blend space at RC's run positions, through a
+# TimeScale scripts/pilot9_animation.gd sets to ground speed / the bake's design speed.
 func _ensure_crouch_state(root: Node) -> bool:
+	var ap := root.get_node_or_null("AnimationPlayer") as AnimationPlayer
+	var lib := ap.get_animation_library(&"") if ap != null else null
+	var skel := root.get_node_or_null("character/Armature/GeneralSkeleton") as Skeleton3D
 	var at := root.get_node_or_null("AnimationTree") as AnimationTree
-	if at == null:
-		push_error("%s has no AnimationTree" % OUT)
+	var sm := at.tree_root as AnimationNodeStateMachine if at != null else null
+	if lib == null or skel == null or sm == null:
+		push_error("%s is missing its library, skeleton or state machine for the crouch" % OUT)
 		return false
-	var sm := at.tree_root as AnimationNodeStateMachine
-	if sm == null:
-		push_error("%s's AnimationTree root is not an AnimationNodeStateMachine" % OUT)
+	if not ap.has_animation(&"idle"):
+		push_error("no 'idle' clip for the crouch's upper body")
+		return false
+	var rig := CROUCH_BAKE.rig(skel, ap.get_animation(&"idle"))
+	if rig.is_empty():
+		push_error("the crouch bake found no Hips/leg bones or no idle Hips track")
 		return false
 
-	var clip := AnimationNodeAnimation.new()
-	clip.animation = CROUCH_CLIP
+	if lib.has_animation(CROUCH_OLD_CLIP):
+		lib.remove_animation(CROUCH_OLD_CLIP)
+	var idle_clip := ap.get_animation(&"idle")
+	var clips := {CROUCH_BAKE.KNEEL: CROUCH_BAKE.kneel(rig)}
+	CROUCH_BAKE.add_arms(skel, clips[CROUCH_BAKE.KNEEL], idle_clip, null, 0.0)
+	var run_clip := ap.get_animation(&"run_forward") if ap.has_animation(&"run_forward") else null
+	for name in CROUCH_BAKE.JOGS:
+		clips[name] = CROUCH_BAKE.jog(rig, name, CROUCH_BAKE.JOGS[name].dir)
+		CROUCH_BAKE.add_arms(skel, clips[name], idle_clip, run_clip, CROUCH_BAKE.ARM_SWING[name])
+	for name in clips:
+		if lib.has_animation(name):
+			lib.remove_animation(name)
+		lib.add_animation(name, clips[name])
 
-	var scale := AnimationNodeTimeScale.new()
+	var idle := AnimationNodeAnimation.new()
+	idle.animation = &"idle"
+	var kneel := AnimationNodeAnimation.new()
+	kneel.animation = CROUCH_BAKE.KNEEL
+	var jog := AnimationNodeBlendSpace2D.new()
+	jog.sync = true   # every cycle advances, so the feet stay in step through a change of direction
+	for name in CROUCH_BAKE.JOGS:
+		var n := AnimationNodeAnimation.new()
+		n.animation = name
+		jog.add_blend_point(n, CROUCH_BAKE.JOGS[name].at)
+	var legs := AnimationNodeBlend2.new()
+	legs.filter_enabled = true
+	for b in CROUCH_BAKE.BONES:
+		legs.set_filter_path(NodePath(CROUCH_BAKE.PREFIX + b), true)
 
 	var bt := AnimationNodeBlendTree.new()
-	bt.add_node("Clip", clip, Vector2(-160, 40))
-	bt.add_node(CROUCH_SCALE_NODE, scale, Vector2(140, 40))
-	bt.set_node_position("output", Vector2(440, 40))
-	bt.connect_node(CROUCH_SCALE_NODE, 0, "Clip")
-	bt.connect_node("output", 0, CROUCH_SCALE_NODE)
+	bt.add_node("Idle", idle, Vector2(-160, -80))
+	bt.add_node("Kneel", kneel, Vector2(-400, 60))
+	bt.add_node(CROUCH_JOG_NODE, jog, Vector2(-400, 200))
+	bt.add_node(CROUCH_SCALE_NODE, AnimationNodeTimeScale.new(), Vector2(-180, 200))
+	bt.add_node(CROUCH_MOVE_NODE, AnimationNodeBlend2.new(), Vector2(40, 120))
+	bt.add_node(CROUCH_LEGS_NODE, legs, Vector2(260, 20))
+	bt.set_node_position("output", Vector2(480, 20))
+	bt.connect_node(CROUCH_SCALE_NODE, 0, CROUCH_JOG_NODE)
+	bt.connect_node(CROUCH_MOVE_NODE, 0, "Kneel")
+	bt.connect_node(CROUCH_MOVE_NODE, 1, CROUCH_SCALE_NODE)
+	bt.connect_node(CROUCH_LEGS_NODE, 0, "Idle")
+	bt.connect_node(CROUCH_LEGS_NODE, 1, CROUCH_MOVE_NODE)
+	bt.connect_node("output", 0, CROUCH_LEGS_NODE)
 
 	# remove_node() takes the state's transitions with it, so a re-run cannot leave a
 	# stale pair behind pointing at the node it just replaced.
@@ -722,7 +772,8 @@ func _ensure_crouch_state(root: Node) -> bool:
 	# Priority orders the exits that can be live in the same frame. Pressing jump clears
 	# is_crouching AND launches him on one frame (see scripts/pilot9.gd), so `-> jump` and
 	# `-> Locomotion` both qualify; jump has to win or the leap plays as a stand-up.
-	_set_transition(sm, "Locomotion", CROUCH_STATE, 0.2, "is_crouching", 1)
+	# 0.25 s in: the grilled kneel-down time (entering stood still drops straight to the knee).
+	_set_transition(sm, "Locomotion", CROUCH_STATE, 0.25, "is_crouching", 1)
 	_set_transition(sm, CROUCH_STATE, "jump", 0.1, "velocity.y > 0", 0)
 	_set_transition(sm, CROUCH_STATE, "fall", 0.3, "not is_on_floor() and velocity.y <= 0", 1)
 	_set_transition(sm, CROUCH_STATE, "Locomotion", 0.2, "not is_crouching", 2)
@@ -730,8 +781,8 @@ func _ensure_crouch_state(root: Node) -> bool:
 	# this one a standing-still landing strands him out of the crouch he never left.
 	_set_transition(sm, "jump_land", CROUCH_STATE, 0.2, "is_crouching", 0)
 
-	print("  state \"%s\" -> %s (TimeScale), %d states, %d transitions"
-		% [CROUCH_STATE, CROUCH_CLIP, sm.get_node_list().size(), sm.get_transition_count()])
+	print("  state \"%s\": kneel + %d jog cycles baked over idle, %d states, %d transitions"
+		% [CROUCH_STATE, CROUCH_BAKE.JOGS.size(), sm.get_node_list().size(), sm.get_transition_count()])
 	return true
 
 

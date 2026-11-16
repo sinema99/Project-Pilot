@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="ItemDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/inventory/item_def.gd" id="1_def"]
+
+[resource]
+script = ExtResource("1_def")
+id = &"rifle_crate"
+display_name = "RIFLE CRATE"
+size = Vector2i(2, 4)
+max_stack = 1
+color = Color(0.35, 0.38, 0.42, 1)
+category = &"ammo"
+description = "Sealed ammunition crate. Heavy, and it rattles."
+weight = 8.0

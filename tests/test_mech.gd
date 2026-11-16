@@ -18,8 +18,12 @@ const Player := preload("res://scripts/player.gd")
 const EXPECTED_CLIPS := ["MECH_idle", "MECH_launch", "MECH_power_off", "MECH_standing",
 	"MECH_turning_L", "MECH_turning_R", "MECH_walk", "MECH_walk_start"]
 
+# Loaded past the resource cache: a live EXIA splits the travel out of the cached clips in place
+# (mech.gd _split_travel_out_of_the_clips), so once any earlier test has spawned one, the cached
+# MECH_idle no longer walks anywhere. These tests pin the export as it was drawn.
 func _anim_player() -> AnimationPlayer:
-	var glb: PackedScene = load("res://assets/Mech_V1.glb")
+	var glb := ResourceLoader.load("res://assets/Mech_V1.glb", "",
+		ResourceLoader.CACHE_MODE_IGNORE_DEEP) as PackedScene
 	var root := glb.instantiate()
 	return root.find_child("AnimationPlayer", true, false) as AnimationPlayer
 
@@ -120,7 +124,7 @@ func test_exia_scene_has_the_nodes_the_script_expects() -> void:
 	var exia := MechScene.instantiate()
 	eq(exia.name, &"EXIA", "the mech's root node is EXIA")
 	for path in ["Model/AnimationPlayer", "CameraPivot/CameraPitch/SpringArm3D/Camera3D",
-			"HandoverCamera", "InteractionArea", "ExitPoint", "UI/Prompt", "UI/Prompt/Row/Text"]:
+			"HandoverCamera", "InteractionArea", "ExitPoint"]:
 		check(exia.get_node_or_null(path) != null, "EXIA should have a node at '%s'" % path)
 
 # The soles sit on the body's origin, so a CharacterBody3D placed at ground level stands on it.

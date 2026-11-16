@@ -117,7 +117,10 @@ func _ready() -> void:
 	process_priority = 100
 	set_process(false)
 	var settings := get_node_or_null(^"/root/Settings")
-	if settings and settings.is_retro(settings.look):
+	# AIRFRAME shows RETRO on a map without an AirframeLook (its group is joined on enter_tree,
+	# which the whole scene has done before any _ready).
+	if settings and settings.retro_shows(settings.look,
+			get_tree().get_first_node_in_group(&"airframe_look") != null):
 		apply_look.call_deferred(true)
 		apply_composite.call_deferred(settings.look == "composite")
 

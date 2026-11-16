@@ -122,22 +122,25 @@ func tick(delta: float) -> void:
 	_drive_light()
 
 
-## The staff into his hand: a snap when the scene opens out in the storm, otherwise the draw.
+## The staff into his hand: a snap when the scene opens out in the storm, otherwise the draw -
+## or, with the revolver out, a swap to the staff (docs/specs/pilot9-revolver.md).
 func _take_out_staff(snap: bool) -> void:
 	var holder: Node = _pilot.item_holder
-	if holder == null or holder.item_instance == null or holder.is_drawn:
+	var staff: int = _pilot.staff_slot()
+	if holder == null or staff < 0:
 		return
-	var equip: Node = _pilot.equip_anim
-	if snap or equip == null or not equip.ready_to_play():
-		_pilot.toggle_drawn()
-	elif not equip.is_playing():
-		equip.toggle()
+	if holder.is_drawn and _pilot.current_slot() == staff:
+		return
+	_pilot.draw_slot(staff, snap)
 
 
 ## Whether the torch arm may be up: drawn, and no draw or spin moving the arm.
 func lantern_allowed() -> bool:
 	var holder: Node = _pilot.item_holder
 	if holder == null or holder.item_instance == null or not holder.is_drawn:
+		return false
+	# The torch is the staff: nothing else gets the lantern arm or the light.
+	if _pilot.current_slot() < 0 or _pilot.current_slot() != _pilot.staff_slot():
 		return false
 	if _pilot.equip_anim != null and _pilot.equip_anim.is_playing():
 		return false

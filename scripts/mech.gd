@@ -36,9 +36,10 @@ extends CharacterBody3D
 # aboard and *held* on its last frame, which is how a parked mech stays crouched. MECH_standing
 # is the pose the boot-up ends on, and the built MECH_stand_idle starts on exactly that pose.
 #
-# The mech travels along its own nose and nowhere else. The input direction is a heading to turn
-# towards, never a direction to move in, so a change of direction is a turn the machine has to
-# make rather than a drift into the new heading with the model swinging round to catch up.
+# Driving is docs/specs/exia-aim-control.md (aim_lock, the default): the body chases the camera's yaw
+# at a capped, tank-heavy rate, W goes along the nose, A / D strafe, S backs up, Alt is a free-look.
+# With aim_lock off it is the old control below: the input direction is a heading to turn towards,
+# never a direction to move in, and the mech travels along its own nose and nowhere else.
 
 # The run. 7.0 was the old walk's speed; the 2026-10-27 pass made the base gait a heavy jog.
 const SPEED = 9.0
@@ -70,6 +71,33 @@ const ANIM_STOP_R := "MECH_stop_R"
 const ANIM_JUMP_CROUCH := "MECH_jump_crouch"
 const ANIM_JUMP_AIR := "MECH_jump_air"
 const ANIM_LAND := "MECH_land"
+# The aim-forward control's gaits. See docs/specs/exia-aim-control.md.
+const ANIM_RUN_DIAG_L := "MECH_run_diag_L"
+const ANIM_RUN_DIAG_R := "MECH_run_diag_R"
+const ANIM_SPRINT_DIAG_L := "MECH_sprint_diag_L"
+const ANIM_SPRINT_DIAG_R := "MECH_sprint_diag_R"
+const ANIM_STRAFE_L := "MECH_strafe_L"
+const ANIM_STRAFE_R := "MECH_strafe_R"
+const ANIM_BACK := "MECH_back"
+const ANIM_BACK_DIAG_L := "MECH_back_diag_L"
+const ANIM_BACK_DIAG_R := "MECH_back_diag_R"
+
+# --- the aim-forward control (docs/specs/exia-aim-control.md) ---
+# Off: the old camera-relative, face-the-travel control. No menu row - an editor switch for testing.
+@export var aim_lock := true
+# The cap on how fast the body chases the camera, degrees per second: standing, at the run and at a
+# full sprint, blended by speed. A fast swing of the mouse outruns it, which is the tank lag.
+@export var turn_rate_stand_deg := 120.0
+@export var turn_rate_run_deg := 100.0
+@export var turn_rate_sprint_deg := 60.0
+const STRAFE_SPEED := 6.0
+const BACK_SPEED := 5.0
+const BACK_DIAG_SPEED := 5.5
+# Side and back speeds ramp up at the run's rate and come down at this: a strafe let go stops in ~0.3 s.
+const MOVE_BRAKE := 20.0
+const FREE_LOOK_RETURN_TIME := 0.25
+# Which gait the keys ask for. The diagonals are the straight clip with the hips yawed 45 deg.
+enum MoveGait { FORWARD, FORWARD_L, FORWARD_R, LEFT, RIGHT, BACK, BACK_L, BACK_R }
 
 # The sprint. See docs/specs/exia-movement.md and docs/specs/exia-sprint.md.
 #
@@ -95,7 +123,7 @@ const RUN_RATE_MIN := 0.4
 # Above this horizontal speed the mech plays the sprint clip.
 const SPRINT_GAIT_SPEED := SPEED + 0.1
 # The bank: a roll of the model about the nose, pivoting at the feet, into the turn.
-const BANK_MAX_DEG := 12.0
+const BANK_MAX_DEG := 7.0
 const BANK_FULL_ACCEL := 16.33   # 14 m/s on a ~12 m circle: 14^2 / 12
 const BANK_EASE := 8.0
 # The camera on a bound: a damped share of the hip's bounce, a dip and a shake on every footfall.
@@ -146,11 +174,27 @@ const LAND_SHAKE_TIME := 0.2
 const MechGait := preload("res://scripts/mech_gait.gd")
 const MechMoves := preload("res://scripts/mech_moves.gd")
 const MechVfx := preload("res://scripts/mech_vfx.gd")
+const MechBackPanels := preload("res://scripts/mech_back_panels.gd")
 
+const PROMPT_SCRIPT := preload("res://scripts/ui/interaction_prompt.gd")
+const INTERACT_ACTION := &"interact"
+## Found by the Inventory autoload to answer "is the player driving a mech" for Tab.
+const GROUP := &"mech"
+# The interaction panel's spot beside EXIA: metres up from its feet, and out to the camera's right.
+const PROMPT_ANCHOR_HEIGHT := 6.0
+const PROMPT_ANCHOR_OFFSET := 3.0
 const PROMPT_ENTER := "PILOT"
+# The second option on the ground: the stash, without getting in. docs/specs/mech-stash.md.
+const PROMPT_STASH := "STASH"
+const PROMPT_OPTIONS := ["PILOT", "STASH"]
+## While the pilot is carrying a crate (docs/specs/pilot9-crate-carry.md): the one row, or why not.
+const PROMPT_LOAD := "LOAD CRATE"
+const PROMPT_FULL := "STASH FULL"
 const PROMPT_EXIT := "EXIT"
-# F pressed while it is too fast or off the floor: the exit waits for it to slow down and land.
+# The hold finished while it is too fast or off the floor: the exit waits for it to slow down and land.
 const PROMPT_EXIT_PENDING := "EXIT..."
+# Seconds F is held aboard before the exit goes. docs/specs/mech-stash.md, decision 8.
+const EXIT_HOLD_TIME := 0.6
 # Exiting is allowed at or below this speed, on the floor.
 const EXIT_MAX_SPEED := SPEED + 0.1
 # The capsule the exit spot has to fit, roughly pilot9's.
@@ -258,6 +302,15 @@ var _model_rest := Transform3D.IDENTITY
 # The locomotion state and how long it has been in it. See the movement section.
 var loco: Loco = Loco.STAND
 var _loco_time := 0.0
+# The gait the keys last asked for: kept through a let-go so the brake plays the clip it was in.
+var _move_gait: MoveGait = MoveGait.FORWARD
+# Alt free-look: held this frame, the pitch at the press, and the return ease (seconds in, < 0 when
+# none is running) with the view it set off from.
+var _free_look_held := false
+var _free_look_pitch := 0.0
+var _free_look_return_t := -1.0
+var _free_look_from_yaw := 0.0
+var _free_look_from_pitch := 0.0
 # Seconds since the floor was last under it; the highest point since it left; the stop's start speed
 # and lead clip; the horizontal speed when the stop began.
 var _air_time := 0.0
@@ -266,6 +319,11 @@ var _stop_clip := ANIM_STOP_L
 var _stop_v0 := 0.0
 # F was pressed while it could not let the pilot out yet. See _request_exit.
 var exit_pending := false
+# Seconds F has been held toward an exit; < 0 = not holding. The panel shows only while this runs
+# or the exit is pending.
+var exit_hold := -1.0
+# The stash screen is open from inside: no drive or look input, it brakes and idles.
+var stash_hold := false
 # The clip the locomotion state last started, so a state's clip is started once and then left to run
 # - including a one-shot that has finished and is holding its last frame.
 var _loco_clip := ""
@@ -291,6 +349,25 @@ var _crouch_drop := 0.0
 var _sprint_fov_boost := 0.0
 var _jump_fov := 0.0
 var _vfx: Node3D = null
+# The back panels (docs/specs/exia-back-panels.md, rev 6): side -> its shoulder attachment, the
+# skeleton in the body frame at rest, the stand <-> run timer, the kneel weight shown, the clearance
+# floor shown (degrees), and whether a pilot is driving (the physics step's `driving`,
+# read by _process).
+var _panels := {}
+var _panel_skeleton_in_body := Transform3D.IDENTITY
+var _panel_run_lin := 0.0
+var _panel_kneel := 0.0
+var _panel_clear := MechBackPanels.NO_FLOOR
+## Current and target panel length (cargo steps, eased).
+var _panel_len := MechBackPanels.MIN_LENGTH
+var _panel_len_target := MechBackPanels.MIN_LENGTH
+var _panels_driving := false
+# Rev 5: the shared heavy swing - (angle deg, deg/s), the low-passed forward acceleration, and last
+# tick's forward speed and yaw it is read from.
+var _panel_sway := Vector2.ZERO
+var _panel_accel := 0.0
+var _panel_prev_forward := 0.0
+var _panel_prev_yaw := 0.0
 # The clips built at boot, shared by every mech like the imported clips are.
 static var _built_clips: Dictionary = {}
 
@@ -307,12 +384,14 @@ static var _built_clips: Dictionary = {}
 # one skips the climb and takes her aboard on the spot, which is what F did before the climb
 # existed.
 @onready var embark_point: Marker3D = get_node_or_null("EmbarkPoint")
-# The prompt is a keycap plus a word now, so visibility belongs to the row and
-# only the word changes. See docs/specs/ui-shell.md.
-@onready var prompt: Control = $UI/Prompt
-@onready var prompt_label: Label = $UI/Prompt/Row/Text
+# What EXIA offers on the shared interaction panel ("" = nothing). It bids every physics frame
+# while this is set; the panel itself is InteractionPrompt's. See docs/specs/interaction-panel.md.
+var prompt_text := ""
+var _prompt: Node = null
 
 func _ready() -> void:
+	set_meta(&"airframe_snap_lines", 720.0)  # big and fast: a finer vertex-snap grid (AirframeLook)
+	add_to_group(GROUP)
 	interaction_area.body_entered.connect(_on_body_entered)
 	interaction_area.body_exited.connect(_on_body_exited)
 	spring_arm.add_excluded_object(get_rid())
@@ -340,6 +419,7 @@ func _ready() -> void:
 		_cockpit_bone = _skeleton.find_bone(COCKPIT_BONE)
 	_model_rest = model.transform
 	_add_built_clips()
+	_add_back_panels()
 	_vfx = MechVfx.new()
 	_vfx.name = "MechVfx"
 	add_child(_vfx)
@@ -348,6 +428,98 @@ func _ready() -> void:
 	# the boarding ended while EXIA walked away from it.
 	# Nobody aboard: power down, and hold the crouch.
 	_play_chain(ANIM_IDLE)
+
+# The two white boxes hung off the back of the shoulders (docs/specs/exia-back-panels.md). Their
+# hinges are placed in the body frame at MECH_standing, so the shoulders are read in that pose; _ready
+# plays MECH_idle straight after with no blend, before any frame draws. Built under Model so
+# ApplyCelMech dresses them with the rest of the mech.
+func _add_back_panels() -> void:
+	if _skeleton == null or not anim_player.has_animation(ANIM_STANDING):
+		return
+	anim_player.play(ANIM_STANDING)
+	anim_player.seek(0.0, true)
+	_skeleton.force_update_all_bone_transforms()
+	# The skeleton in the body frame, read once at rest. The bank rolls the model and the skeleton
+	# with it, so in skeleton space "upright" is constant: the panels' tilt leans with the bank.
+	_panel_skeleton_in_body = global_transform.affine_inverse() * _skeleton.global_transform
+	var shoulders := {}
+	for side: float in [-1.0, 1.0]:
+		var bone := _skeleton.find_bone(MechBackPanels.BONES[side])
+		if bone < 0:
+			return
+		shoulders[side] = _panel_skeleton_in_body * _skeleton.get_bone_global_pose(bone)
+	_panels = MechBackPanels.build(_skeleton, shoulders)
+	# Cargo sets the panel length: start at this step, no ease on load.
+	var inv := get_node_or_null(^"/root/Inventory")
+	if inv != null:
+		_panel_len = MechBackPanels.length_for_fill(MechBackPanels.fill_fraction(inv.stash))
+		_panel_len_target = _panel_len
+	# The boxes are built here, after MechPaint dressed the rest of the mech: hand them over.
+	var paint := get_node_or_null("MechPaint") as MechPaint
+	if paint != null:
+		paint.dress_panels(_panels)
+
+# Rev 6: THE RULE - each box hangs from its top front edge, a hinge fixed to its own shoulder bone, and
+# one shared angle (against the upright mech) is all that changes. Standing 10, running 25 (rev 7), the parked
+# kneel the kickstand (the lower box's bottom on the ground), plus the rev 5 sway, never below the baked
+# clearance floor through the power-down and boot-up.
+func _update_back_panels(delta: float) -> void:
+	if _panels.is_empty() or _skeleton == null:
+		return
+	_panel_run_lin = MechBackPanels.step_run(_panel_run_lin,
+		_panels_driving and loco == Loco.RUN, delta)
+	# The assigned clip, not current_animation: that one reads "" once a one-shot has ended (or the
+	# player is paused), and an ended MECH_idle is still the kneel, an ended MECH_launch still upright.
+	var current := anim_player.assigned_animation
+	var length := 0.0
+	if current != "" and anim_player.has_animation(current):
+		length = anim_player.get_animation(current).length
+	var clip_pos := anim_player.current_animation_position if current != "" else 0.0
+	var kneel := MechBackPanels.kneel_target(current, clip_pos, length, not _panels_driving)
+	_panel_kneel = move_toward(_panel_kneel, kneel, MechBackPanels.KNEEL_MAX_RATE * delta)
+	var u := clip_pos / length if length > 0.0 else 1.0
+	var want := MechBackPanels.clearance_for(current, u)
+	if want >= _panel_clear:
+		_panel_clear = want
+	else:
+		_panel_clear = move_toward(_panel_clear, want, MechBackPanels.CLEARANCE_RETURN_RATE * delta)
+	var shoulders := {}
+	var lowest := INF
+	for side: float in _panels:
+		var attach: BoneAttachment3D = _panels[side]
+		var shoulder := _panel_skeleton_in_body * _skeleton.get_bone_global_pose(_skeleton.find_bone(attach.bone_name))
+		shoulders[side] = shoulder
+		lowest = minf(lowest, MechBackPanels.hinge(shoulder, attach.get_meta("hinge_offset")).y)
+	# Cargo length: the step for the stash's fill (live, read each frame), eased.
+	var inv := get_node_or_null(^"/root/Inventory")
+	if inv != null:
+		_panel_len_target = MechBackPanels.length_for_fill(MechBackPanels.fill_fraction(inv.stash))
+	_panel_len = move_toward(_panel_len, _panel_len_target,
+		(MechBackPanels.length() - MechBackPanels.MIN_LENGTH) / MechBackPanels.LENGTH_EASE_TIME * delta)
+	var deg := MechBackPanels.angle(smoothstep(0.0, 1.0, _panel_run_lin), _panel_kneel, _panel_sway.x,
+		MechBackPanels.kickstand_deg(lowest), _panel_clear)
+	for side: float in _panels:
+		var attach: BoneAttachment3D = _panels[side]
+		MechBackPanels.place(attach.get_child(0), shoulders[side], attach.get_meta("hinge_offset"), deg, _panel_len)
+
+# Rev 5: one tick of the panels' shared swing, after move_and_slide so a wall's bleed counts. Driven by
+# the change in speed along the nose and the turn; nobody driving, nothing drives it, and once fully
+# knelt it is put to rest so the boot-up starts still.
+func _step_panel_sway(delta: float, driving: bool) -> void:
+	if delta <= 0.0:
+		return
+	var forward := velocity.dot(facing_for(rotation.y))
+	var yaw_rate := wrapf(rotation.y - _panel_prev_yaw, -PI, PI) / delta
+	var raw := (forward - _panel_prev_forward) / delta if driving else 0.0
+	_panel_prev_forward = forward
+	_panel_prev_yaw = rotation.y
+	_panel_accel = MechBackPanels.smooth_accel(_panel_accel, raw, delta)
+	var lateral := Vector2(velocity.x, velocity.z).length() * yaw_rate if driving else 0.0
+	_panel_sway = MechBackPanels.step_sway(_panel_sway,
+		MechBackPanels.sway_drive(_panel_accel, lateral), delta)
+	if _panel_kneel >= 0.999:
+		_panel_sway = Vector2.ZERO
+		_panel_accel = 0.0
 
 # Builds every clip in docs/specs/exia-movement.md from the imported rig and adds them to the
 # player's library. Built every boot rather than baked, so a re-export of Mech_V1.glb cannot strand a
@@ -366,7 +538,9 @@ func _add_built_clips() -> void:
 	for clip_name in _built_clips:
 		if not library.has_animation(clip_name):
 			library.add_animation(clip_name, _built_clips[clip_name])
-	for clip_name in [ANIM_RUN, ANIM_SPRINT]:
+	for clip_name in _built_clips:
+		if not is_gait(clip_name):
+			continue
 		var clip: Animation = _built_clips[clip_name]
 		var track := bone_track(clip, HIP_BONE)
 		if track < 0:
@@ -432,34 +606,96 @@ func _update_prompt() -> void:
 	# prompt goes away rather than offering an exit from a mech she is not settled into yet, or
 	# an entry into one she is halfway down the side of.
 	if embark_left > 0.0 or seal_left > 0.0 or unseal_left > 0.0 or disembark_left > 0.0:
-		prompt.visible = false
+		prompt_text = ""
 	elif pilot != null:
-		prompt_label.text = PROMPT_EXIT_PENDING if exit_pending else PROMPT_EXIT
-		prompt.visible = true
+		# Hold to exit: nothing shows until F goes down.
+		if exit_pending:
+			prompt_text = PROMPT_EXIT_PENDING
+		elif exit_hold >= 0.0:
+			prompt_text = PROMPT_EXIT
+		else:
+			prompt_text = ""
 	elif player_in_range != null:
-		prompt_label.text = PROMPT_ENTER
-		prompt.visible = true
+		if carried_crate() != null:
+			prompt_text = PROMPT_LOAD if crate_fits() else PROMPT_FULL
+		else:
+			prompt_text = PROMPT_ENTER
 	else:
-		prompt.visible = false
+		prompt_text = ""
+
+# The bid on the shared panel. Aboard, the distance is 0 so nothing outbids the exit; outside, it
+# is the pilot's distance to the machine, so a door nearer than EXIA wins the panel and the press.
+func _bid_prompt() -> void:
+	_update_prompt()
+	if prompt_text == "":
+		return
+	if _prompt == null or not is_instance_valid(_prompt):
+		_prompt = PROMPT_SCRIPT.acquire(self)
+	if _prompt == null:
+		return
+	var d := 0.0
+	if pilot == null and player_in_range != null:
+		d = player_in_range.global_position.distance_to(global_position)
+		if carried_crate() != null:
+			_prompt.offer(self, d, INTERACT_ACTION, prompt_text)
+		else:
+			_prompt.offer(self, d, INTERACT_ACTION, prompt_text, -1.0, PackedStringArray(PROMPT_OPTIONS))
+		return
+	_prompt.offer(self, d, INTERACT_ACTION, prompt_text, exit_progress())
+
+## The hold bar's fill: 0..1 while F is held, full while the exit waits, < 0 = no bar.
+func exit_progress() -> float:
+	if exit_pending:
+		return 1.0
+	if exit_hold >= 0.0:
+		return clampf(exit_hold / EXIT_HOLD_TIME, 0.0, 1.0)
+	return -1.0
+
+## Where the interaction panel floats while EXIA's camera is the one in use: beside its chest,
+## camera-right. See docs/specs/interaction-panel.md.
+func interaction_anchor() -> Dictionary:
+	return {"point": global_position + Vector3.UP * PROMPT_ANCHOR_HEIGHT, "side": 1.0,
+		"offset": PROMPT_ANCHOR_OFFSET}
 
 func _unhandled_input(event: InputEvent) -> void:
-	if pilot != null and event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+	# The free-look's return owns the view for its 0.25 s.
+	if pilot != null and event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED \
+			and not free_look_returning():
 		var sensitivity := MOUSE_SENSITIVITY * Settings.mouse_sensitivity
 		camera_yaw -= event.relative.x * sensitivity
 		camera_pitch = clamp(camera_pitch - event.relative.y * sensitivity, PITCH_MIN, PITCH_MAX)
 
 	# Setsuna's own _unhandled_input is switched off while she is piloting, so F cannot be
 	# claimed by both scripts on the same press.
-	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F:
+	if event.is_action_pressed(INTERACT_ACTION):
 		# The climb and the canopy close own her body for their whole length, and so do the
 		# canopy open and the descent: there is nothing to get out of yet, and nothing to climb
 		# into twice.
 		if embark_left > 0.0 or seal_left > 0.0 or unseal_left > 0.0 or disembark_left > 0.0:
 			return
 		if pilot == null and player_in_range != null:
-			_enter_mech()
+			# The panel offered something nearer (a door): that press is not EXIA's.
+			if _prompt != null and is_instance_valid(_prompt) and _prompt.current_source != null 					and _prompt.current_source != self:
+				return
+			# Hands full: the only thing to do is load the crate (or be told there is no room).
+			if carried_crate() != null:
+				if crate_fits():
+					player_in_range.carry.start_load(Inventory.stash_of(self), global_position)
+				get_viewport().set_input_as_handled()
+				return
+			var choice: String = _prompt.selected_option() if _prompt != null and is_instance_valid(_prompt) \
+				else PROMPT_ENTER
+			if choice == PROMPT_STASH:
+				if not _open_stash_from_ground():
+					return
+			else:
+				_enter_mech()
 		elif pilot != null:
-			_request_exit()
+			# The start of a hold; step_exit_hold runs it out (or drops it on release).
+			if stash_hold or exit_pending or exit_hold >= 0.0:
+				return
+			exit_hold = 0.0
+			_update_prompt()
 		else:
 			return
 		# scripts/interact_button.gd reads an `interact` action that also binds F, so one press
@@ -481,6 +717,7 @@ func _enter_mech() -> void:
 	# and on the first entry it is 0.0, a compass bearing with nothing to do with the mech.
 	camera_yaw = yaw_behind(rotation.y)
 	camera_pitch = ENTRY_PITCH
+	cancel_free_look()
 	_aim_camera()
 	# The climb, if this pilot and this mech both have one. She is put on the mount mark and her
 	# own clip carries her up the machine from there; _board() is what happens at the top of it.
@@ -568,19 +805,76 @@ static func seat_follow(cockpit_now: Transform3D, cockpit_board: Transform3D,
 #             ──> clip ends ──> _hand_back(): her body is hers again and the camera pans into
 #                               her view
 
-# F while driving. On the floor and no faster than the run, the pilot gets out now. Otherwise the
-# exit waits: the sprint is dropped so the mech brakes down, the prompt says it is waiting, and the
-# physics step lets the pilot out the moment it is down and slow enough. F again calls it off.
+# The exit hold ran full (docs/specs/mech-stash.md, decision 8 - was a tap until 2026-11-12). On the
+# floor and no faster than the run, the pilot gets out now. Otherwise the exit waits: the sprint is
+# dropped so the mech brakes down, the prompt says it is waiting, and the physics step lets the
+# pilot out the moment it is down and slow enough. Letting go of F calls it off (step_exit_hold).
 func _request_exit() -> void:
-	if exit_pending:
-		exit_pending = false
-	elif can_exit_now(is_on_floor(), Vector2(velocity.x, velocity.z).length(), loco):
+	exit_hold = -1.0
+	if can_exit_now(is_on_floor(), Vector2(velocity.x, velocity.z).length(), loco):
 		_exit_mech()
 		return
-	else:
-		exit_pending = true
-		sprint_toggled = false
+	exit_pending = true
+	sprint_toggled = false
 	_update_prompt()
+
+## Drops a running hold or a waiting exit: F let go, or the stash opened.
+func cancel_exit() -> void:
+	exit_hold = -1.0
+	exit_pending = false
+	_update_prompt()
+
+## One frame of the hold. `held` is whether F is down this frame. Returns true if the pilot got out
+## (the canopy started opening).
+func step_exit_hold(held: bool, delta: float) -> bool:
+	if exit_hold < 0.0 and not exit_pending:
+		return false
+	if not held:
+		cancel_exit()
+		return false
+	if exit_hold >= 0.0:
+		exit_hold += delta
+		if exit_hold >= EXIT_HOLD_TIME:
+			_request_exit()
+			return unseal_left > 0.0
+	return false
+
+# --- the stash (docs/specs/mech-stash.md) ---------------------------------
+
+## The crate the pilot beside it is carrying, or null (empty hands, no pilot).
+func carried_crate() -> ItemDef:
+	if player_in_range == null:
+		return null
+	var c: Variant = player_in_range.get(&"carry")
+	if c is Node and c.def != null:
+		return c.def
+	return null
+
+## Whether the stash has a free gap for the carried crate.
+func crate_fits() -> bool:
+	var def := carried_crate()
+	return def != null and Inventory.stash_of(self).capacity_for(def) > 0
+
+## Whether Tab aboard may open the stash: a pilot settled in and driving, on the floor, not on the
+## way out.
+func can_open_stash() -> bool:
+	return pilot != null and embark_left <= 0.0 and seal_left <= 0.0 and unseal_left <= 0.0 \
+		and disembark_left <= 0.0 and is_on_floor() and loco != Loco.AIR and not exit_pending
+
+## The stash screen opened (or closed) over a piloted EXIA: no drive input while it is up.
+func set_stash_hold(on: bool) -> void:
+	stash_hold = on
+	if on:
+		sprint_toggled = false
+		cancel_exit()
+
+# STASH chosen on the ground. The pilot has to be able to open his own inventory right now.
+func _open_stash_from_ground() -> bool:
+	if player_in_range == null or not player_in_range.has_method(&"can_open_inventory") \
+			or not player_in_range.can_open_inventory():
+		return false
+	var inv := get_node_or_null(^"/root/Inventory")
+	return inv != null and inv.open_stash(self)
 
 # Whether a pilot can be let out right now: on the floor, not mid-jump, no faster than the run.
 static func can_exit_now(on_floor: bool, h_speed: float, state: Loco) -> bool:
@@ -764,7 +1058,10 @@ func _begin_handover(watching: Camera3D, destination: Camera3D) -> void:
 ## _aim_camera() still writes the same yaw and pitch in the physics step; that write is what the
 ## movement block reads back off the pivot basis, so both stay.
 func _process(delta: float) -> void:
+	_free_look_render_driven = true
+	advance_free_look_return(delta)
 	_step_bound_camera(delta)
+	_update_back_panels(delta)
 	camera_pivot.global_position = (get_global_transform_interpolated() * CAMERA_PIVOT_OFFSET
 		+ Vector3(0.0, _bounce + _dip + _crouch_drop, 0.0))
 	camera_pivot.rotation.y = camera_yaw
@@ -830,12 +1127,13 @@ static func parked_clip(piloted: bool, current: String) -> String:
 	return "" if current == "" else ANIM_IDLE
 
 # The clip each locomotion state plays. The run gives way to the sprint above SPRINT_GAIT_SPEED.
-static func loco_clip(state: Loco, h_speed: float, stop_clip: String) -> String:
+static func loco_clip(state: Loco, h_speed: float, stop_clip: String,
+		gait: MoveGait = MoveGait.FORWARD) -> String:
 	match state:
 		Loco.TURN:
 			return ANIM_TURN_STEP
 		Loco.RUN:
-			return ANIM_SPRINT if h_speed > SPRINT_GAIT_SPEED else ANIM_RUN
+			return gait_clip(gait, h_speed)
 		Loco.STOP:
 			return stop_clip
 		Loco.CROUCH:
@@ -847,7 +1145,129 @@ static func loco_clip(state: Loco, h_speed: float, stop_clip: String) -> String:
 	return ANIM_STAND_IDLE
 
 static func is_gait(clip: String) -> bool:
-	return clip == ANIM_RUN or clip == ANIM_SPRINT
+	return clip.begins_with(ANIM_RUN) or clip.begins_with(ANIM_SPRINT) or clip == ANIM_STRAFE_L \
+		or clip == ANIM_STRAFE_R or clip.begins_with(ANIM_BACK)
+
+# A run or sprint, straight or diagonal: the gaits the stop settle is built to follow.
+static func is_forward_gait(clip: String) -> bool:
+	return clip.begins_with(ANIM_RUN) or clip.begins_with(ANIM_SPRINT)
+
+# --- the aim-forward control (docs/specs/exia-aim-control.md) ---------------
+
+# The gait the held keys ask for. `keys` is (x, y) with A = x -1, W = y -1.
+static func move_gait_for(keys: Vector2) -> MoveGait:
+	if keys.y < 0.0:
+		if keys.x < 0.0:
+			return MoveGait.FORWARD_L
+		return MoveGait.FORWARD_R if keys.x > 0.0 else MoveGait.FORWARD
+	if keys.y > 0.0:
+		if keys.x < 0.0:
+			return MoveGait.BACK_L
+		return MoveGait.BACK_R if keys.x > 0.0 else MoveGait.BACK
+	if keys.x < 0.0:
+		return MoveGait.LEFT
+	if keys.x > 0.0:
+		return MoveGait.RIGHT
+	return MoveGait.FORWARD
+
+# The keys as a unit move in the mech's own frame: nose +Z, left +X.
+static func move_local(keys: Vector2) -> Vector3:
+	return Vector3(-keys.x, 0.0, -keys.y).normalized()
+
+# The speed a side / back gait heads for. The forward gaits use speed_target (run / sprint).
+static func gait_speed(gait: MoveGait) -> float:
+	match gait:
+		MoveGait.LEFT, MoveGait.RIGHT:
+			return STRAFE_SPEED
+		MoveGait.BACK:
+			return BACK_SPEED
+		MoveGait.BACK_L, MoveGait.BACK_R:
+			return BACK_DIAG_SPEED
+	return SPEED
+
+static func is_forward(gait: MoveGait) -> bool:
+	return gait == MoveGait.FORWARD or gait == MoveGait.FORWARD_L or gait == MoveGait.FORWARD_R
+
+# The clip `gait` plays at `h_speed`. The forward ones give way to the sprint above SPRINT_GAIT_SPEED.
+static func gait_clip(gait: MoveGait, h_speed: float) -> String:
+	var sprint := h_speed > SPRINT_GAIT_SPEED
+	match gait:
+		MoveGait.FORWARD_L:
+			return ANIM_SPRINT_DIAG_L if sprint else ANIM_RUN_DIAG_L
+		MoveGait.FORWARD_R:
+			return ANIM_SPRINT_DIAG_R if sprint else ANIM_RUN_DIAG_R
+		MoveGait.LEFT:
+			return ANIM_STRAFE_L
+		MoveGait.RIGHT:
+			return ANIM_STRAFE_R
+		MoveGait.BACK:
+			return ANIM_BACK
+		MoveGait.BACK_L:
+			return ANIM_BACK_DIAG_L
+		MoveGait.BACK_R:
+			return ANIM_BACK_DIAG_R
+	return ANIM_SPRINT if sprint else ANIM_RUN
+
+# The body's chase cap at `speed`, radians per second: standing -> run over 0..9 m/s, run -> sprint
+# over 9..14. The three numbers are degrees per second.
+static func aim_turn_rate(speed: float, stand_deg: float, run_deg: float, sprint_deg: float) -> float:
+	var deg := 0.0
+	if speed <= SPEED:
+		deg = lerpf(stand_deg, run_deg, clampf(speed / SPEED, 0.0, 1.0))
+	else:
+		deg = lerpf(run_deg, sprint_deg, clampf((speed - SPEED) / (SPRINT_SPEED - SPEED), 0.0, 1.0))
+	return deg_to_rad(deg)
+
+func _aim_turn_rate(speed: float) -> float:
+	return aim_turn_rate(speed, turn_rate_stand_deg, turn_rate_run_deg, turn_rate_sprint_deg)
+
+# `from` turned toward `to` by at most `max_step` radians, wrapped.
+static func chase_yaw(from: float, to: float, max_step: float) -> float:
+	return wrapf(from + clampf(wrapf(to - from, -PI, PI), -max_step, max_step), -PI, PI)
+
+# The body yaw that puts the camera directly behind the nose - yaw_behind run backwards.
+func aim_yaw() -> float:
+	return wrapf(camera_yaw - PI, -PI, PI)
+
+func free_look_active() -> bool:
+	return _free_look_held or free_look_returning()
+
+func free_look_returning() -> bool:
+	return _free_look_return_t >= 0.0
+
+# One step of Alt. Held: nothing moves the body, the mouse orbits. Let go: the view eases back
+# behind the nose (and to the pitch at the press) over FREE_LOOK_RETURN_TIME; the body never turns.
+func step_free_look(held: bool, delta: float) -> void:
+	if held and not _free_look_held:
+		if not free_look_returning():
+			_free_look_pitch = camera_pitch
+		_free_look_return_t = -1.0
+	elif not held and _free_look_held:
+		_free_look_return_t = 0.0
+		_free_look_from_yaw = camera_yaw
+		_free_look_from_pitch = camera_pitch
+	_free_look_held = held
+	# Once _process runs it eases the return at the frame rate; stepping it here drew it at 60 Hz.
+	if _free_look_render_driven:
+		return
+	advance_free_look_return(delta)
+
+# True once _process has started easing the return (the test suite never runs it).
+var _free_look_render_driven := false
+
+func advance_free_look_return(delta: float) -> void:
+	if not free_look_returning():
+		return
+	_free_look_return_t += delta
+	var k := smoothstep(0.0, 1.0, clampf(_free_look_return_t / FREE_LOOK_RETURN_TIME, 0.0, 1.0))
+	camera_yaw = wrapf(lerp_angle(_free_look_from_yaw, yaw_behind(rotation.y), k), -PI, PI)
+	camera_pitch = lerpf(_free_look_from_pitch, _free_look_pitch, k)
+	if k >= 1.0:
+		_free_look_return_t = -1.0
+
+func cancel_free_look() -> void:
+	_free_look_held = false
+	_free_look_return_t = -1.0
 
 # The crossfade into `to` from `from`. The stop and the landing end exactly on the standing pose and
 # the idle starts on it, so those joins are near-cuts; the boot-up's MECH_standing fades into the
@@ -913,10 +1333,10 @@ func _drive_loco_animation(h_speed: float) -> void:
 	if loco == Loco.STAND and current == ANIM_LAUNCH:
 		anim_player.speed_scale = 1.0
 		return
-	var want := loco_clip(loco, h_speed, _stop_clip)
+	var want := loco_clip(loco, h_speed, _stop_clip, _move_gait)
 	if not anim_player.has_animation(want):
 		return
-	var from: String = current if current != "" else _loco_clip
+	var from: String = String(current) if current != "" else String(_loco_clip)
 	if want != _loco_clip or (current == ANIM_STANDING and want == ANIM_STAND_IDLE):
 		var blend := blend_for(from, want)
 		var phase := -1.0
@@ -934,9 +1354,10 @@ func _drive_loco_animation(h_speed: float) -> void:
 		if is_gait(want):
 			_gait_blend_left = blend
 			_gait_half = -1
+	if is_gait(want):
+		anim_player.speed_scale = gait_rate(want, h_speed)
+		return
 	match want:
-		ANIM_RUN, ANIM_SPRINT:
-			anim_player.speed_scale = gait_rate(want, h_speed)
 		ANIM_LAND:
 			anim_player.speed_scale = _land_rate
 		_:
@@ -969,8 +1390,14 @@ static func speed_target(sprinting: bool, speed: float, run_rate: float) -> Vect
 # How fast a gait clip plays at `speed`: in proportion to it, so a planted foot moves back through
 # the mech at exactly the body's speed through the ramps and the brakes. Floored per gait.
 static func gait_rate(clip: String, speed: float) -> float:
-	if clip == ANIM_SPRINT:
+	if clip.begins_with(ANIM_SPRINT):
 		return clampf(speed / SPRINT_SPEED, SPRINT_RATE_MIN, 1.0)
+	if clip == ANIM_STRAFE_L or clip == ANIM_STRAFE_R:
+		return clampf(speed / STRAFE_SPEED, RUN_RATE_MIN, 1.0)
+	if clip == ANIM_BACK:
+		return clampf(speed / BACK_SPEED, RUN_RATE_MIN, 1.0)
+	if clip.begins_with(ANIM_BACK):
+		return clampf(speed / BACK_DIAG_SPEED, RUN_RATE_MIN, 1.0)
 	return clampf(speed / SPEED, RUN_RATE_MIN, 1.0)
 
 # The sprint clip's rate. Kept for the sprint tests' sake.
@@ -1041,7 +1468,8 @@ func _track_footfalls(delta: float) -> void:
 # a ring of dust - MOVEMENT EFFECTS. `half` is 0 for the left foot, 1 for the right. The run takes
 # RUN_CAMERA_SHARE of the sprint's dip and smaller dust.
 func _on_footfall(half: int, clip: String = ANIM_SPRINT) -> void:
-	var sprinting := clip == ANIM_SPRINT
+	var sprinting := clip.begins_with(ANIM_SPRINT)
+	_panel_sway.y += MechBackPanels.footfall_kick(sprinting)
 	if Settings.camera_motion:
 		_dip = -FOOTFALL_DIP * (1.0 if sprinting else RUN_CAMERA_SHARE)
 		_dip_velocity = 0.0
@@ -1054,6 +1482,7 @@ func _on_footfall(half: int, clip: String = ANIM_SPRINT) -> void:
 # shake, both scaled with the fall; a dust ring under each foot; a heavy landing bleeds speed.
 func _on_land(fall: float, moving: bool) -> void:
 	var k := clampf(fall / JUMP_HEIGHT, 0.5, 2.0)
+	_panel_sway.y += MechBackPanels.land_kick(fall, JUMP_HEIGHT)
 	if Settings.camera_motion:
 		_dip = -LAND_DIP * k
 		_dip_velocity = 0.0
@@ -1120,7 +1549,7 @@ func _step_bound_camera(delta: float) -> void:
 			var clip := anim_player.get_animation(current)
 			var hip := (clip.position_track_interpolate(_hip_tracks[current],
 				anim_player.current_animation_position) as Vector3).y
-			var share := BOUNCE_SHARE * (1.0 if current == ANIM_SPRINT else RUN_CAMERA_SHARE)
+			var share := BOUNCE_SHARE * (1.0 if current.begins_with(ANIM_SPRINT) else RUN_CAMERA_SHARE)
 			target = share * (hip - _hip_means[current]) * travel_scale
 		_bounce = lerpf(_bounce, target, 1.0 - exp(-delta / BOUNCE_SMOOTH))
 		var spring := dip_step(_dip, _dip_velocity, DIP_OMEGA, delta)
@@ -1149,7 +1578,9 @@ func _step_bound_camera(delta: float) -> void:
 # The state after `state`, given this frame's reading `r`:
 #   on_floor, air_time, rising (bool / seconds / bool), wants_move (a key held), heading_off
 #   (radians between the nose and where the keys point), h_speed, jump (pressed this frame),
-#   time (seconds in `state`), clip_done (the state's one-shot has ended).
+#   time (seconds in `state`), clip_done (the state's one-shot has ended). Aim mode
+#   (docs/specs/exia-aim-control.md) adds aim_lock = true, heading_off is then how far the body is
+#   off the camera, and forward_gait (the playing gait is a run / sprint - only those stop with a settle).
 static func next_loco(state: Loco, r: Dictionary) -> Loco:
 	var grounded: bool = r.on_floor or r.air_time <= COYOTE
 	var can_jump: bool = grounded and state != Loco.CROUCH and state != Loco.AIR \
@@ -1162,18 +1593,34 @@ static func next_loco(state: Loco, r: Dictionary) -> Loco:
 		return Loco.LAND if r.on_floor and not r.rising and r.time > 0.05 else Loco.AIR
 	if not grounded:
 		return Loco.AIR
+	var aim: bool = r.get("aim_lock", false)
 	match state:
 		Loco.STAND:
-			if r.wants_move:
+			if aim:
+				# W goes along the nose whatever the camera is doing; only a standing body turns on the
+				# spot, and only once the camera is out of the dead cone.
+				if r.wants_move:
+					return Loco.RUN
+				if r.heading_off > TURN_STEP_ANGLE:
+					return Loco.TURN
+			elif r.wants_move:
 				return Loco.TURN if r.heading_off > TURN_STEP_ANGLE else Loco.RUN
 		Loco.TURN:
-			if not r.wants_move:
-				return Loco.STAND
-			if r.heading_off < TURN_DONE_ANGLE:
-				return Loco.RUN
+			if aim:
+				if r.wants_move:
+					return Loco.RUN
+				if r.heading_off < TURN_DONE_ANGLE:
+					return Loco.STAND
+			else:
+				if not r.wants_move:
+					return Loco.STAND
+				if r.heading_off < TURN_DONE_ANGLE:
+					return Loco.RUN
 		Loco.RUN:
 			if r.wants_move or r.h_speed > EXIT_MAX_SPEED:
 				return Loco.RUN
+			if aim and not r.get("forward_gait", true):
+				return Loco.STAND
 			return Loco.STOP if r.h_speed > STOP_MIN_SPEED else Loco.STAND
 		Loco.STOP:
 			if r.wants_move:
@@ -1186,8 +1633,10 @@ static func next_loco(state: Loco, r: Dictionary) -> Loco:
 	return state
 
 func _physics_process(delta: float) -> void:
+	_bid_prompt()
 	var driving := pilot != null and embark_left <= 0.0 and disembark_left <= 0.0 \
 		and seal_left <= 0.0 and unseal_left <= 0.0
+	_panels_driving = driving
 	if not is_on_floor():
 		velocity.y -= gravity * (MECH_GRAVITY_SCALE if driving else 1.0) * delta
 
@@ -1229,6 +1678,7 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		# The power-down walks the mech forward as well; parked is not the same as anchored.
 		_apply_root_motion()
+		_step_panel_sway(delta, false)
 		return
 
 	# The canopy close. She is aboard but not driving yet: MECH_launch is sliding the cockpit
@@ -1242,6 +1692,7 @@ func _physics_process(delta: float) -> void:
 		_drive_parked(true)
 		move_and_slide()
 		_apply_root_motion()
+		_step_panel_sway(delta, false)
 		pilot.ride(seat_follow(_cockpit_world(), _cockpit_board, _pilot_board))
 		_aim_camera()
 		seal_left = maxf(seal_left - delta, 0.0)
@@ -1264,6 +1715,7 @@ func _physics_process(delta: float) -> void:
 		_drive_parked(false)
 		move_and_slide()
 		_apply_root_motion()
+		_step_panel_sway(delta, false)
 		pilot.ride(seat_follow(_cockpit_world(), _cockpit_board, _pilot_board))
 		_aim_camera()
 		unseal_left = maxf(unseal_left - delta, 0.0)
@@ -1277,6 +1729,152 @@ func _physics_process(delta: float) -> void:
 # One physics frame of a pilot driving: read the keys, advance `loco`, move the body the way the
 # state says, play its clip.
 func _drive(delta: float) -> void:
+	if stash_hold:
+		# The stash is open: no keys, no aim change - the release / stop settle bring it down to
+		# an idle. The mouse is free over the screen, so the camera holds still on its own.
+		sprint_toggled = false
+		drive_aim_step(Vector2.ZERO, false, false, false, false, delta, is_on_floor())
+		return
+	if aim_lock:
+		_drive_aim(delta)
+	else:
+		_drive_classic(delta)
+
+# The held movement keys: A = x -1, D = x +1, W = y -1, S = y +1. Not normalized.
+static func read_keys() -> Vector2:
+	var keys := Vector2.ZERO
+	if Input.is_key_pressed(KEY_W):
+		keys.y -= 1
+	if Input.is_key_pressed(KEY_S):
+		keys.y += 1
+	if Input.is_key_pressed(KEY_A):
+		keys.x -= 1
+	if Input.is_key_pressed(KEY_D):
+		keys.x += 1
+	return keys
+
+# The aim-forward control: docs/specs/exia-aim-control.md.
+func _drive_aim(delta: float) -> void:
+	drive_aim_step(read_keys(), InputMap.has_action("free_look") and Input.is_action_pressed("free_look"),
+		Input.is_action_just_pressed("jump"), Input.is_action_just_pressed("sprint"),
+		Input.is_action_just_pressed("walk"), delta, is_on_floor())
+
+# One aim-mode physics frame with the inputs - and the floor reading - passed in, so a test can drive
+# it without a physics step.
+func drive_aim_step(keys: Vector2, free_look: bool, jump: bool, sprint_pressed: bool,
+		walk_pressed: bool, delta: float, on_floor: bool) -> void:
+	var wants_to_move := keys != Vector2.ZERO
+	if wants_to_move:
+		_move_gait = move_gait_for(keys)
+	var local := move_local(keys)
+	step_free_look(free_look, delta)
+	var chasing := not free_look_active()
+	var aim := aim_yaw()
+	var aim_off := absf(wrapf(aim - rotation.y, -PI, PI)) if chasing else 0.0
+
+	_air_time = 0.0 if on_floor else _air_time + delta
+	var h_speed := Vector2(velocity.x, velocity.z).length()
+	_update_sprint_toggle(on_floor, wants_to_move, h_speed, sprint_pressed, walk_pressed)
+
+	var before := loco
+	loco = next_loco(loco, {
+		on_floor = on_floor,
+		air_time = _air_time,
+		rising = velocity.y > 0.0,
+		wants_move = wants_to_move,
+		heading_off = aim_off,
+		h_speed = h_speed,
+		jump = jump,
+		time = _loco_time,
+		clip_done = anim_player.current_animation == "",
+		aim_lock = true,
+		forward_gait = is_forward_gait(anim_player.current_animation),
+	})
+	if loco != before:
+		_enter_loco(before, wants_to_move, h_speed)
+	else:
+		_loco_time += delta
+
+	var turn := _aim_turn_rate(h_speed)
+	match loco:
+		Loco.STAND:
+			# A strafe or a back-up let go brakes in ~0.3 s rather than stopping dead.
+			var flat := Vector2(velocity.x, velocity.z).move_toward(Vector2.ZERO, MOVE_BRAKE * delta)
+			velocity.x = flat.x
+			velocity.z = flat.y
+		Loco.TURN:
+			velocity.x = 0.0
+			velocity.z = 0.0
+			if chasing:
+				_step_turn(aim, delta, deg_to_rad(turn_rate_stand_deg))
+		Loco.RUN, Loco.LAND:
+			if chasing:
+				rotation.y = chase_yaw(rotation.y, aim, turn * delta)
+			if wants_to_move:
+				_move_along(local, _move_gait, delta)
+			elif loco == Loco.RUN:
+				# Let go above the run speed: down to it, along the way it was travelling, then the stop.
+				var along := Vector2(velocity.x, velocity.z).normalized()
+				var speed := move_toward(h_speed, SPEED, release_rate() * delta)
+				velocity.x = along.x * speed
+				velocity.z = along.y * speed
+			else:
+				velocity.x = move_toward(velocity.x, 0, SPEED)
+				velocity.z = move_toward(velocity.z, 0, SPEED)
+		Loco.STOP:
+			var along := Vector2(velocity.x, velocity.z).normalized()
+			if along == Vector2.ZERO:
+				var f := facing_for(rotation.y)
+				along = Vector2(f.x, f.z)
+			var speed := MechMoves.stop_speed(_loco_time, _stop_v0)
+			velocity.x = along.x * speed
+			velocity.z = along.y * speed
+		Loco.AIR:
+			# Committed: the velocity it left with, untouched. The nose still lines up the landing.
+			_air_peak = maxf(_air_peak, global_position.y)
+			if chasing:
+				rotation.y = chase_yaw(rotation.y, aim, turn * AIR_TURN_SHARE * delta)
+		# CROUCH: the speed it had, no turning.
+
+	_finish_drive(delta)
+
+# The move the keys ask for, off the nose: the direction is re-read from the nose every frame, so the
+# velocity turns with the body and nothing slides. The speed along the new direction is the velocity
+# projected onto it - A -> D starts from zero, W -> W+A keeps cos 45 of it - then ramped to the gait's.
+func _move_along(local: Vector3, gait: MoveGait, delta: float) -> void:
+	_braking = false
+	var dir := Basis(Vector3.UP, rotation.y) * local
+	var along := maxf(Vector2(velocity.x, velocity.z).dot(Vector2(dir.x, dir.z)), 0.0)
+	var step: Vector2
+	if is_forward(gait):
+		step = speed_target(sprint_toggled, along, acceleration)
+	else:
+		var target := gait_speed(gait)
+		step = Vector2(target, acceleration if along < target else MOVE_BRAKE)
+	var speed := move_toward(along, step.x, step.y * delta)
+	velocity.x = dir.x * speed
+	velocity.z = dir.z * speed
+
+# Everything after the body has been moved, shared by both controls.
+func _finish_drive(delta: float) -> void:
+	var h_speed := Vector2(velocity.x, velocity.z).length()
+	_update_bank(delta, loco == Loco.RUN, h_speed)
+	_drive_loco_animation(h_speed)
+	_track_footfalls(delta)
+
+	move_and_slide()
+	_apply_root_motion()
+	_step_panel_sway(delta, true)
+
+	_aim_camera()
+
+	if step_exit_hold(Input.is_action_pressed(INTERACT_ACTION), delta):
+		return
+	if exit_pending and can_exit_now(is_on_floor(), Vector2(velocity.x, velocity.z).length(), loco):
+		_exit_mech()
+
+# The old control (aim_lock off): docs/specs/exia-movement.md.
+func _drive_classic(delta: float) -> void:
 	var input_dir := Vector2.ZERO
 	if Input.is_key_pressed(KEY_W):
 		input_dir.y -= 1
@@ -1326,7 +1924,7 @@ func _drive(delta: float) -> void:
 		Loco.TURN:
 			velocity.x = 0.0
 			velocity.z = 0.0
-			_step_turn(heading, delta)
+			_step_turn(heading, delta, TURN_STEP_RATE)
 		Loco.RUN, Loco.LAND:
 			if wants_to_move:
 				_run_toward(heading, h_speed, delta, 1.0)
@@ -1359,18 +1957,7 @@ func _drive(delta: float) -> void:
 				velocity.z = facing.z * h_speed
 		# CROUCH: the speed it had, no turning.
 
-	_update_bank(delta, loco == Loco.RUN, h_speed)
-	var speed_now := Vector2(velocity.x, velocity.z).length()
-	_drive_loco_animation(speed_now)
-	_track_footfalls(delta)
-
-	move_and_slide()
-	_apply_root_motion()
-
-	_aim_camera()
-
-	if exit_pending and can_exit_now(is_on_floor(), Vector2(velocity.x, velocity.z).length(), loco):
-		_exit_mech()
+	_finish_drive(delta)
 
 # The entry actions of a state change. `before` is the state left.
 func _enter_loco(before: Loco, wants_to_move: bool, h_speed: float) -> void:
@@ -1382,6 +1969,7 @@ func _enter_loco(before: Loco, wants_to_move: bool, h_speed: float) -> void:
 				# The push-off.
 				velocity.y = jump_velocity(gravity)
 				_jump_fov = JUMP_FOV_KICK
+				_panel_sway.y += MechBackPanels.SWAY_TAKEOFF_KICK
 		Loco.LAND:
 			_on_land(_air_peak - global_position.y, wants_to_move)
 		Loco.STOP:
@@ -1408,10 +1996,10 @@ func _run_toward(heading: float, h_speed: float, delta: float, turn_share: float
 	velocity.x = facing.x * speed
 	velocity.z = facing.z * speed
 
-# One frame of the step-turn: yaw toward `heading` at TURN_STEP_RATE, about the planted foot's ball,
+# One frame of the step-turn: yaw toward `heading` at `rate` rad/s, about the planted foot's ball,
 # so that foot stays where it is on the floor and the stepping one carries the turn.
-func _step_turn(heading: float, delta: float) -> void:
-	var step := clampf(wrapf(heading - rotation.y, -PI, PI), -TURN_STEP_RATE * delta, TURN_STEP_RATE * delta)
+func _step_turn(heading: float, delta: float, rate: float) -> void:
+	var step := clampf(wrapf(heading - rotation.y, -PI, PI), -rate * delta, rate * delta)
 	var u := 0.0
 	if anim_player.current_animation == ANIM_TURN_STEP:
 		u = anim_player.current_animation_position / MechMoves.TURN_LENGTH

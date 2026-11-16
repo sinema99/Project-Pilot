@@ -75,12 +75,22 @@ const LAND_ELBOW := 15.0
 const LAND_JOLT := 4.0
 const LAND_STILT := -8.0
 
+# The hips' yaw toward the travel on a diagonal (W+A, S+D...).
+const DIAGONAL_DEG := 45.0
+
 ## Every clip the mech builds, by name: the two gaits and everything in this file.
 static func build_all(skeleton: Skeleton3D, standing: Animation) -> Dictionary:
 	var ctx := MechGait.context(skeleton, standing)
 	var out := {}
 	for g in [MechGait.run(), MechGait.sprint()]:
 		out[g.clip] = MechGait.build(ctx, standing, g)
+		# W+A / W+D: the same cycle with the hips and legs yawed toward the travel.
+		# docs/specs/exia-aim-control.md.
+		out[MechGait.diagonal_clip(g, ".L")] = MechGait.build_diagonal(ctx, standing, g, DIAGONAL_DEG)
+		out[MechGait.diagonal_clip(g, ".R")] = MechGait.build_diagonal(ctx, standing, g, -DIAGONAL_DEG)
+	for g in [MechGait.strafe(true), MechGait.strafe(false), MechGait.back(),
+			MechGait.back(-DIAGONAL_DEG), MechGait.back(DIAGONAL_DEG)]:
+		out[g.clip] = MechGait.build_step(ctx, standing, g)
 	out[STAND_IDLE] = MechGait.bake(ctx, standing, IDLE_LENGTH, true,
 		func(c, t: float) -> Dictionary: return stand_idle_spec(c, t))
 	out[TURN_STEP] = MechGait.bake(ctx, standing, TURN_LENGTH, true,

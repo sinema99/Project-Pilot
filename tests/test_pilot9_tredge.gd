@@ -35,6 +35,9 @@ func _scene() -> Node:
 	_pilot.is_crouching = false
 	_pilot.sprint_toggled = false
 	_pilot.equip_anim.finish_now()
+	# The torch needs the staff slotted; the default loadout carries the rifle there.
+	var slots: Array[HeldItem] = [load(STAFF), load("res://resources/items/revolver.tres")]
+	_pilot.weapon_slots = slots
 	if _pilot.item_holder.held_item == null:
 		_pilot.set_item(load(STAFF))
 	if _pilot.is_item_drawn():

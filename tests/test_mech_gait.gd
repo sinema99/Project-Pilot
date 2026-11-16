@@ -268,9 +268,9 @@ func test_the_bank_leans_into_a_left_turn_and_caps_at_12_degrees() -> void:
 	# left lean is a negative roll about the nose.
 	check(Mech.bank_target(14.0, 1.0) < 0.0, "a left turn rolls negative")
 	check(Mech.bank_target(14.0, -1.0) > 0.0, "a right turn rolls positive")
-	approx(rad_to_deg(Mech.bank_target(14.0, 10.0)), -12.0, 0.0001, "capped at 12 degrees")
+	approx(rad_to_deg(Mech.bank_target(14.0, 10.0)), -7.0, 0.0001, "capped at 7 degrees")
 	approx(Mech.bank_target(0.0, 5.0), 0.0, 0.0001, "no bank standing still")
-	approx(rad_to_deg(Mech.bank_target(14.0, 14.0 / 12.0)), -12.0, 0.01,
+	approx(rad_to_deg(Mech.bank_target(14.0, 14.0 / 12.0)), -7.0, 0.01,
 		"full lean at 14 m/s on a 12 m circle")
 
 func test_the_fov_widens_by_ten_while_sprinting() -> void:

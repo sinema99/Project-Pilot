@@ -103,17 +103,28 @@ func test_crouch_and_slide_drop_the_pivot_and_first_person_is_untouched() -> voi
 	if p == null:
 		fail("could not instance pilot9")
 		return
-	p.camera_crouch_drop = 0.4 # zeroed by the DayZ camera; the code is kept
+	p.camera_crouch_drop = 0.4
 	p._camera_mode_length = p.camera_distance
 	var standing: float = p._camera_zoom_lift()
+	p.camera_kneel_drop = 0.25
 	p.is_crouching = true
+	# The crouch's kneel (0) <-> jog (1) mix picks between the two drops (2026-11-15 rev 2).
+	if p.crouch_lean != null:
+		p.crouch_lean.move = 1.0
 	for i in 60:
 		p._handle_camera_state(STEP)
-	approx(standing - p._camera_zoom_lift(), p.camera_crouch_drop, 0.01, "crouch lowers the pivot")
+	approx(standing - p._camera_zoom_lift(), p.camera_crouch_drop, 0.01, "the crouch walk lowers the pivot")
+	if p.crouch_lean != null:
+		p.crouch_lean.move = 0.0
+		for i in 60:
+			p._handle_camera_state(STEP)
+		approx(standing - p._camera_zoom_lift(), p.camera_kneel_drop, 0.01, "the kneel lowers it less")
+	else:
+		fail("no crouch_lean on the pilot")
 	p.is_crouching = false
 	p.is_sliding = true
 	for i in 60:
 		p._handle_camera_state(STEP)
-	approx(standing - p._camera_zoom_lift(), p.camera_crouch_drop, 0.01, "slide lowers it too")
+	approx(standing - p._camera_zoom_lift(), 0.0, 0.01, "the slide no longer drops it (2026-11-15)")
 	p._camera_mode_length = 0.0
 	approx(p._camera_zoom_lift(), 0.0, 0.0001, "first person gets no raise and no drop")

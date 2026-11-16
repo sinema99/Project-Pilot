@@ -130,7 +130,10 @@ func apply_now() -> int:
 	for path in targets:
 		var node := get_node_or_null(path)
 		if node == null:
-			push_warning("apply_stylized: target '%s' not found." % path)
+			# In the editor, code-built targets (trial's SpeederCourse/Speeder2) don't exist yet:
+			# their parents aren't @tool. They are there at runtime, so only warn then.
+			if not Engine.is_editor_hint():
+				push_warning("apply_stylized: target '%s' not found." % path)
 			continue
 		var meshes: Array[MeshInstance3D] = []
 		collect_meshes(node, meshes)

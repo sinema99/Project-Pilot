@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="GunDef" format=3]
+
+[ext_resource type="Script" path="res://scripts/items/gun_def.gd" id="1_gun"]
+
+[resource]
+script = ExtResource("1_gun")
+display_name = "REVOLVER"
+damage = 25.0
+magazine = 6
+fire_interval = 0.35
+reload_time = 2.0
+aim_fov_cut = 0.2
+range_m = 200.0
+recoil_pitch_deg = 2.4
+shake_deg = 1.3

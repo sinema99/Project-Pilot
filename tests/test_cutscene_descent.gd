@@ -83,14 +83,14 @@ func test_arc_bends_one_way_only() -> void:
 	var pts: Array[Vector2] = []
 	for i in 61:
 		pts.append(DescentShot.to_sketch(c.sample_baked(c.get_baked_length() * i / 60.0)))
-	var sign := 0.0
+	var turn_sign := 0.0
 	for i in range(1, pts.size() - 1):
 		var turn := (pts[i] - pts[i - 1]).cross(pts[i + 1] - pts[i])
 		if absf(turn) < 1e-3:
 			continue
-		if sign == 0.0:
-			sign = signf(turn)
-		check(signf(turn) == sign, "same turn at sample %d" % i)
+		if turn_sign == 0.0:
+			turn_sign = signf(turn)
+		check(signf(turn) == turn_sign, "same turn at sample %d" % i)
 
 
 func test_trail_is_thin() -> void:

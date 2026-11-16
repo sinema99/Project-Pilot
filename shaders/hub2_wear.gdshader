@@ -15,8 +15,12 @@
 //   corner  - extra dark where two lines are near at once.
 // Low parts of the structure rust and darken (ground_y up).
 shader_type spatial;
-render_mode diffuse_lambert, specular_disabled, cull_disabled;
+render_mode diffuse_lambert, specular_disabled, cull_disabled, fog_disabled;
 
+#include "res://shaders/hub2_ps1.gdshaderinc"
+
+uniform float detail_fade_begin = 2.5;
+uniform float detail_fade_end = 6.0;
 uniform float texels_per_metre = 16.0;
 // World height of the structure's lowest point; grime and rust fade out over grime_height above it.
 uniform float ground_y = 0.0;
@@ -24,6 +28,8 @@ uniform float grime_height = 14.0;
 
 uniform vec3 steel_color : source_color = vec3(0.50, 0.46, 0.41);
 uniform vec3 concrete_color : source_color = vec3(0.55, 0.50, 0.43);
+uniform vec3 paint_teal : source_color = vec3(0.30, 0.42, 0.37);
+uniform vec3 paint_oxide : source_color = vec3(0.45, 0.22, 0.16);
 uniform vec3 deck_color : source_color = vec3(0.47, 0.43, 0.39);
 uniform vec3 under_color : source_color = vec3(0.33, 0.30, 0.27);
 uniform vec3 bare_metal : source_color = vec3(0.34, 0.35, 0.37);
@@ -32,6 +38,17 @@ uniform vec3 rust_dark : source_color = vec3(0.22, 0.10, 0.05);
 uniform vec3 rust_light : source_color = vec3(0.40, 0.19, 0.08);
 // 0 = clean, 1 = as filthy as designed.
 uniform float wear : hint_range(0.0, 1.5) = 1.0;
+// Props only (the map keeps the defaults): force_paint 1 = wall faces take oxide below force_split_y and teal
+// above, tone multiplies the base colour (a door leaf a shade darker than the wall round it).
+uniform int force_paint = 0;
+// Props only: 1 = wall faces are always the plain grey steel (no zone paint), e.g. the control-room door + frame.
+uniform int force_steel = 0;
+uniform float force_split_y = 45.0;
+uniform float tone : hint_range(0.0, 1.5) = 1.0;
+
+// Moving props (the sliding door leaf): world-space shift of the prop since it was at rest, subtracted so
+// the pattern rides with the mesh instead of sliding across it.
+uniform vec3 pos_offset = vec3(0.0);
 
 varying vec3 v_pos;
 varying vec3 v_norm;
@@ -39,7 +56,7 @@ varying vec4 v_d;
 varying vec4 v_c;
 
 void vertex() {
-	v_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	v_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz - pos_offset;
 	v_norm = normalize(MODEL_NORMAL_MATRIX * NORMAL);
 	v_d = CUSTOM0;
 	v_c = CUSTOM1;
@@ -184,6 +201,21 @@ void fragment() {
 		vec2 zone = floor(coord / vec2(480.0, 240.0));
 		float zh = cell_hash(ivec2(zone), axis, 0x77c5u);
 		vec3 mat = zh > 0.62 ? concrete_color : steel_color;
+		// Some steel zones are painted: teal or oxide red, so the big walls stop being one colour.
+		float zp = cell_hash(ivec2(zone), axis, 0x3d51u);
+		if (zh <= 0.62) {
+			mat = zp < 0.16 ? paint_oxide : (zp < 0.34 ? paint_teal : mat);
+		}
+		// A prop that has to read as part of one particular painted wall (the control-room bulkhead): fixed
+		// oxide below force_split_y, teal above it, whatever zone the prop's own position falls in. Only on
+		// faces that point east (+X, the corridor): the west face is the control-room stub, which keeps its own
+		// zone paint, and the thin edge / reveal faces keep theirs too.
+		if (force_steel > 0) {
+			mat = steel_color;
+		}
+		if (force_paint > 0 && nn.x > 0.5) {
+			mat = v_pos.y < force_split_y ? paint_oxide : paint_teal;
+		}
 		vec2 panel = floor(coord / vec2(96.0, 48.0));
 		vec2 l = coord - panel * vec2(96.0, 48.0);
 		float ph = cell_hash(ivec2(panel), axis, 0x2e19u);
@@ -211,6 +243,7 @@ void fragment() {
 	// Big soft mottling, 20 m blotches.
 	float blotch = vnoise(centre, vec2(320.0), axis, 0x5d11u);
 	base *= 0.88 + 0.2 * stepped(blotch, 3.0, 0.0, 1.0) * 0.6 + 0.04;
+	base *= tone;
 	vec3 col = base * shade;
 	vec3 flat_col = base * 0.95;
 
@@ -264,11 +297,47 @@ void fragment() {
 	col = mix(col, grime_color, low * 0.35 * (0.6 + 0.4 * rough) * min(w, 1.0));
 
 	// Where a texel shrinks below a screen pixel, settle to the plain tone (no shimmer far off).
+	// The two uniforms are texels per screen pixel: bigger = the pattern holds out further.
 	vec2 fw = fwidth(coord);
-	float tiny = smoothstep(0.6, 1.4, max(fw.x, fw.y));
+	float tiny = smoothstep(detail_fade_begin, detail_fade_end, max(fw.x, fw.y));
 	col = mix(col, flat_col * 0.8, tiny);
 
-	ALBEDO = col;
+	// -- roof-door snow: white cover on what the open sky sees, broken at the edge, old finish through thin spots
+	float snow = ps1_snow(v_pos, nn);
+	if (snow > 0.0) {
+		float edge_n = vnoise(centre, vec2(4.0), axis, 0x51a1u) * 0.7 + cell_hash(ti, axis, 0x77b3u) * 0.3;
+		float amt = snow * 1.35 - edge_n * 0.55 + 0.05;
+		bool thin = vnoise(centre, vec2(2.5), axis, 0x2d9fu) > 0.9;
+		if (amt > 0.45 && !thin) {
+			float lump = stepped(vnoise(centre, vec2(6.0), axis, 0x4e7bu), 3.0, 0.9, 1.0);
+			col = snow_color * lump * (amt > 0.7 ? 1.0 : 0.86);
+		}
+	}
+	// -- edge dusting (rev 1): a broken strip along drop edges that look out into the open shaft,
+	// 30-60 cm wide, thinning into specks further in; the floor shows through the gaps.
+	float ze = is_floor ? ps1_edge_snow_zone(v_pos) : 0.0;
+	if (ze > 0.0) {
+		float ed = ps1_edge_dist(v_pos);
+		float ez = ze;
+		if (ed < 1.4) {
+			float width = (0.3 + 0.45 * vnoise(centre, vec2(18.0), axis, 0x6b2du)) * (0.7 + 0.3 * ez);
+			float strip = 1.0 - ed / width;
+			float patch = vnoise(centre, vec2(9.0), axis, 0x3c8fu) * 0.5 + vnoise(centre, vec2(3.0), axis, 0x7d21u) * 0.3 + cell_hash(ti, axis, 0x5a17u) * 0.2;
+			float amt = strip * 0.85 + (patch - 0.5) * 1.8 + (ez - 1.0) * 0.3;
+			bool speck = ed < width * 2.2 && cell_hash(ti, axis, 0x19e5u) < 0.2 * ez * (1.0 - ed / (width * 2.2));
+			if (amt > 0.35 || speck) {
+				float lump = stepped(vnoise(centre, vec2(6.0), axis, 0x4e7bu), 3.0, 0.9, 1.0);
+				col = snow_color * lump * (amt > 0.65 ? 1.0 : 0.86);
+			}
+		}
+	}
+
+	// Light pools add to the surface's own colour (so they show in shadow too); the fog then takes
+	// the lit result toward its tint in flat bands.
+	vec3 pools = ps1_pools(v_pos, nn);
+	float fog = ps1_fog(length(VERTEX));
+	ALBEDO = col * (1.0 - fog);
+	EMISSION = pools * (0.22 + col * 0.9) * (1.0 - fog) + fog_tint * fog;
 	ROUGHNESS = 1.0;
 	METALLIC = 0.0;
 }

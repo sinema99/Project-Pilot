@@ -535,6 +535,8 @@ func _add_sharp_mask(mi: MeshInstance3D) -> void:
 	# Relative to a sibling, so the same path reaches the same skeleton.
 	mask.skeleton = mi.skeleton
 	mask.transform = mi.transform
+	# A piece hidden under the trench coat (or its cut copy, coat off) masks nothing.
+	mask.visible = mi.visible
 	mask.material_override = _stencil_mat
 	mask.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	mask.layers = PixelWorld.SHARP_MASK

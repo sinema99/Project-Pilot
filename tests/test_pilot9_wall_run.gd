@@ -83,7 +83,7 @@ func test_exported_knobs_have_the_spec_defaults() -> void:
 	approx(body.wall_run_wall_angle, 15.0, 0.0001, "wall_run_wall_angle drifted")
 	approx(body.wall_run_attach_angle, 60.0, 0.0001, "wall_run_attach_angle drifted")
 	approx(body.wall_run_detach_angle, 45.0, 0.0001, "wall_run_detach_angle drifted")
-	approx(body.wall_jump_kick, 8.5, 0.0001, "wall_jump_kick drifted off the 6 m corridor")
+	approx(body.wall_jump_kick, 5.0, 0.0001, "wall_jump_kick drifted off its tuned value")
 	approx(body.wall_jump_chain_decay, 0.5, 0.0001, "wall_jump_chain_decay drifted")
 	approx(body.wall_jump_steer_back_ramp, 0.4, 0.0001, "wall_jump_steer_back_ramp drifted")
 	approx(body.wall_jump_coyote_time, 0.15, 0.0001, "wall_jump_coyote_time drifted")
@@ -256,13 +256,15 @@ func test_camera_tangent_is_zero_looking_dead_into_the_wall() -> void:
 const CORRIDOR := 6.0
 const CAPSULE_AND_PROBE := 1.0
 
-func test_a_wall_jump_crosses_the_corridor_by_the_apex() -> void:
+# 2026-11-14: the kick was cut 8.5 -> 5.0 (the launch felt unintuitive), so the kick alone no
+# longer bridges the 6 m corridor - the stick or a dash does. It must still clear the wall.
+func test_a_wall_jump_clears_the_wall_but_needs_help_across_the_corridor() -> void:
 	var body: CharacterBody3D = CONTROLLER.new()
 	var crossed: float = body.wall_jump_kick * body.jump_time_to_apex
-	check(crossed >= CORRIDOR - CAPSULE_AND_PROBE - 0.0001,
-		("a wall-jump must cover the %.0f m corridor (less %.0f m of capsule and probe) by the " +
-		"apex, so the far wall is caught rising - it covers %.2f m") %
-		[CORRIDOR, CAPSULE_AND_PROBE, crossed])
+	check(crossed >= CAPSULE_AND_PROBE,
+		"a wall-jump must at least clear his capsule and probe off the wall (%.2f m)" % crossed)
+	check(crossed < CORRIDOR - CAPSULE_AND_PROBE,
+		"the kick alone crossing the %.0f m corridor means it went back up from 5.0 (%.2f m)" % [CORRIDOR, crossed])
 	body.free()
 
 func test_the_far_wall_is_caught_on_arrival() -> void:

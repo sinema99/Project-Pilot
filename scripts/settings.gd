@@ -15,6 +15,10 @@ const SAVE_PATH := "user://settings.cfg"
 const SAVE_DEBOUNCE := 0.5
 const PAINT_STRENGTH_ON := 0.5  # painted shading at half opacity; 1.0 was too noticeable
 const CONFIG_VERSION := 1
+## A meta flag every save from the AIRFRAME build on carries. A save without it predates AIRFRAME
+## and loads with LOOK = AIRFRAME once (the new default reaching a saved RETRO); from then on the
+## file has the flag and the player's LOOK sticks. See docs/specs/airframe-trial.md.
+const AIRFRAME_FLAG := "airframe_default"
 
 ## True under `--headless`, which means the test suite and the `--quit-after` smoke boot.
 ##
@@ -65,7 +69,17 @@ const DEFS := [
 	# RETRO (90s anime cel: coloured lines, flat fills, video softness), the default, or COMPOSITE
 	# (RETRO with the cutscene depth composite and grade). CEL and PIXEL left the row 2026-11-04;
 	# their code stays. See docs/specs/live-composite.md and docs/specs/retro-look.md.
-	[&"look", "LOOK", "graphics", ["retro", "composite"], 0],
+	# AIRFRAME (docs/specs/airframe-trial.md) is the default: Jetpack's look at 75 % in trial. A map
+	# without an AirframeLook shows RETRO for it.
+	[&"look", "LOOK", "graphics", ["retro", "composite", "airframe"], 2],
+	# AIRFRAME's own pixel filter: window pixels per PixelWorld block, 0 = OFF, 2X by default. The
+	# only PIXEL FILTER row in the menu since 2026-11-12; greyed AIRFRAME ONLY under the other looks,
+	# which stay sharp. See docs/specs/airframe-pixel-filter.md.
+	[&"pixel_airframe_size", "PIXEL FILTER", "graphics", [0, 2, 3, 4, 6], 1],
+	# Window pixels per block of the characters (pilots, mech, speeder, anything alive or driven)
+	# while AIRFRAME's PIXEL FILTER is on, 0 = they share the world's grid, 4X by default; they
+	# are also lit flat per face. See docs/specs/airframe-character-pixels.md.
+	[&"pixel_char_size", "CHARACTER PIXELS", "graphics", [0, 3, 4, 6], 2],
 	# SMOOTH, or ANIME: characters' poses held and refreshed 12 times a second while the game stays
 	# smooth. SMOOTH by default; U flips it in play. See docs/specs/anime-animation.md.
 	[&"anime_animation", "ANIMATION", "graphics", ["smooth", "anime"], 0],
@@ -147,6 +161,8 @@ static func sanitise(raw: Dictionary) -> Dictionary:
 		if HIDDEN_KEYS.has(key):
 			value = values[default_index]
 		out[key] = value if values.has(value) else values[default_index]
+	if raw.get(AIRFRAME_FLAG) != true:
+		out[&"look"] = "airframe"
 	return out
 
 ## Clamps, does not wrap. Wrapping is right for the tab strip, where there are
@@ -210,10 +226,23 @@ static func pixel_filter_key(look_value: String) -> StringName:
 
 ## The block size PixelWorld draws at: the active look's own size. PIXEL's list has no OFF, so
 ## the PIXEL look is never shown unpixelated.
-static func effective_pixel_size(pixel_size_value: int, pixel_look_size_value: int, look_value: String) -> int:
+## AIRFRAME draws its own size where the map has an AirframeLook; where it shows RETRO instead it
+## falls through to RETRO's (hidden, so OFF). See docs/specs/airframe-pixel-filter.md.
+static func effective_pixel_size(pixel_size_value: int, pixel_look_size_value: int, look_value: String,
+		airframe_size_value := 0, has_airframe := false) -> int:
 	if look_value == "pixel":
 		return maxi(pixel_look_size_value, 1)
+	if look_value == "airframe" and has_airframe:
+		return airframe_size_value
 	return pixel_size_value
+
+## The characters' own block size: CHARACTER PIXELS where AIRFRAME is showing (the map has an
+## AirframeLook) and its PIXEL FILTER is on, otherwise 0 (they share the world's grid).
+static func effective_char_size(look_value: String, has_airframe: bool, airframe_size_value: int,
+		char_size_value: int) -> int:
+	if look_value == "airframe" and has_airframe and airframe_size_value > 0:
+		return char_size_value
+	return 0
 
 ## Levels per channel the world and the screen pass band colour to; 0 is full colour. COLOUR
 ## DEPTH when set; otherwise the PIXEL look bands to PIXEL_LOOK_LEVELS (soft, wide steps in the
@@ -227,7 +256,7 @@ static func colour_levels(look_value: String, colour_depth_value: int) -> int:
 ## resolution so blocks shade part-way instead of popping (the shimmer that made it rough on the
 ## eyes); CEL stays one texel per block so its ink lines stay solid black.
 static func pixel_supersample(look_value: String) -> int:
-	return PIXEL_LOOK_SUPERSAMPLE if look_value == "pixel" else 1
+	return PIXEL_LOOK_SUPERSAMPLE if look_value == "pixel" or look_value == "airframe" else 1
 
 const PIXEL_LOOK_SUPERSAMPLE := 2
 const PIXEL_LOOK_LEVELS := 24
@@ -235,6 +264,20 @@ const PIXEL_LOOK_LEVELS := 24
 ## Whether LOOK runs RetroLook: COMPOSITE is RETRO with the composite on top.
 static func is_retro(look_value: String) -> bool:
 	return look_value == "retro" or look_value == "composite"
+
+## Whether a map's RetroLook is on for `look_value`. AIRFRAME shows RETRO where the map has no
+## AirframeLook (only trial has one). See docs/specs/airframe-trial.md.
+static func retro_shows(look_value: String, has_airframe: bool) -> bool:
+	return is_retro(look_value) or (look_value == "airframe" and not has_airframe)
+
+## The directional soft shadow filter for a SHADOW QUALITY value.
+static func soft_shadow_quality(value: String) -> RenderingServer.ShadowQuality:
+	var qualities := {
+		"low": RenderingServer.SHADOW_QUALITY_SOFT_VERY_LOW,
+		"medium": RenderingServer.SHADOW_QUALITY_SOFT_MEDIUM,
+		"high": RenderingServer.SHADOW_QUALITY_SOFT_HIGH,
+	}
+	return qualities.get(value, RenderingServer.SHADOW_QUALITY_SOFT_HIGH)
 
 static func keys() -> Array:
 	var out: Array = []
@@ -266,6 +309,10 @@ var pixel_look_size: int:
 	get: return _values.get(&"pixel_look_size", 4)
 var colour_depth: int:
 	get: return _values.get(&"colour_depth", 0)
+var pixel_airframe_size: int:
+	get: return _values.get(&"pixel_airframe_size", 2)
+var pixel_char_size: int:
+	get: return _values.get(&"pixel_char_size", 4)
 var look: String:
 	get: return _values.get(&"look", "retro")
 var anime_animation: bool:
@@ -335,7 +382,8 @@ func _load() -> void:
 		# takes this path too - see is_test_run().
 		_values = defaults()
 	else:
-		var raw: Dictionary = {"version": cfg.get_value("meta", "version")}
+		var raw: Dictionary = {"version": cfg.get_value("meta", "version"),
+			AIRFRAME_FLAG: cfg.get_value("meta", AIRFRAME_FLAG, false)}
 		for row: Array in DEFS:
 			var key: StringName = row[0]
 			# Guarded, or a key added since the file was written logs an error on load (a null
@@ -351,6 +399,7 @@ func _save() -> void:
 		return
 	var cfg := ConfigFile.new()
 	cfg.set_value("meta", "version", CONFIG_VERSION)
+	cfg.set_value("meta", AIRFRAME_FLAG, true)
 	for row: Array in DEFS:
 		var key: StringName = row[0]
 		cfg.set_value(String(row[2]), String(key), _values[key])
@@ -379,14 +428,11 @@ func _apply(key: StringName, value: Variant) -> void:
 			Brightness.set_gamma(value)
 		&"shadow_quality":
 			var sizes := {"low": 2048, "medium": 4096, "high": 8192}
-			var qualities := {
-				"low": RenderingServer.SHADOW_QUALITY_SOFT_VERY_LOW,
-				"medium": RenderingServer.SHADOW_QUALITY_SOFT_MEDIUM,
-				"high": RenderingServer.SHADOW_QUALITY_SOFT_HIGH,
-			}
 			RenderingServer.directional_shadow_atlas_set_size(sizes.get(value, 8192), false)
-			RenderingServer.directional_soft_shadow_filter_set_quality(
-				qualities.get(value, RenderingServer.SHADOW_QUALITY_SOFT_HIGH))
+			# AIRFRAME's sun shadow is hard while it is on; it restores this when it goes.
+			var airframe := get_tree().get_first_node_in_group(&"airframe_look") if is_inside_tree() else null
+			if airframe == null or not airframe.active or airframe.soft_sun_angle_deg > 0.0:
+				RenderingServer.directional_soft_shadow_filter_set_quality(soft_shadow_quality(value))
 		&"msaa":
 			var modes := {
 				"off": Viewport.MSAA_DISABLED,
@@ -399,17 +445,21 @@ func _apply(key: StringName, value: Variant) -> void:
 			RenderingServer.global_shader_parameter_set(&"paint_strength", PAINT_STRENGTH_ON if value == "on" else 0.0)
 		&"cel_scatter":
 			RenderingServer.global_shader_parameter_set(&"scatter_strength", 1.0 if value == "on" else 0.0)
-		&"pixel_size", &"pixel_look_size", &"colour_depth", &"look":
+		&"pixel_size", &"pixel_look_size", &"pixel_airframe_size", &"pixel_char_size", &"colour_depth", &"look":
 			# The rows that do not drive a global - they reach into a PixelWorld
 			# that may not exist (the main menu has none) via the group-lookup
 			# convention ui-shell.md introduced with &"player". All at once, from
 			# the current values: one node draws them all, and LOOK changes the
 			# block size and the colour banding as well as the materials.
-			var block := effective_pixel_size(pixel_size, pixel_look_size, look)
+			var has_airframe := is_inside_tree() \
+				and get_tree().get_first_node_in_group(&"airframe_look") != null
+			var block := effective_pixel_size(pixel_size, pixel_look_size, look,
+				pixel_airframe_size, has_airframe)
 			var world := get_tree().get_first_node_in_group(&"pixel_world")
 			if world:
 				world.apply_settings(block, colour_levels(look, colour_depth),
-					pixel_supersample(look))
+					pixel_supersample(look),
+					effective_char_size(look, has_airframe, pixel_airframe_size, pixel_char_size))
 			# The UI and menus get the PIXEL look too, from a pass over the whole screen; CEL
 			# keeps them sharp. See docs/specs/pixel-look.md, "Whole screen".
 			ScreenPixel.apply_settings(block if look == "pixel" else 0,
@@ -418,15 +468,21 @@ func _apply(key: StringName, value: Variant) -> void:
 				# The look being left lets go of its materials before the new one swaps them.
 				var pixel_look := get_tree().get_first_node_in_group(&"pixel_look")
 				var retro_look := get_tree().get_first_node_in_group(&"retro_look")
+				var airframe_look := get_tree().get_first_node_in_group(&"airframe_look")
+				var retro_on := retro_shows(value, airframe_look != null)
 				if pixel_look and value != "pixel":
 					pixel_look.apply_look(false)
-				if retro_look and not is_retro(value):
+				if retro_look and not retro_on:
 					retro_look.apply_look(false)
+				if airframe_look and value != "airframe":
+					airframe_look.set_active(false)
 				if pixel_look and value == "pixel":
 					pixel_look.apply_look(true)
-				if retro_look and is_retro(value):
+				if retro_look and retro_on:
 					retro_look.apply_look(true)
 					retro_look.apply_composite(value == "composite")
+				if airframe_look and value == "airframe":
+					airframe_look.set_active(true)
 		&"mouse_sensitivity", &"controller_sensitivity", &"fov", &"camera_motion", &"hologram_menu", &"movement_effects", &"anime_animation":
 			# No global to push to, because every consumer reads these off this
 			# autoload at the point of use rather than caching them: both

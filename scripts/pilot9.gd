@@ -10,9 +10,10 @@
 ##    stock disagreed in sign with its own mouse path and inverted the right stick.
 ## 3. Character rotation is gated on movement input in _handle_character_rotation,
 ##    so the camera can orbit to pilot9's front while he stands still.
-## 4. He turns to face where he is travelling rather than welding to camera-back, so
-##    there is no strafing and no backing up - `face_travel_direction`, in
-##    _handle_character_rotation. See docs/specs/pilot9-turn-to-face.md.
+## 4. Only the forward-only-clip states (tredge and the welded parkour moves) turn
+##    him to face travel; walk, run, sprint and the air are stock RC strafe again since
+##    2026-11-11 - `_faces_travel()` in _handle_character_rotation. See
+##    docs/specs/pilot9-strafe-return.md (and pilot9-turn-to-face.md for the history).
 ##
 ## Nothing else is ported - see docs/specs/pilot9-real-controller.md ("Stock Real
 ## Controller feel").
@@ -233,10 +234,11 @@ enum CameraMode {
 ## 0.04 s. 60.0 was the pre-reset value, and anything in that region is the feature switched
 ## ON. See docs/specs/pilot9-movement-reset.md.
 @export_range(0.0, 200.0, 1.0) var momentum_brake: float = 200.0
-## Speed while crouched. Matches `speed` (the run) since 2026-09-28 - the crouch is a gait,
-## not a handicap. It was 1.6, matched to the crouch clip's cadence; the clip still plays at
-## that authored rate, so at 5.0 his feet skate under him until the cycle is sped up to match.
-@export_range(0.1, 10.0, 0.1, "or_greater") var crouch_speed: float = 5.0
+## Speed while crouched. Walking pace (= walk_speed) since 2026-11-15 rev 4: the user's DayZ crouch
+## walk is slow (it was the run speed, 5.0, from 2026-09-28). The crouch cycles
+## (scripts/crouch_bake.gd) are authored at DESIGN_SPEED and played at ground speed / that, so any
+## value keeps the feet planted.
+@export_range(0.1, 10.0, 0.1, "or_greater") var crouch_speed: float = 2.5
 ## How much of the grade the MESH lies along, heading-wise: 1.0 puts his nose down the hill
 ## going down and up it going up, 0.0 leaves him bolt upright as he was before 2026-09-11.
 ## Only the `character` child tilts - the collision capsule stays vertical, which is the whole
@@ -628,9 +630,10 @@ enum CameraMode {
 ## How far the face may turn under him, frame to frame, and still be the wall he is running.
 ## Seams, angled panels and gentle curves carry him along; a sharper turn is the wall ending.
 @export_range(0.0, 90.0, 1.0) var wall_run_follow_angle: float = 20.0
-## Along the wall normal. 8.5 m/s crosses a 6 m corridor by the jump's apex, so the next wall
-## is caught still rising - see "The wall-jump" in the spec.
-@export_range(0.0, 20.0, 0.1) var wall_jump_kick: float = 8.5
+## Along the wall normal. Was 8.5 (crossed a 6 m corridor by the apex); cut to 5.0 on
+## 2026-11-14 because the launch off the wall felt unintuitive. A 6 m corridor now needs the
+## stick or a dash to bridge - see "The wall-jump" in the spec.
+@export_range(0.0, 20.0, 0.1) var wall_jump_kick: float = 5.0
 ## Each chained wall-jump's HEIGHT is this times the last's: 3, 1.5, 0.75 m... reset on the
 ## ground. The series sums to jump_height / (1 - decay) - the +6 m ceiling maps are authored
 ## against. 1.0 makes every corridor an elevator. See "The bound" and wall_jump_chain_ceiling().
@@ -822,7 +825,13 @@ var rim_light_suppressed := false:
 @export_group("Held Item")
 ## What he spawns carrying, holstered on his back. Empty is the no-item case: `equip` does
 ## nothing. A pickup later calls set_item(). See docs/specs/pilot9-held-item.md.
-@export var starting_item: HeldItem = preload("res://resources/items/staff.tres")
+@export var starting_item: HeldItem = preload("res://resources/items/rifle.tres")
+## The number-row draws: 1 is weapon_slots[0], 2 is weapon_slots[1]. Slot 0 is the staff - the
+## tredge's torch and the only thing the reflect spins. See docs/specs/pilot9-revolver.md.
+@export var weapon_slots: Array[HeldItem] = [
+	preload("res://resources/items/rifle.tres"),
+	preload("res://resources/items/revolver.tres"),
+]
 
 @export_group("Tredge")
 ## The blizzard walk: out in a Storm's snow he can only tredge. See docs/specs/pilot9-tredge.md
@@ -990,24 +999,23 @@ var rim_light_suppressed := false:
 ## window during which he is still facing the old heading while already moving on the new
 ## one. Roughly a quarter second at 10.0.
 @export_range(0.1, 50.0, 0.1) var rotation_speed: float = 10.0
-## Turn the body toward wherever it is travelling instead of welding it to camera-back.
+## Turn the body toward wherever it is travelling in EVERY state, instead of welding it to
+## camera-back.
 ##
-## This is the whole strafe seam. `true` (shipping): he always runs forward relative to
-## himself, so a forward-only clip - the crouch walk, and whatever follows it - is correct
-## in every direction, at the cost of RC's strafing and backing up. `false`: exactly stock
-## Real Controller, camera-relative, directional clips and all.
-##
-## scripts/pilot9_animation.gd branches on this too, and nothing else does. An aim mode or
-## a hold-to-strafe modifier is this flag and nothing more.
-@export var face_travel_direction: bool = true
+## `false` (shipping since 2026-11-11, docs/specs/pilot9-strafe-return.md): stock Real
+## Controller - walk, run, sprint and the air face camera-forward and S backpedals; only the
+## states with a forward-only clip face travel (see _faces_travel()). `true`: the 2026-09-07
+## turn-to-face behaviour everywhere, kept for comparison (docs/specs/pilot9-turn-to-face.md).
+@export var face_travel_direction: bool = false
 ## Camera mode: FIRST_PERSON or THIRD_PERSON.
 @export var camera_mode: CameraMode = CameraMode.THIRD_PERSON:
 	set(value):
 		camera_mode = value
 		if is_node_ready():
 			_update_camera_mode()
-## Camera distance (SpringArm length) for third-person mode.
-@export_range(0.0, 10.0, 0.1) var camera_distance: float = 1.7
+## Camera distance (SpringArm length) for third-person mode. Locked: the wheel zoom was removed
+## 2026-11-12 (docs/specs/mech-stash.md, decision 9) - the camera always sits here.
+@export_range(0.0, 10.0, 0.1) var camera_distance: float = 2.0
 ## Closest the scroll wheel can pull the camera in, metres. Kept above 30% of
 ## camera_distance (0.75 m), the line under which his body hides for first person.
 ## See docs/specs/pilot9-camera-zoom.md.
@@ -1095,12 +1103,17 @@ var rim_light_suppressed := false:
 @export_range(0.0, 1.0, 0.05) var camera_pivot_raise: float = 0.3
 ## Metres the camera pulls back while he sprints or dashes.
 @export_range(0.0, 1.0, 0.05) var camera_sprint_pullback: float = 0.0
-## Metres the pivot drops while he crouches or slides.
-@export_range(0.0, 1.0, 0.05) var camera_crouch_drop: float = 0.0
+## Metres the pivot drops while he crouch-walks (not the slide since 2026-11-15). The one camera
+## effect the DayZ camera ships ON. See docs/specs/pilot9-crouch-kneel.md.
+@export_range(0.0, 1.0, 0.05) var camera_crouch_drop: float = 0.25
+## The same in the kneel, which stands taller since rev 2 (2026-11-15). Mixed with
+## camera_crouch_drop by the crouch's kneel/jog blend.
+@export_range(0.0, 1.0, 0.05) var camera_kneel_drop: float = 0.25
 ## Seconds for either of those to ease fully in or out - never cut.
 @export_range(0.05, 1.0, 0.01) var camera_state_ease_time: float = 0.3
 ## Seconds for the camera to slide across on a swap, and on the wall-run's own side change.
-@export_range(0.05, 1.0, 0.01) var camera_shoulder_swap_time: float = 0.25
+## A critically damped spring from rest (2026-11-15: the old exponential ease lurched on frame one).
+@export_range(0.05, 1.0, 0.01) var camera_shoulder_swap_time: float = 0.5
 ## The run/sprint sway and the landing dip. See docs/specs/pilot9-camera-sway.md. Every
 ## metre here is at the 3.5 m arm - the motion is scaled by the live arm length over
 ## `camera_distance` so it reads the same size at every zoom. CAMERA MOTION in the settings
@@ -1591,6 +1604,9 @@ var _lean_last_yaw: float = 0.0
 ## His horizontal speed as he "feels" it: lags the real one by body_lean_felt_lag, and the
 ## gap between them is the pitch.
 var _felt_speed: float = 0.0
+## The last horizontal direction he was travelling (unit), held while he is still - the speed
+## change the pitch reads is leaned along this, so a stop still knows what it stopped from.
+var _lean_travel_dir: Vector3 = Vector3.ZERO
 
 ## Where CameraPivot sits on him, matching its transform in scenes/pilot9.tscn (and the value
 ## scripts/pilot9_build_scene.gd writes there). The pivot is top_level now, so this is the whole
@@ -1617,6 +1633,9 @@ var _shoulder_side: float = 1.0
 var _shoulder_pos: float = 0.0
 ## How far the world lets the offset go on its current side, damped like the arm length.
 var _shoulder_limit: float = 0.25
+## The other side's wall limit, and the spring's speed. _shoulder_limit is the RIGHT side's.
+var _shoulder_limit_left: float = 0.25
+var _shoulder_vel: float = 0.0
 var _shoulder_probe: PhysicsShapeQueryParameters3D = null
 ## The sway's stride clock, radians of lateral phase. Runs through the air.
 var _sway_phase: float = 0.0
@@ -1655,8 +1674,8 @@ var _turn_history: Array = []
 var _wall_kick_point: Vector3 = Vector3.ZERO
 ## The vault's detected top point, for the hand taps on its plant frame.
 var _vault_hand_top: Vector3 = Vector3.ZERO
-## The third-person length the scroll wheel has picked. Separate from camera_distance because
-## that one is the body-hide reference - see docs/specs/pilot9-camera-zoom.md.
+## The third-person length. Was the wheel zoom's pick; since 2026-11-12 the wheel zoom is gone and
+## this is always camera_distance (docs/specs/mech-stash.md).
 var _zoom_distance: float = 2.5
 ## The sprint pull-back and crouch drop's eased current values, metres, both >= 0.
 var _camera_state_back: float = 0.0
@@ -1813,7 +1832,7 @@ func _ready() -> void:
 	# First: everything below that walks his meshes (afterimage pool, rim light, hologram
 	# masks) has to see the body he will actually wear.
 	_swap_body_meshes()
-	_zoom_distance = clampf(camera_distance, camera_zoom_min, camera_zoom_max)
+	_zoom_distance = camera_distance
 	target_camera_distance = 0.0 if camera_mode == CameraMode.FIRST_PERSON else _zoom_distance
 	_camera_mode_length = target_camera_distance
 	spring_arm.spring_length = target_camera_distance
@@ -1825,13 +1844,20 @@ func _ready() -> void:
 	_setup_item_holder()
 	# Before the rim light and hologram, which walk his meshes.
 	_setup_hat()
+	# Also before them, and before the afterimage pool's deferred build: it adds bones and a mesh.
+	_setup_coat()
+	_setup_backpack()
+	_setup_weapon_mounts()
 	_setup_wall_hand()
 	_setup_slide_hand()
 	_apply_rim_light()
 	_setup_hologram()
 	# Last of the skeleton modifiers: the tredge pose has the final word on both arms.
 	_setup_tredge()
+	# After the tredge: the carry pose has the last word on both arms.
+	_setup_carry()
 	_setup_anime_hold()
+	_setup_equipment()
 	if character:
 		character.visible = camera_mode == CameraMode.THIRD_PERSON
 		# The scene's starting yaw is not a turn.
@@ -1874,7 +1900,7 @@ var controlled: bool = true
 
 func set_controlled(on: bool) -> void:
 	controlled = on
-	frozen = not on
+	frozen = not on or _inventory_hold or _ride_hold
 	# The firing range's dummies shoot the first reflect_target; the pause menu opens on the
 	# first hologram_host. Both should be the pilot being played.
 	if on:
@@ -1889,10 +1915,31 @@ func set_controlled(on: bool) -> void:
 	if on:
 		camera_3d.current = true
 
+## -- the inventory screen ----------------------------------------------------------
+##
+## Tab opens it only while he is on his feet and being played; while it is open he is held
+## `frozen` (stands, idles, reads no input) and the world runs on. See docs/specs/inventory.md.
+
+var _inventory_hold := false
+
+func can_open_inventory() -> bool:
+	return controlled and not frozen and visible and is_physics_processing() \
+		and camera_3d != null and camera_3d.current and is_on_floor() \
+		and not (is_sliding or is_dashing or is_climbing or is_vaulting or is_wall_running
+			or is_wall_climbing or is_rail_grinding or is_rail_switching or is_tredging)
+
+func set_inventory_hold(on: bool) -> void:
+	_inventory_hold = on
+	frozen = on or not controlled or _ride_hold
+
 func _physics_process(delta: float) -> void:
 	# First, and above every early return below, for the reason in its own docstring: the
 	# frames a mantle or a freeze bails out on are exactly the frames the FOV has to be
 	# easing back on.
+	# The aim blend this step's camera and facing read. Ahead of _handle_camera_fov() for the same
+	# reason that one is first: it must tick on the frames a freeze returns early from.
+	if gunplay != null:
+		gunplay.tick(delta)
 	_handle_camera_fov(delta)
 	# Ahead of everything that reads the move basis - see _move_yaw().
 	_handle_free_look(delta)
@@ -1901,6 +1948,8 @@ func _physics_process(delta: float) -> void:
 	_resolve_landing_dip()
 	if tredge != null:
 		tredge.tick(delta)
+	if carry != null:
+		carry.tick(delta)
 	_update_sprint_toggle()
 	# Freezing mid-mantle ends it rather than pausing it, for the reason the slide ends
 	# itself: nothing advances _climb_time while frozen, and he would be left hanging in
@@ -2031,7 +2080,7 @@ func _update_sprint_toggle() -> void:
 		_sprint_stop_armed = false
 		return
 	# Locked off out in the blizzard - see docs/specs/pilot9-tredge.md.
-	if is_tredging:
+	if is_tredging or is_carrying:
 		sprint_toggled = false
 		return
 	_update_sprint_stop(is_on_floor())
@@ -2086,7 +2135,7 @@ func _handle_crouch_and_slide(delta: float) -> void:
 	_slide_cooldown_left = maxf(_slide_cooldown_left - delta, 0.0)
 
 	# No crouch or slide out in the blizzard; begin_tredge() already cleared the crouch.
-	if is_tredging:
+	if is_tredging or is_carrying:
 		return
 
 	# The dash already ended any slide and cleared the crouch on its own way in - see
@@ -2633,6 +2682,7 @@ func _body_lean_active(on_floor: bool) -> bool:
 		and not is_wall_climbing \
 		and not is_rail_grinding \
 		and not is_rail_switching \
+		and not (gunplay != null and gunplay.body_locked()) \
 		and not frozen
 
 ## The lean added to the slope tilt's target: pitch in .x, roll in .y, radians.
@@ -2656,6 +2706,7 @@ func _body_lean_target(delta: float, on_floor: bool) -> Vector2:
 	if delta <= 0.0:
 		return Vector2.ZERO
 	_felt_speed += (flat_speed - _felt_speed) * (1.0 - exp(-delta / maxf(body_lean_felt_lag, 0.0001)))
+	_track_lean_travel_dir()
 	if not _body_lean_active(on_floor):
 		return Vector2.ZERO
 
@@ -2664,15 +2715,33 @@ func _body_lean_target(delta: float, on_floor: bool) -> Vector2:
 		* deg_to_rad(body_lean_roll_max)
 
 	var f := _body_lean_peak_fraction(body_lean_felt_lag, 1.0 / maxf(slope_align_speed, 0.0001))
+	# Direction-aware since 2026-11-11 (docs/specs/pilot9-strafe-return.md): the speed change is
+	# still a scalar - a constant-speed carve pitches nothing - but it is leaned along his travel
+	# and split onto his body. Running forward that is the old maths exactly; backpedalling the
+	# front/back sign flips, strafing it becomes roll. Mesh forward is +Z, his left is +X.
 	var gap := flat_speed - _felt_speed
+	var body := Basis(Vector3.UP, yaw)
+	var lean := _lean_travel_dir * gap
+	var ahead := lean.dot(body.z)
+	var to_left := lean.dot(body.x)
 	var pitch := 0.0
-	if gap > 0.0:
+	if ahead > 0.0:
 		pitch = deg_to_rad(body_lean_pitch_forward_max) \
-			* clampf(gap / body_lean_pitch_full_gap, 0.0, 1.0) / f
-	elif gap < 0.0:
+			* clampf(ahead / body_lean_pitch_full_gap, 0.0, 1.0) / f
+	elif ahead < 0.0:
 		pitch = -deg_to_rad(body_lean_pitch_back_max) \
-			* clampf(-gap / body_lean_pitch_full_gap, 0.0, 1.0) / f
+			* clampf(-ahead / body_lean_pitch_full_gap, 0.0, 1.0) / f
+	# Toward his left is negative roll, the turn roll's convention.
+	var roll_cap := deg_to_rad(body_lean_roll_max) / f
+	var side := -clampf(to_left / body_lean_pitch_full_gap, -1.0, 1.0) * roll_cap
+	roll = clampf(roll + side, -roll_cap, roll_cap)
 	return Vector2(pitch, roll)
+
+## Keeps _lean_travel_dir on his horizontal velocity while he is moving; below 0.1 m/s it holds.
+func _track_lean_travel_dir() -> void:
+	var flat := Vector3(velocity.x, 0.0, velocity.z)
+	if flat.length() > 0.1:
+		_lean_travel_dir = flat.normalized()
 
 ## The peak of a unit step passed through two first-order lags of time constants t1 and t2 -
 ## the felt speed and the slope ease. About 0.54 at the shipping 0.25 s and 0.1 s, 1/e when the
@@ -2690,6 +2759,8 @@ static func _body_lean_peak_fraction(t1: float, t2: float) -> float:
 func _reseed_body_lean() -> void:
 	_lean_last_yaw = character.rotation.y
 	_felt_speed = _horizontal_speed()
+	_lean_travel_dir = Vector3.ZERO
+	_track_lean_travel_dir()
 
 ## The automatic slide's entry test. The slide's own preconditions (it is enabled, the clip
 ## was baked) still apply - without a curve there is nothing to drive him with - but the
@@ -2884,7 +2955,7 @@ func _handle_gravity_and_jump(delta: float) -> void:
 
 	# No jump of any kind out in the blizzard (docs/specs/pilot9-tredge.md). begin_tredge()
 	# cleared the buffer, so nothing above this can fire either.
-	if is_tredging:
+	if is_tredging or is_carrying:
 		return
 	if frozen or not Input.is_action_just_pressed("jump"):
 		return
@@ -3035,13 +3106,34 @@ func _handle_character_rotation(delta: float) -> void:
 		# Facing the ride he left, the whole hop - it is a step sideways, not a turn.
 		character.rotation.y = atan2(_switch_facing.x, _switch_facing.z)
 		return
+	elif is_vaulting:
+		# Toward the vault line whatever the stick says: the clip only goes forward, and under
+		# strafe the fall-through would turn him to the camera mid-vault. A lerp, not a weld -
+		# a strafing entry turns into the vault instead of snapping.
+		target = atan2(_vault_dir.x, _vault_dir.z)
+	elif gunplay != null and gunplay.wants_camera_facing():
+		# Aiming (and a moment after a shot): he faces where the camera looks, stick or no stick.
+		target = _move_yaw() + PI
 	elif input_dir == Vector2.ZERO:
 		return
 	else:
-		target = atan2(direction.x, direction.z) if face_travel_direction \
+		target = atan2(direction.x, direction.z) if _faces_travel() \
 			else _move_yaw() + PI
 	var turn := rotation_speed * (tredge_turn_scale if is_tredging else 1.0)
 	character.rotation.y = lerp_angle(character.rotation.y, target, turn * delta)
+
+## Whether this frame's ordinary (unwelded) facing turns him toward his travel rather than to
+## camera-back. Only the states whose clip goes forward and nowhere else: the tredge. Walk, run,
+## sprint, the air and the crouch (four-way since 2026-11-15, docs/specs/pilot9-crouch-kneel.md)
+## strafe. See docs/specs/pilot9-strafe-return.md.
+func _faces_travel() -> bool:
+	return face_travel_direction or is_tredging
+
+## Stock RC: there are no backward sprint clips, so a stick with any backward component is a run
+## - speed and clip both, or run_backward would skate at sprint speed. sprint_toggled is left
+## set, so letting go of S sprints again. Facing travel there is no backward.
+func _sprint_direction_ok() -> bool:
+	return _faces_travel() or input_dir.y <= 0.0
 
 ## Handles controller stick input for camera rotation.
 func _handle_controller_camera(delta: float) -> void:
@@ -3143,6 +3235,8 @@ func _step_free_look(held: bool, delta: float) -> void:
 		if not _free_look_returning():
 			_free_look_yaw = camera_pivot.rotation.y
 			_free_look_pitch = camera_pivot.rotation.x
+			if camera_3d != null:
+				_free_look_view_rel = global_transform.affine_inverse() * camera_3d.global_transform
 		# Re-pressed mid-return: keep the heading that was already frozen.
 		_free_look_return_t = -1.0
 	elif not held and _free_look_held:
@@ -3150,6 +3244,17 @@ func _step_free_look(held: bool, delta: float) -> void:
 		_free_look_from_yaw = camera_pivot.rotation.y
 		_free_look_from_pitch = camera_pivot.rotation.x
 	_free_look_held = held
+	# Once _process is running the return eases there, at the frame rate: the pivot's rotation
+	# is not physics-interpolated, so easing it in this 60 Hz tick drew the return in steps.
+	if _free_look_render_driven:
+		return
+	_advance_free_look_return(delta)
+
+## True once _process has started easing the return (set there; the test suite never runs it,
+## so its direct _step_free_look calls still advance the ease themselves).
+var _free_look_render_driven: bool = false
+
+func _advance_free_look_return(delta: float) -> void:
 	if not _free_look_returning():
 		return
 	_free_look_return_t += delta
@@ -3165,6 +3270,24 @@ static func _free_look_return_weight(t: float, return_time: float) -> float:
 	if return_time <= 0.0:
 		return 1.0
 	return smoothstep(0.0, 1.0, clampf(t / return_time, 0.0, 1.0))
+
+## The camera frame at the press, relative to him: the gun keeps aiming down it while free-look
+## swings the real camera (IK point, shot ray, frozen crosshair - see gunplay.gd).
+var _free_look_view_rel: Transform3D = Transform3D.IDENTITY
+
+## The view the gun aims down: the live camera, or the frame frozen at the free-look press.
+func aim_view_transform() -> Transform3D:
+	if _free_look_active():
+		return global_transform * _free_look_view_rel
+	return camera_3d.global_transform if camera_3d != null else global_transform
+
+## A shot's kick while free-look holds the aim: it lands on the frozen aim and on the view the
+## release returns to, not on the camera being looked around with.
+func free_look_kick(pitch: float, yaw: float) -> void:
+	_free_look_pitch = _clamp_look_pitch(_free_look_pitch + pitch)
+	_free_look_yaw += yaw
+	var b := _free_look_view_rel.basis
+	_free_look_view_rel.basis = Basis(Vector3.UP, yaw) * (b * Basis(Vector3.RIGHT, pitch))
 
 ## Drops free-look on the spot, view left where it is.
 func _cancel_free_look() -> void:
@@ -3274,17 +3397,16 @@ func _shoulder_target_side() -> float:
 		return -1.0 if _wall_run_right else 1.0
 	return _shoulder_side
 
-## Static and pure so the tests can check the swap and the clamp without a rig. Moves `pos`
-## toward `target` on an exponential ease that is within 2% of it after `swap_time`.
-static func _shoulder_ease(pos: float, target: float, delta: float, swap_time: float) -> float:
-	if swap_time <= 0.0:
-		return target
-	return lerpf(pos, target, clampf(4.0 * delta / swap_time, 0.0, 1.0))
+## The shoulder offset this frame: the framing's own, widened while a gun is aimed.
+func _shoulder_offset_now() -> float:
+	if gunplay == null:
+		return camera_shoulder_offset
+	return gunplay.shoulder_offset(camera_shoulder_offset)
 
 ## The sideways clearance, metres, in direction `side` from the pivot, up to the full offset.
 ## A sphere the arm's own backstop size, so the lens never starts inside a wall beside him.
 func _shoulder_clearance(side: float) -> float:
-	var full := camera_shoulder_offset
+	var full := _shoulder_offset_now()
 	if full <= 0.0 or _shoulder_probe == null or not is_inside_tree():
 		return full
 	var world := get_world_3d()
@@ -3297,20 +3419,27 @@ func _shoulder_clearance(side: float) -> float:
 		return full
 	return float(fractions[0]) * full
 
-## One frame of the shoulder: ease toward the wanted side, clamp by the world, write the arm's
-## local x. Third person only - first person's zero-length arm scales it to nothing.
+## One frame of the shoulder: spring toward the wanted side, clamp by the world, write the arm's
+## local x. Third person only - first person's zero-length arm scales it to nothing. Both sides'
+## wall limits are tracked every frame, so crossing the middle never swaps one for the other.
 func _handle_camera_shoulder(delta: float) -> void:
 	var side := _shoulder_target_side()
-	var want := side * camera_shoulder_offset
-	_shoulder_pos = _shoulder_ease(_shoulder_pos, want, delta, camera_shoulder_swap_time)
+	var want := side * _shoulder_offset_now()
+	var step := _camera_state_spring(_shoulder_pos, _shoulder_vel, want, delta,
+		camera_shoulder_swap_time)
+	_shoulder_pos = step.x
+	_shoulder_vel = step.y
 	var mode_scale := 0.0
 	if camera_distance > 0.0:
 		mode_scale = clampf(_camera_mode_length / camera_distance, 0.0, 1.0)
-	var lead := signf(_shoulder_pos) if absf(_shoulder_pos) > 0.001 else side
-	var clear := _shoulder_clearance(lead) if mode_scale > 0.0 else camera_shoulder_offset
-	_shoulder_limit = _camera_length_step(_shoulder_limit, clear, delta,
+	var clear_r := _shoulder_clearance(1.0) if mode_scale > 0.0 else camera_shoulder_offset
+	var clear_l := _shoulder_clearance(-1.0) if mode_scale > 0.0 else camera_shoulder_offset
+	_shoulder_limit = _camera_length_step(_shoulder_limit, clear_r, delta,
 		camera_retract_speed, camera_return_speed)
-	var applied := signf(_shoulder_pos) * minf(absf(_shoulder_pos), _shoulder_limit)
+	_shoulder_limit_left = _camera_length_step(_shoulder_limit_left, clear_l, delta,
+		camera_retract_speed, camera_return_speed)
+	var limit := _shoulder_limit if _shoulder_pos >= 0.0 else _shoulder_limit_left
+	var applied := signf(_shoulder_pos) * minf(absf(_shoulder_pos), limit)
 	spring_arm.position.x = applied * mode_scale
 
 ## The length the world allows, this frame, with no damping on it yet.
@@ -3392,7 +3521,10 @@ static func _camera_dash_lag_position(start: Vector3, target: Vector3, elapsed: 
 ## lift that only moved at the 60 Hz tick climbed in visible stairs on a faster display.
 func _handle_camera_state(delta: float) -> void:
 	var back_target := camera_sprint_pullback if (is_sprinting or is_dashing) else 0.0
-	var drop_target := camera_crouch_drop if (is_crouching or is_sliding) else 0.0
+	var drop_target := 0.0
+	if is_crouching:
+		var move: float = crouch_lean.move if crouch_lean != null else 1.0
+		drop_target = lerpf(camera_kneel_drop, camera_crouch_drop, move)
 	var back := _camera_state_spring(_camera_state_back, _camera_state_back_vel, back_target,
 		delta, camera_state_ease_time)
 	_camera_state_back = back.x
@@ -3421,7 +3553,10 @@ static func _camera_state_spring(x: float, v: float, target: float, delta: float
 ## spring_length. See docs/specs/pilot9-camera-collision.md for why the mesh reads the first.
 func _handle_camera_transition(delta: float) -> void:
 	var back := _camera_state_back if target_camera_distance > 0.0 else 0.0
-	_camera_mode_length = lerpf(_camera_mode_length, target_camera_distance + back,
+	var arm_target := target_camera_distance
+	if gunplay != null:
+		arm_target = gunplay.arm_length(target_camera_distance)
+	_camera_mode_length = lerpf(_camera_mode_length, arm_target + back,
 		clampf(camera_transition_speed * delta, 0.0, 1.0))
 	var desired := _camera_obstruction_length(_camera_mode_length)
 	# The shoulder first: the obstruction cast above already ran from last frame's origin, which
@@ -3452,7 +3587,9 @@ func _handle_camera_transition(delta: float) -> void:
 			camera_pivot.rotation.y, _wall_normal, wall_run_camera_roll).y
 	_camera_wall_roll = lerp_angle(_camera_wall_roll, camera_roll_target,
 		clampf(camera_transition_speed * delta, 0.0, 1.0))
-	camera_3d.rotation.z = _camera_wall_roll + _handle_camera_motion(delta)
+	camera_3d.rotation.z = _camera_wall_roll + _handle_camera_motion(delta) \
+		* (gunplay.sway_scale() if gunplay != null else 1.0) \
+		+ (gunplay.shake_roll() if gunplay != null and Settings.camera_motion else 0.0)
 
 	# Zoom framing. Read off the live arm length, which is already eased and already knows
 	# about walls, so the tilt needs no smoothing of its own.
@@ -3532,6 +3669,9 @@ func _handle_camera_fov(delta: float) -> void:
 	_reflect_fov_deg = move_toward(_reflect_fov_deg, 0.0, _reflect_fov_rate * delta) 		if Settings.camera_motion else 0.0
 	camera_3d.fov = _dash_fov_lens(_sprint_fov,
 		_dash_fov_kick * dash_fov_boost + _reflect_fov_deg, dash_fov_ceiling)
+	# The aim narrows the lens on top of everything above.
+	if gunplay != null:
+		camera_3d.fov *= gunplay.fov_multiplier()
 
 ## Advances the dash kick's envelope one physics step. See docs/specs/pilot9-dash-fov.md.
 ## Reads `is_dashing` one frame late for the same reason the sprint gate does - it runs first
@@ -3718,13 +3858,6 @@ func _update_camera_mode() -> void:
 	else:
 		target_camera_distance = _zoom_distance
 
-## One wheel notch: positive `notches` zooms in. Scaled by the event's factor so a trackpad's
-## fractional scroll moves a fraction of a step. See docs/specs/pilot9-camera-zoom.md.
-func _zoom_camera(notches: float) -> void:
-	_zoom_distance = clampf(_zoom_distance - notches * camera_zoom_step,
-		camera_zoom_min, camera_zoom_max)
-	_update_camera_mode()
-
 ## Applies horizontal movement velocity based on input and sprint/walk state.
 ##
 ## Deviation 6, momentum: stock Real Controller ASSIGNS the horizontal velocity from the stick
@@ -3758,9 +3891,21 @@ func _requested_speed() -> float:
 		is_sprinting = false
 		is_walking = false
 		return tredge_speed * (1.0 - tredge_gust_slow * (tredge.gust if tredge != null else 0.0))
+	# A crate in his hands: the walk and nothing faster. docs/specs/pilot9-crate-carry.md.
+	if is_carrying:
+		is_sprinting = false
+		is_walking = is_moving
+		return walk_speed
+	# Aiming a gun: the walk and nothing faster (crouch, below, still wins). The sprint toggle is
+	# left set, so letting go of the aim runs again.
+	if gunplay != null and gunplay.limits_speed() and not is_crouching:
+		is_sprinting = false
+		is_walking = is_moving
+		return walk_speed
 	# Crouch outranks both gaits: it owns the whole locomotion state, so leaving either
 	# flag set would keep pilot9_animation.gd feeding the walk/run blends underneath it.
-	is_sprinting = sprint_toggled and is_moving and not Input.is_action_pressed("walk") and not is_crouching
+	is_sprinting = sprint_toggled and is_moving and not Input.is_action_pressed("walk") and not is_crouching \
+		and _sprint_direction_ok()
 	is_walking = Input.is_action_pressed("walk") and is_moving and not sprint_toggled and can_walk and not is_crouching
 
 	if is_crouching:
@@ -4112,7 +4257,7 @@ func _probe_ledge(facing: Vector3, reach: float = -1.0) -> Dictionary:
 func _handle_mantle_trigger() -> void:
 	# A rail is ground he is riding, not a flight past a ledge - and it caught him first.
 	if frozen or is_climbing or is_vaulting or is_dashing or is_rail_grinding \
-			or is_rail_switching or is_on_floor() or is_tredging:
+			or is_rail_switching or is_on_floor() or is_tredging or is_carrying:
 		return
 	if is_wall_running:
 		_try_mantle_off_wall_run()
@@ -4719,7 +4864,7 @@ func _handle_dash(delta: float) -> void:
 	# Mantle and frozen both refuse a fresh dash outright rather than queuing one - see
 	# _dash_availability(). Climbing is not cancellable and a dash out of the middle of it
 	# would fling a collider-less pilot9 through geometry.
-	if is_tredging or not Input.is_action_just_pressed("dash") or not _can_dash():
+	if is_tredging or is_carrying or not Input.is_action_just_pressed("dash") or not _can_dash():
 		return
 
 	# Fresh input, not `direction`: this runs ahead of _handle_movement_input() in
@@ -4892,6 +5037,8 @@ func _apply_rim_light() -> void:
 	for mi in meshes:
 		# The held item rides under his skeleton but the rim stays pilot-only.
 		if item_holder != null and item_holder.owns(mi):
+			continue
+		if weapon_mounts != null and weapon_mounts.owns(mi):
 			continue
 		mi.material_overlay = overlay
 
@@ -5151,7 +5298,7 @@ func _handle_wall_run(delta: float) -> void:
 
 	if frozen or is_climbing or is_vaulting or is_dashing or is_rail_grinding \
 			or is_rail_switching or is_wall_climbing or is_on_floor() or not can_wall_run \
-			or is_tredging:
+			or is_tredging or is_carrying:
 		return
 	var travel := _wall_run_travel_direction()
 	var hit := _probe_wall(travel)
@@ -5519,7 +5666,7 @@ func _handle_wall_climb(delta: float) -> void:
 		return
 
 	var travel := _wall_run_travel_direction()
-	if is_tredging or Vector3(velocity.x, 0.0, velocity.z).length() <= 0.0001:
+	if is_tredging or is_carrying or Vector3(velocity.x, 0.0, velocity.z).length() <= 0.0001:
 		return
 	var ahead := _probe_wall_ahead(travel)
 	if _can_start_wall_climb(ahead, travel):
@@ -5870,7 +6017,7 @@ func _handle_rail_grind(delta: float) -> void:
 		_tick_rail_switch(delta)
 		return
 	if not can_rail_grind or frozen or is_climbing or is_vaulting or is_dashing or is_on_floor() \
-			or is_wall_climbing or is_tredging:
+			or is_wall_climbing or is_tredging or is_carrying:
 		_rail_sweep_valid = false
 		return
 	if not _try_catch_rail():
@@ -6407,7 +6554,10 @@ func _cut_to_dash_clip() -> void:
 ## mathematically identical anyway, so the switch itself is invisible. See
 ## docs/specs/pilot9-dash.md, Camera.
 func _process(delta: float) -> void:
+	_drive_idle_arm()
 	_seek_vault_clip()
+	_free_look_render_driven = true
+	_advance_free_look_return(delta)
 	_handle_camera_state(delta)
 	var target := get_global_transform_interpolated() 		* (CAMERA_PIVOT_OFFSET + Vector3(0.0, _camera_zoom_lift(), 0.0))
 	if _camera_dash_lag_active:
@@ -6432,7 +6582,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		# Settings.mouse_sensitivity is a 0.25x-2.00x scalar on top of this
 		# authored value, not a replacement for it - the number itself is a
 		# deliberate feel decision. See docs/specs/settings.md, Controls.
-		var sensitivity := mouse_sensitivity * Settings.mouse_sensitivity
+		var sensitivity: float = mouse_sensitivity * Settings.mouse_sensitivity \
+			* (gunplay.look_scale() if gunplay != null else 1.0)
 		# The free-look return owns the view for its quarter second.
 		if _free_look_returning():
 			return
@@ -6440,13 +6591,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		camera_pivot.rotation.y += -event.relative.x * sensitivity
 		if is_wall_running and not _free_look_active():
 			camera_pivot.rotation.y = _clamp_yaw_off_wall(camera_pivot.rotation.y, _wall_normal)
-	elif event is InputEventMouseButton and event.pressed 			and camera_mode == CameraMode.THIRD_PERSON:
-		# Wheel zoom. factor is 0 on some devices that do not report it; treat that as a notch.
-		var notches: float = event.factor if event.factor > 0.0 else 1.0
-		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
-			_zoom_camera(notches)
-		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			_zoom_camera(-notches)
 
 func _input(event: InputEvent) -> void:
 	if InputMap.has_action("camera_mode_switch") and event.is_action_pressed("camera_mode_switch") and allow_camera_mode_switch:
@@ -6458,18 +6602,37 @@ func _input(event: InputEvent) -> void:
 		swap_shoulder()
 	# The draw / holster animation; it ignores the press itself in a mantle, vault or wall-run.
 	# Out in the blizzard the staff is his torch: neither the holster nor the spin.
-	if not frozen and not is_tredging and InputMap.has_action("equip") \
+	# With a gun out R reloads instead; the number key (or R with nothing out) is the holster.
+	if not frozen and not is_tredging and not is_carrying and InputMap.has_action("equip") \
 			and event.is_action_pressed("equip"):
-		press_equip()
-	if not frozen and not is_tredging and reflect_spin != null and InputMap.has_action("reflect") 			and event.is_action_pressed("reflect"):
+		if gunplay != null and gunplay.armed():
+			gunplay.press_reload()
+		else:
+			press_equip()
+	# Left mouse fires a drawn gun (the staff's reflect needs can_reflect, so the two never clash).
+	if gunplay != null and InputMap.has_action("fire") and event.is_action_pressed("fire"):
+		gunplay.try_fire()
+	# 1 / 2 draw a weapon. Exact match, so Shift+1 / Shift+2 stay the pilot switch's.
+	for i in WEAPON_ACTIONS.size():
+		if not frozen and not is_tredging and not is_carrying and InputMap.has_action(WEAPON_ACTIONS[i]) \
+				and event.is_action_pressed(WEAPON_ACTIONS[i], false, true):
+			press_weapon(i)
+	if not frozen and not is_tredging and not is_carrying and reflect_spin != null and InputMap.has_action("reflect") 			and event.is_action_pressed("reflect"):
 		reflect_spin.try_start()
-	# Cosmetic: works in the blizzard too. `frozen` keeps it to the pilot being played.
-	if not frozen and InputMap.has_action("hat") and event.is_action_pressed("hat"):
-		toggle_hat()
 
 ## Flips the chosen shoulder. The eased slide in _handle_camera_shoulder() does the rest.
 func swap_shoulder() -> void:
 	_shoulder_side = -_shoulder_side
+
+## Where the interaction panel floats while his camera is the one in use: shoulder height, on
+## the open side of the frame - the camera's shoulder, so it follows X and the wall-run's auto
+## side. See docs/specs/interaction-panel.md.
+const PROMPT_ANCHOR_HEIGHT := 1.45
+const PROMPT_ANCHOR_OFFSET := 0.7
+
+func interaction_anchor() -> Dictionary:
+	return {"point": global_position + Vector3.UP * PROMPT_ANCHOR_HEIGHT,
+		"side": _shoulder_target_side(), "offset": PROMPT_ANCHOR_OFFSET}
 
 ## -- the held item ----------------------------------------------------------
 ##
@@ -6477,11 +6640,41 @@ func swap_shoulder() -> void:
 ## are the doors in. See docs/specs/pilot9-held-item.md.
 
 const _ItemHolder := preload("res://scripts/items/item_holder.gd")
+const _IdleArmModifier := preload("res://scripts/idle_arm_modifier.gd")
+const _CrouchLean := preload("res://scripts/crouch_lean.gd")
+
+## The crouch's forward lean (scripts/crouch_lean.gd). Driven by pilot9_animation.gd::_drive_crouch,
+## and its `move` (kneel 0 <-> jog 1) also picks the crouch camera drop. Null before _ready().
+var crouch_lean: SkeletonModifier3D = null
+
+## Swings the right arm level with the left while he stands still. Built before the item holder so
+## the staff's hold and the reflect spin keep the last word on the arm.
+var idle_arm: SkeletonModifier3D = null
+
+func _setup_idle_arm() -> void:
+	var skel := get_node_or_null("character/Armature/GeneralSkeleton") as Skeleton3D
+	if skel == null:
+		return
+	idle_arm = _IdleArmModifier.new()
+	idle_arm.name = &"IdleArmModifier"
+	skel.add_child(idle_arm)
+	# Before the item holder's modifier too, so the arm hold and aim IK read the leaned chest.
+	crouch_lean = _CrouchLean.new()
+	crouch_lean.name = &"CrouchLean"
+	skel.add_child(crouch_lean)
+
+func _drive_idle_arm() -> void:
+	if idle_arm == null:
+		return
+	var on := is_on_floor() and _anime_state() == &"Locomotion"
+	idle_arm.target = _IdleArmModifier.idle_target(Vector2(velocity.x, velocity.z).length(),
+		walk_speed) if on else 0.0
 
 ## Built in _ready(). Null only before then.
 var item_holder: Node = null
 
 func _setup_item_holder() -> void:
+	_setup_idle_arm()
 	item_holder = _ItemHolder.new()
 	item_holder.name = &"ItemHolder"
 	add_child(item_holder)
@@ -6490,9 +6683,27 @@ func _setup_item_holder() -> void:
 	item_holder.set_item(starting_item)
 	_setup_reflect()
 	_setup_equip_anim()
+	_setup_gunplay()
+
+## The gun framework: aim, fire, reload, ammo, the crosshair and the ammo count. Built after the
+## equip animation, which it asks whether a draw is playing. See scripts/items/gunplay.gd and
+## docs/specs/pilot9-gunplay.md.
+const _Gunplay := preload("res://scripts/items/gunplay.gd")
+var gunplay: Node = null
+
+func _setup_gunplay() -> void:
+	gunplay = _Gunplay.new()
+	gunplay.name = &"Gunplay"
+	add_child(gunplay)
+	gunplay.setup(self, item_holder)
+
+## Aim camera on: a gun drawn and right mouse held. Used by the framing below.
+func _aim_blend() -> float:
+	return gunplay.aim_blend if gunplay != null else 0.0
 
 ## Swaps what he carries, keeping it drawn or holstered as it was. null takes it away.
 func set_item(item: HeldItem) -> void:
+	_pending_slot = -1
 	if equip_anim != null:
 		equip_anim.finish_now()
 	item_holder.set_item(item)
@@ -6501,6 +6712,8 @@ func set_item(item: HeldItem) -> void:
 ## Draw or holster as a snap, this frame. Does nothing with no item. Scripts and tests use this;
 ## the R key plays the animation through press_equip().
 func toggle_drawn() -> void:
+	# A snap is final: a swap under way stops at its holster rather than chaining a draw.
+	_pending_slot = -1
 	if equip_anim != null:
 		equip_anim.finish_now()
 	# A spin needs the staff in his hands: holstering ends it on the spot.
@@ -6528,13 +6741,105 @@ func _setup_equip_anim() -> void:
 	add_child(equip_anim)
 	equip_anim.setup(self, item_holder,
 		get_node_or_null("character/Armature/GeneralSkeleton") as Skeleton3D, reflect_spin)
+	equip_anim.finished.connect(_on_equip_finished)
 
 func is_item_drawn() -> bool:
 	return item_holder != null and item_holder.is_drawn
 
+## -- weapon slots ----------------------------------------------------------------------
+##
+## 1 draws the staff, 2 the revolver; the other number swaps (the drawn one dematerializes, then
+## the new one forms); the same number puts it away. R puts away whatever is out, or redraws the
+## last one - which is just the holder's current item. See docs/specs/pilot9-revolver.md.
+
+const WEAPON_ACTIONS: Array[StringName] = [&"weapon_1", &"weapon_2"]
+## The slot the tredge's torch and the reflect need.
+const STAFF_SLOT := 0
+
+## The slot that holds the staff right now (the weapon whose HeldItem can reflect), or -1 when it
+## is not slotted. The tredge's torch looks here, so moving the staff to slot 2 still works.
+func staff_slot() -> int:
+	for i in weapon_slots.size():
+		if weapon_slots[i] != null and weapon_slots[i].can_reflect:
+			return i
+	return -1
+
+## The slot to draw once the holster now playing ends, or -1.
+var _pending_slot: int = -1
+
+## Which slot the current item is, or -1.
+func current_slot() -> int:
+	if item_holder == null or item_holder.held_item == null:
+		return -1
+	return weapon_slots.find(item_holder.held_item)
+
+## Whether a swap is under way: the old item going, the new one queued.
+func is_swapping() -> bool:
+	return _pending_slot >= 0
+
+## A number-row press. Returns whether anything started.
+func press_weapon(slot: int) -> bool:
+	if slot < 0 or slot >= weapon_slots.size() or weapon_slots[slot] == null or item_holder == null:
+		return false
+	if equip_anim != null and equip_anim.is_playing():
+		return false
+	if current_slot() == slot:
+		return press_equip()
+	if not _anim_can_play():
+		# No animation arm: snap straight to the new item, drawn.
+		_snap_to_slot(slot)
+		return true
+	if equip_anim.blocked_by_state():
+		return false
+	if is_item_drawn():
+		if not equip_anim.toggle():
+			return false
+		_pending_slot = slot
+		return true
+	set_item(weapon_slots[slot])
+	return equip_anim.toggle()
+
+## Puts weapon `slot` in his hand drawn, swapping out whatever is there. `snap` does it this frame;
+## otherwise it plays (a swap, if another is out). The tredge's staff torch uses this.
+func draw_slot(slot: int, snap: bool = false) -> void:
+	if slot < 0 or slot >= weapon_slots.size() or item_holder == null:
+		return
+	if snap or not _anim_can_play():
+		_snap_to_slot(slot)
+		return
+	if equip_anim.is_playing():
+		# Whatever is mid-air lands first. A swap's holster chains straight into its draw, so
+		# land that too.
+		equip_anim.finish_now()
+		equip_anim.finish_now()
+	if current_slot() == slot and is_item_drawn():
+		return
+	press_weapon(slot)
+
+func _snap_to_slot(slot: int) -> void:
+	if current_slot() != slot:
+		set_item(weapon_slots[slot])
+	_pending_slot = -1
+	if not is_item_drawn():
+		toggle_drawn()
+
+func _anim_can_play() -> bool:
+	return equip_anim != null and equip_anim.ready_to_play()
+
+## The holster half of a swap is done: form the new one.
+func _on_equip_finished(drawn: bool) -> void:
+	var slot := _pending_slot
+	_pending_slot = -1
+	if drawn or slot < 0 or slot >= weapon_slots.size():
+		return
+	item_holder.set_item(weapon_slots[slot])
+	_apply_rim_light()
+	# Refused in a mantle, vault or wall-run: the new one waits holstered for R.
+	equip_anim.toggle()
+
 ## -- the cowboy hat ------------------------------------------------------------------
 ##
-## On and off with H, no animation. Everything lives in scripts/items/hat_holder.gd. See
+## Worn through the inventory's HEAD slot. Everything lives in scripts/items/hat_holder.gd. See
 ## docs/specs/pilot9-cowboy-hat.md.
 
 const _HatHolder := preload("res://scripts/items/hat_holder.gd")
@@ -6571,13 +6876,116 @@ func _setup_hat() -> void:
 	hat_holder.setup(get_node_or_null("character/Armature/GeneralSkeleton") as Skeleton3D,
 		hat_offset, hat_tilt, hat_scale)
 
-## The H key. Off at boot, never saved.
+## Straight on / off, no animation. The inventory's HEAD slot drives it (_apply_equipment).
 func toggle_hat() -> void:
 	if hat_holder != null:
 		hat_holder.toggle()
 
 func is_hat_on() -> bool:
 	return hat_holder != null and hat_holder.is_on
+
+## -- the trench coat -----------------------------------------------------------------
+##
+## Worn through the inventory's BODY slot. Everything lives in scripts/items/trench_coat.gd
+## (its tunables are exports on that node). See docs/specs/pilot9-trench-coat.md.
+
+const _TrenchCoat := preload("res://scripts/items/trench_coat.gd")
+
+## Built in _ready(). Null only before then.
+var coat: Node = null
+
+func _setup_coat() -> void:
+	coat = _TrenchCoat.new()
+	coat.name = &"TrenchCoat"
+	add_child(coat)
+	coat.setup(self, get_node_or_null("character/Armature/GeneralSkeleton") as Skeleton3D)
+
+## Straight on / off, no animation. The inventory's BODY slot drives it (_apply_equipment).
+func toggle_coat() -> void:
+	if coat != null:
+		coat.toggle()
+
+func is_coat_on() -> bool:
+	return coat != null and coat.is_on
+
+## -- the backpack -------------------------------------------------------------------
+##
+## Worn through the inventory's BACK slot. Everything lives in scripts/items/backpack_holder.gd
+## (its fit and colours are exports on that node). See docs/specs/pilot9-backpack.md.
+
+const _BackpackHolder := preload("res://scripts/items/backpack_holder.gd")
+
+## Built in _ready(). Null only before then.
+var backpack: Node = null
+
+func _setup_backpack() -> void:
+	backpack = _BackpackHolder.new()
+	backpack.name = &"BackpackHolder"
+	add_child(backpack)
+	backpack.setup(get_node_or_null("character/Armature/GeneralSkeleton") as Skeleton3D)
+
+func is_backpack_on() -> bool:
+	return backpack != null and backpack.is_on
+
+## -- holstered weapons on his body -----------------------------------------------------
+##
+## The rifle on the backpack's left side, the revolver outside his right thigh. See
+## scripts/items/weapon_mounts.gd and docs/specs/pilot9-weapon-mounts.md.
+
+const _WeaponMounts := preload("res://scripts/items/weapon_mounts.gd")
+
+## Built in _ready(), after the backpack and the equip animation. Null only before then.
+var weapon_mounts: Node = null
+
+func _setup_weapon_mounts() -> void:
+	weapon_mounts = _WeaponMounts.new()
+	weapon_mounts.name = &"WeaponMounts"
+	add_child(weapon_mounts)
+	weapon_mounts.setup(get_node_or_null("character/Armature/GeneralSkeleton") as Skeleton3D,
+		item_holder, equip_anim, backpack)
+
+## -- equipment slots -----------------------------------------------------------------
+##
+## The inventory's HEAD / BODY / weapon slots (autoload Inventory, docs/specs/equipment-slots.md)
+## drive the hat, the coat and weapon_slots. Both pilots listen, so the loadout is shared.
+
+func _setup_equipment() -> void:
+	if not Inventory.equipment_changed.is_connected(_apply_equipment):
+		Inventory.equipment_changed.connect(_apply_equipment)
+	_apply_equipment()
+
+func _exit_tree() -> void:
+	if Inventory != null and Inventory.equipment_changed.is_connected(_apply_equipment):
+		Inventory.equipment_changed.disconnect(_apply_equipment)
+
+## Reads the slots and puts the pilot in line with them. A weapon that leaves its slot while it is
+## the one in his hand is holstered at once (no animation), and a weapon swapped in is never drawn
+## for him: the key does that.
+func _apply_equipment() -> void:
+	if hat_holder != null:
+		hat_holder.set_on(Inventory.item_in(Inventory.SLOT_HEAD) != null)
+	if coat != null:
+		coat.set_on(Inventory.item_in(Inventory.SLOT_BODY) != null)
+	if backpack != null:
+		backpack.set_on(Inventory.item_in(Inventory.SLOT_BACK) != null)
+	var slotted: Array[HeldItem] = []
+	for slot in Inventory.WEAPON_SLOTS:
+		var worn := Inventory.item_in(slot)
+		slotted.append(worn.def.held_item if worn != null else null)
+	var changed_hands := false
+	if item_holder != null and item_holder.held_item != null:
+		var at := weapon_slots.find(item_holder.held_item)
+		changed_hands = at < 0 or at >= slotted.size() or slotted[at] != item_holder.held_item
+	weapon_slots = slotted
+	if weapon_mounts != null:
+		weapon_mounts.set_items(slotted)
+	if changed_hands:
+		_pending_slot = -1
+		if equip_anim != null:
+			equip_anim.finish_now()
+			equip_anim.finish_now()
+		item_holder.set_item(null)
+		_apply_rim_light()
 
 ## -- reflect ---------------------------------------------------------------------
 ##
@@ -6615,6 +7023,9 @@ func _setup_reflect() -> void:
 func take_hit(amount: float, kind: StringName, point: Vector3) -> void:
 	if hit_feedback != null:
 		hit_feedback.hit(point)
+	# A hit knocks a crate out of his hands (docs/specs/pilot9-crate-carry.md).
+	if is_carrying and carry != null:
+		carry.drop_now()
 	hit_taken.emit(amount, kind, point)
 
 ## A tinted spark burst for hit effects. MOVEMENT EFFECTS gates it.
@@ -6688,6 +7099,41 @@ func _setup_slide_hand() -> void:
 	slide_hand.name = &"SlideHand"
 	slide_hand.body = self
 	skel.add_child(slide_hand)
+
+## -- the crate carry ---------------------------------------------------------------
+##
+## A crate in both hands: the walk and nothing faster, and every parkour move and the staff /
+## revolver refused. scripts/pilot9_carry.gd owns the crate and the pose; this side is the flag
+## the lockouts read. See docs/specs/pilot9-crate-carry.md.
+
+const _Carry := preload("res://scripts/pilot9_carry.gd")
+
+## True while a crate is in his hands.
+var is_carrying: bool = false
+## Built in _ready(). Null only before then.
+var carry: Node = null
+
+func _setup_carry() -> void:
+	carry = _Carry.new()
+	carry.name = &"Carry"
+	add_child(carry)
+	carry.setup(self, get_node_or_null("character/Armature/GeneralSkeleton") as Skeleton3D)
+
+## Whether a crate may go into his hands now: plain standing / walking ground locomotion.
+func can_begin_carry() -> bool:
+	return controlled and not frozen and visible and is_on_floor() and not is_carrying \
+			and not (is_sliding or is_dashing or is_climbing or is_vaulting or is_wall_running
+			or is_wall_climbing or is_rail_grinding or is_rail_switching or is_tredging
+			or is_crouching)
+
+func begin_carry() -> void:
+	is_carrying = true
+	is_crouching = false
+	sprint_toggled = false
+	_jump_buffered = 0.0
+
+func end_carry() -> void:
+	is_carrying = false
 
 ## -- the tredge ------------------------------------------------------------------
 ##
@@ -6851,6 +7297,65 @@ func exit_vehicle(exit_position: Vector3, facing_yaw: float) -> void:
 	var playback: AnimationNodeStateMachinePlayback = anim_tree["parameters/playback"]
 	if playback != null:
 		playback.start(&"Locomotion")
+
+## -- riding a speeder (docs/specs/speeder1.md) ------------------------------------
+##
+## Unlike EXIA he stays on screen: enter_vehicle() switches him off (verbs ended, shape off,
+## physics off, tree off), then he is shown again, held `frozen`, the staff put away, and the ride
+## pose layer takes his skeleton. The speeder places his body on its seat every drawn frame and
+## feeds the layer its grips, pegs and leans. end_ride() is exit_vehicle() with all of that undone.
+
+const _RidePose := preload("res://scripts/speeder_ride_pose.gd")
+
+## The speeder he is on, or null.
+var riding: Node3D = null
+## The sport-tuck layer; built on the first ride, last modifier on his skeleton.
+var ride_pose: SkeletonModifier3D = null
+var _ride_hold := false
+
+func begin_ride(vehicle: Node3D) -> void:
+	enter_vehicle(vehicle)
+	riding = vehicle
+	visible = true
+	_ride_hold = true
+	frozen = true
+	# The staff goes away for the ride, mid-draw or mid-spin included.
+	_pending_slot = -1
+	if reflect_spin != null:
+		reflect_spin.cancel()
+	if equip_anim != null:
+		equip_anim.finish_now()
+	if item_holder != null:
+		item_holder.set_drawn(false)
+	# The speeder writes his transform in _process off its own interpolated one.
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	var skel := get_node_or_null("character/Armature/GeneralSkeleton") as Skeleton3D
+	if skel != null:
+		if ride_pose == null:
+			ride_pose = _RidePose.new()
+			ride_pose.name = &"RidePose"
+			skel.add_child(ride_pose)
+		# Last, every ride: modifiers run in child order, and this one has the final word.
+		skel.move_child(ride_pose, -1)
+		ride_pose.active = true
+		ride_pose.influence = 0.0
+		ride_pose.has_targets = false
+	if coat != null and "velocity_override" in coat:
+		coat.velocity_override = Vector3.ZERO
+
+## Off the speeder at `exit_position`, facing `facing_yaw`.
+func end_ride(exit_position: Vector3, facing_yaw: float) -> void:
+	riding = null
+	_ride_hold = false
+	frozen = _inventory_hold or not controlled
+	if ride_pose != null:
+		ride_pose.active = false
+		ride_pose.influence = 0.0
+	if coat != null and "velocity_override" in coat:
+		coat.velocity_override = null
+		coat.extra_planes = []
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_INHERIT
+	exit_vehicle(exit_position, facing_yaw)
 
 ## -- anime animation ------------------------------------------------------------
 ##

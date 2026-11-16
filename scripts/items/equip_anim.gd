@@ -12,6 +12,9 @@ extends Node
 const _ArmPoseModifier := preload("res://scripts/items/arm_pose_modifier.gd")
 const _ItemHolder := preload("res://scripts/items/item_holder.gd")
 const _EDGE_SHADER := preload("res://shaders/cel/vfx/materialize_edge.gdshader")
+const _SHELL_SHADER := preload("res://shaders/cel/vfx/materialize_shell.gdshader")
+## Marks the glow copies, so a re-measure does not copy a copy.
+const SHELL_META := &"materialize_shell"
 
 signal finished(drawn: bool)
 
@@ -68,6 +71,10 @@ var _half_length := 0.8
 var _radius := 0.025
 var _edges: Array[MeshInstance3D] = []
 var _edge_mat: ShaderMaterial = null
+## The uniform grow's glow: a copy of each of the item's meshes (children of them, so they grow
+## with it). Built on demand per item instance.
+var _shells: Array[MeshInstance3D] = []
+var _shell_mat: ShaderMaterial = null
 
 
 # --- pure helpers, static so tests can check them without a rig ---------------------------
@@ -152,7 +159,7 @@ func setup(pilot: Node, holder: Node, skeleton: Skeleton3D, reflect: Node) -> vo
 ## Works out the arm-out pose from the rig's rest: each bone keeps its rest twist and is turned,
 ## by the shortest arc, to point where the angles say. Bones point down their local +Y.
 func _build_out_pose() -> bool:
-	var names := _ItemHolder.ARM_BONES
+	var names := _ItemHolder.ARM_BONES.slice(0, 4)
 	var idx: Array[int] = []
 	for n in names:
 		var i := _skeleton.find_bone(n)
@@ -212,7 +219,7 @@ func ready_to_play() -> bool:
 	return arm_modifier != null
 
 
-func _blocked_by_state() -> bool:
+func blocked_by_state() -> bool:
 	return _pilot.is_climbing or _pilot.is_vaulting or _pilot.is_wall_running \
 		or _pilot.is_wall_climbing
 
@@ -222,7 +229,7 @@ func _blocked_by_state() -> bool:
 func toggle() -> bool:
 	if not ready_to_play() or _holder == null:
 		return false
-	if not can_start(direction == 0, _holder.item_instance != null, _blocked_by_state()):
+	if not can_start(direction == 0, _holder.item_instance != null, blocked_by_state()):
 		return false
 	_measure_item()
 	if _holder.is_drawn:
@@ -287,7 +294,7 @@ func _process(delta: float) -> void:
 		arm_modifier.influence = 0.0
 		_show_edges(false)
 		return
-	if _blocked_by_state():
+	if blocked_by_state():
 		finish_now()
 		return
 	t += delta * direction
@@ -305,7 +312,7 @@ func _apply() -> void:
 	var settled := _settled_weight()
 	var s := back_fraction(t, out_time, sweep_time, back_time)
 	var f := shape_fraction(s, settled)
-	var hold: Dictionary = _ItemHolder.pose_from_rotations(_holder.held_item.hold_rotations, _skeleton)
+	var hold: Dictionary = _holder.current_pose()
 	var flick := flick_amount(t, out_time, flick_time)
 	var pose := {}
 	for bone in _out_pose:
@@ -319,11 +326,15 @@ func _apply() -> void:
 	_grow_staff(sweep_fraction(t, out_time, sweep_time))
 
 
-## The staff at `amount` of its length, centred on the grip, with an edge band on each end.
+## The staff at `amount` of its length, centred on the grip, with an edge band on each end - or,
+## for a UNIFORM item, the whole item at `amount` of its size, glowing.
 func _grow_staff(amount: float) -> void:
 	var item: Node3D = _holder.item_instance
 	var offset: Transform3D = _holder.held_item.hand_offset
 	item.visible = amount > 0.0
+	if is_uniform():
+		_grow_uniform(item, offset, amount)
+		return
 	item.transform = offset * Transform3D(Basis.from_scale(Vector3(1.0, maxf(amount, 0.001), 1.0)))
 	var fade := clampf((1.0 - amount) / maxf(edge_fade, 0.0001), 0.0, 1.0)
 	_show_edges(amount > 0.0 and fade > 0.0)
@@ -333,6 +344,25 @@ func _grow_staff(amount: float) -> void:
 	_edges[0].transform = offset * Transform3D(Basis.IDENTITY, Vector3(0.0, reach, 0.0))
 	_edges[1].transform = offset * Transform3D(Basis.IDENTITY, Vector3(0.0, -reach, 0.0))
 	_edge_mat.set_shader_parameter(&"fade", fade)
+
+
+## Whether the held item forms by growing as a whole (HeldItem.Grow.UNIFORM).
+func is_uniform() -> bool:
+	return _holder != null and _holder.held_item != null \
+		and _holder.held_item.grow == HeldItem.Grow.UNIFORM
+
+
+## How bright the glow is at `amount` formed: full until the last `edge_fade` of the sweep.
+static func glow_fade(amount: float, fade_part: float) -> float:
+	return clampf((1.0 - amount) / maxf(fade_part, 0.0001), 0.0, 1.0)
+
+
+func _grow_uniform(item: Node3D, offset: Transform3D, amount: float) -> void:
+	item.transform = offset * Transform3D(Basis.from_scale(Vector3.ONE * maxf(amount, 0.001)))
+	var fade := glow_fade(amount, edge_fade)
+	_show_edges(false)
+	_show_shells(amount > 0.0 and fade > 0.0)
+	_shell_mat.set_shader_parameter(&"fade", fade)
 
 
 # --- the edges ---------------------------------------------------------------------------------
@@ -358,6 +388,43 @@ func _build_edges() -> void:
 func _show_edges(on: bool) -> void:
 	for e in _edges:
 		e.visible = on
+	if not on:
+		_show_shells(false)
+
+
+func _show_shells(on: bool) -> void:
+	for sh in _shells:
+		if is_instance_valid(sh):
+			sh.visible = on
+
+
+## A glow copy under each of the item's meshes, once per instance.
+func _build_shells(item: Node3D) -> void:
+	# Untyped lambda arg: a freed shell can't convert to MeshInstance3D. filter()
+	# returns a plain Array, so assign() into the typed one.
+	_shells.assign(_shells.filter(func(sh) -> bool:
+		return is_instance_valid(sh) and item.is_ancestor_of(sh)))
+	if not _shells.is_empty():
+		return
+	if _shell_mat == null:
+		_shell_mat = ShaderMaterial.new()
+		_shell_mat.shader = _SHELL_SHADER
+	for node in item.find_children("*", "MeshInstance3D", true, false):
+		var mi := node as MeshInstance3D
+		if mi.mesh == null or mi.has_meta(SHELL_META):
+			continue
+		var sh := MeshInstance3D.new()
+		sh.name = &"MaterializeShell"
+		sh.set_meta(SHELL_META, true)
+		# The AIRFRAME look leaves unshaded additive materials alone; say so anyway.
+		sh.set_meta(&"airframe_skip", true)
+		sh.mesh = mi.mesh
+		sh.material_override = _shell_mat
+		sh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		sh.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+		sh.visible = false
+		mi.add_child(sh)
+		_shells.append(sh)
 
 
 ## Reads the staff's length and girth from its meshes (in its own frame), and sizes the bands.
@@ -378,6 +445,11 @@ func _measure_item() -> void:
 		_radius = maxf(box.size.x, box.size.z) * 0.5
 	_edge_mat.set_shader_parameter(&"edge_color", Vector3(edge_color.r, edge_color.g, edge_color.b))
 	_edge_mat.set_shader_parameter(&"energy", edge_energy)
+	if is_uniform():
+		_build_shells(item)
+		_shell_mat.set_shader_parameter(&"edge_color", Vector3(edge_color.r, edge_color.g, edge_color.b))
+		_shell_mat.set_shader_parameter(&"energy", edge_energy)
+		return
 	for e in _edges:
 		var c := e.mesh as CylinderMesh
 		c.top_radius = _radius * edge_radius_scale

@@ -1,0 +1,27 @@
+[gd_resource type="Environment" format=3 uid="uid://bcfw8mjiybaa"]
+
+[ext_resource type="Shader" uid="uid://ms1g3x1kkve6" path="res://shaders/hub2_sky.gdshader" id="1_sky"]
+
+[sub_resource type="ShaderMaterial" id="SkyMat"]
+shader = ExtResource("1_sky")
+shader_parameter/horizon_color = Color(0.95, 0.5, 0.2, 1)
+shader_parameter/mid_color = Color(0.1, 0.34, 0.42, 1)
+shader_parameter/zenith_color = Color(0.03, 0.07, 0.17, 1)
+shader_parameter/bands = 8.0
+shader_parameter/star_density = 0.0016
+
+[sub_resource type="Sky" id="Sky"]
+sky_material = SubResource("SkyMat")
+
+[resource]
+background_mode = 2
+sky = SubResource("Sky")
+ambient_light_source = 2
+ambient_light_color = Color(0.5, 0.58, 0.8, 1)
+fog_enabled = true
+fog_mode = 1
+fog_light_color = Color(0.075, 0.14, 0.19, 1)
+fog_density = 0.85
+fog_sky_affect = 0.0
+fog_depth_begin = 60.0
+fog_depth_end = 320.0

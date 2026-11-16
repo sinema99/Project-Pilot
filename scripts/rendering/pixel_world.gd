@@ -25,7 +25,19 @@ const COLOUR_SHADER := preload("res://shaders/colour_depth.gdshader")
 const SHARP_LAYER := 20
 const SHARP_MASK := 1 << (SHARP_LAYER - 1)
 
+## Render layer (1-based) every character mesh also sits on while AIRFRAME is on (AirframeLook puts
+## it there), so CharView can draw the characters alone in their own coarser block grid. They stay
+## on layer 1 too: the world pass still draws them (as a marker), lights and shadows still see them.
+## See docs/specs/airframe-character-pixels.md.
+const CHAR_LAYER := 18
+const CHAR_MASK := 1 << (CHAR_LAYER - 1)
+
 var _world_view: SubViewport
+var _char_view: SubViewport
+var _char_cam: Camera3D
+## The camera's environment with a transparent background, rebuilt when the source changes.
+var _char_env: Environment
+var _char_env_source: Environment
 var _world_cam: Camera3D
 var _sharp_view: SubViewport
 var _sharp_cam: Camera3D
@@ -41,6 +53,8 @@ var block := 0
 var colour_steps := 0
 ## Rendered texels per block side; each block is their average. 1 is a plain low-res render.
 var supersample := 1
+## Window pixels per block of the characters' own grid; 0 draws them in the world's (no CharView).
+var char_block := 0
 ## The block size `O` turns back on to.
 var _last_block := 3
 ## Whoever has asked for the sharp layer to render (the hologram, while it is open).
@@ -63,9 +77,13 @@ func _ready() -> void:
 	_sharp_view = _make_view(&"SharpView", root)
 	_sharp_view.transparent_bg = true
 	_sharp_cam = _make_camera(_sharp_view)
+	_char_view = _make_view(&"CharView", root)
+	_char_view.transparent_bg = true
+	_char_cam = _make_camera(_char_view)
 
 	_world_mat = _make_material(WORLD_SHADER)
 	_world_mat.set_shader_parameter(&"view_tex", _world_view.get_texture())
+	_world_mat.set_shader_parameter(&"char_tex", _char_view.get_texture())
 	_world_rect = _make_rect(&"World", _world_mat)
 	_sharp_mat = _make_material(WORLD_SHADER)
 	_sharp_mat.set_shader_parameter(&"view_tex", _sharp_view.get_texture())
@@ -79,9 +97,14 @@ func _ready() -> void:
 	var settings := get_node_or_null(^"/root/Settings")
 	if settings:
 		apply_settings(
-			settings.effective_pixel_size(settings.pixel_size, settings.pixel_look_size, settings.look),
+			settings.effective_pixel_size(settings.pixel_size, settings.pixel_look_size, settings.look,
+				settings.pixel_airframe_size,
+				get_tree().get_first_node_in_group(&"airframe_look") != null),
 			settings.colour_levels(settings.look, settings.colour_depth),
-			settings.pixel_supersample(settings.look))
+			settings.pixel_supersample(settings.look),
+			settings.effective_char_size(settings.look,
+				get_tree().get_first_node_in_group(&"airframe_look") != null,
+				settings.pixel_airframe_size, settings.pixel_char_size))
 	else:
 		apply_settings(0, 0)
 
@@ -92,16 +115,23 @@ func _exit_tree() -> void:
 	if root:
 		root.disable_3d = false
 	RenderingServer.global_shader_parameter_set(&"pixel_block", 1.0)
+	RenderingServer.global_shader_parameter_set(&"pixel_char_view_w", 0.0)
 
 
-## Called by Settings through the pixel_world group, and on _ready().
-func apply_settings(new_block: int, new_colour_steps: int, new_supersample := 1) -> void:
+## Called by Settings through the pixel_world group, and on _ready(). `new_char_block` is the
+## characters' own block size (0 = they share the world's); it only counts while the world is on.
+func apply_settings(new_block: int, new_colour_steps: int, new_supersample := 1, new_char_block := 0) -> void:
 	block = maxi(new_block, 0)
 	if block > 0:
 		_last_block = block
 	colour_steps = maxi(new_colour_steps, 0)
 	supersample = maxi(new_supersample, 1)
+	char_block = maxi(new_char_block, 0) if block > 0 else 0
 	_apply()
+
+
+func is_char_view_on() -> bool:
+	return block > 0 and char_block > 0
 
 
 ## The hologram asks for its panel to be drawn sharp while it is open.
@@ -145,6 +175,9 @@ func _apply() -> void:
 
 	_world_view.render_target_update_mode = SubViewport.UPDATE_ALWAYS if on else SubViewport.UPDATE_DISABLED
 	_sharp_view.render_target_update_mode = SubViewport.UPDATE_ALWAYS if sharp else SubViewport.UPDATE_DISABLED
+	_char_view.render_target_update_mode = SubViewport.UPDATE_ALWAYS if is_char_view_on() \
+		else SubViewport.UPDATE_DISABLED
+	_world_mat.set_shader_parameter(&"char_block", char_block if on else 0)
 	_world_rect.visible = on
 	_sharp_rect.visible = sharp
 	_colour_rect.visible = not on and colour_steps > 1
@@ -162,6 +195,11 @@ func _resize() -> void:
 	if block > 0:
 		_world_view.size = view_size(render_size, block) * supersample
 	_sharp_view.size = render_size
+	var char_size := view_size(render_size, char_block) if is_char_view_on() else Vector2i(2, 2)
+	_char_view.size = char_size
+	# ps1_surface tells the 2X world pass from this one by the viewport's width.
+	RenderingServer.global_shader_parameter_set(&"pixel_char_view_w",
+		float(char_size.x) if is_char_view_on() else 0.0)
 
 
 ## The root's render target in window pixels: the letterboxed content area, not the canvas's
@@ -187,6 +225,28 @@ func _sync_cameras() -> void:
 	if _sharp_view.render_target_update_mode != SubViewport.UPDATE_DISABLED:
 		_copy_camera(source, _sharp_cam)
 		_sharp_cam.cull_mask = source.cull_mask & SHARP_MASK
+	if is_char_view_on():
+		_copy_camera(source, _char_cam)
+		_char_cam.cull_mask = source.cull_mask & CHAR_MASK
+		_char_cam.compositor = null
+		_char_cam.environment = _char_environment(source)
+
+
+## The scene's environment with the background cleared to transparent, so CharView holds only the
+## characters. Ambient stays (AIRFRAME's is a colour); glow is off so it cannot bleed past a edge.
+func _char_environment(source: Camera3D) -> Environment:
+	var env := source.environment
+	if env == null:
+		var world := source.get_world_3d()
+		env = world.environment if world != null else null
+	if env == null:
+		return null
+	if env != _char_env_source or _char_env == null:
+		_char_env_source = env
+		_char_env = env.duplicate() as Environment
+		_char_env.background_mode = Environment.BG_CLEAR_COLOR
+		_char_env.glow_enabled = false
+	return _char_env
 
 
 static func _copy_camera(from: Camera3D, to: Camera3D) -> void:

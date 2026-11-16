@@ -18,7 +18,7 @@ extends RefCounted
 # Distances are metres in WORLD scale (the scene scales the Map by WORLD_SCALE); decals come out in
 # the Map's own space. Run tools/bake_hub2_wear.gd after a hub2.glb re-export.
 
-const WORLD_SCALE := 0.75
+const WORLD_SCALE := 0.6
 const SMOOTH_DEG := 25.0
 const MAX_EDGE := 12.0
 const SEAM_EDGE := 3.0
@@ -429,32 +429,45 @@ func _pick_lines(_ti: int, mv: Array, near: Array) -> Array:
 
 
 # -- decals -----------------------------------------------------------------------------------
+# Placed by rule, not by area (docs/specs/hub2-industrial.md, pass 2): vents in one even row, plates
+# and section codes at eye height on the same grid, hazard stripes only along drop edges, pipes only
+# along wall / ceiling joints, floor chevrons and labels on the walkable blocks, and a short list of
+# hand-placed key spots. Nothing goes where he can't get near.
 
-## Drops decals on the flat faces. Returns { mesh: ArrayMesh, count: int }; the mesh is in Map space.
-func scatter(atlas: Dictionary, density_wall: float, density_floor: float, density_ceil: float, cap: int) -> Dictionary:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 7771113
-	var faces := PackedVector3Array()
-	for t in _tris:
-		for p: Vector3 in t["mv"]:
-			faces.append(p)
-	var tmesh := TriangleMesh.new()
-	tmesh.create_from_faces(faces)
-	var sprites: Array = atlas["sprites"]
-	var placed: Array = []   # [centre Vector3 (metres), radius, normal]
-	var verts := PackedVector3Array()
-	var norms := PackedVector3Array()
-	var uvs := PackedVector2Array()
-	var cols := PackedColorArray()
-	var by_kind := {}
-	# Scale the densities down if they would overshoot the cap, so the cap never cuts the map off
-	# part-way through (the tris are walked in mesh order).
-	# Faces near somewhere he can stand get the full density; the rest of the kilometre fades down.
+const REF_SCALE := 0.75       # the scale the hand-tuned numbers below were measured at
+const K := WORLD_SCALE / REF_SCALE   # ... and what they are multiplied by now
+const ROW_PERIOD := 36.0        # wall rows repeat every 36 m of height
+const ROW_PLATE_Y := 38.5       # eye height on the spawn platform (floor 36.3)
+const ROW_VENT_Y := 47.0
+const GRID_U := 30.0            # spacing along a wall
+const REACH_FULL := 15.0        # a wall within this of somewhere he can stand gets decals
+const REACH_NONE := 45.0
+const SPAWN := Vector3(0.02, 36.3, 102.5)
+const SECTION_LABELS: Array[String] = ["text_0", "text_1", "text_2", "text_3", "text_16"]
+const MAX_EDGE_STRIPES := 100
+const MAX_PIPES := 0   # 3D pipe runs replaced the flat pipe decals (docs/specs/hub2-storage.md)
+const MAX_FLOOR_LABELS := 24
+const MAX_SCUFFS := 120
+
+## Hand-placed: a ray from `from` along `dir` hits a wall or floor; the decal goes where it lands.
+## { from, dir, sprite, scale }
+const KEY_SPOTS: Array[Dictionary] = [
+	# Spawn platform, flanking the drop edge (z ~ 12): left GATE 5 + amber lamps, right DANGER + red
+	# lamps, and a warning triangle a little back from the ledge.
+	{"from": Vector3(0, 40.4, 15), "dir": Vector3(-1, 0, 0), "sprite": "text_7", "scale": 2.0},
+	{"from": Vector3(0, 48.0, 15), "dir": Vector3(-1, 0, 0), "sprite": "lamps_amber", "scale": 1.5},
+	{"from": Vector3(0, 40.4, 15), "dir": Vector3(1, 0, 0), "sprite": "text_9", "scale": 2.0},
+	{"from": Vector3(0, 38.0, 23), "dir": Vector3(1, 0, 0), "sprite": "warn_tri", "scale": 2.0},
+	{"from": Vector3(0, 48.0, 15), "dir": Vector3(1, 0, 0), "sprite": "lamps_red", "scale": 1.5},
+]
+
+
+func _reach_weights() -> PackedFloat32Array:
 	var floor_cells := {}
 	for t in _tris:
 		if (t["nm"] as Vector3).y > 0.6:
-			var mvf: Array = t["mv"]
-			var fc: Vector3 = ((mvf[0] as Vector3) + (mvf[1] as Vector3) + (mvf[2] as Vector3)) / 3.0
+			var mv: Array = t["mv"]
+			var fc: Vector3 = ((mv[0] as Vector3) + (mv[1] as Vector3) + (mv[2] as Vector3)) / 3.0
 			var fk := Vector3i((fc / 40.0).floor())
 			if not floor_cells.has(fk):
 				floor_cells[fk] = []
@@ -475,84 +488,282 @@ func scatter(atlas: Dictionary, density_wall: float, density_floor: float, densi
 				for dz in range(-2, 3):
 					for fc2: Vector3 in floor_cells.get(base + Vector3i(dx, dy, dz), []):
 						best = minf(best, wc.distance_to(fc2))
-		weights[ti] = clampf(1.0 - (best - 40.0) / 80.0, 0.12, 1.0)
-	var expected := 0.0
-	var areas := {KIND_WALL: 0.0, KIND_FLOOR: 0.0, KIND_CEIL: 0.0}
+		weights[ti] = clampf(1.0 - (best - REACH_FULL) / (REACH_NONE - REACH_FULL), 0.0, 1.0)
+	return weights
+
+
+## Drops the decals. Returns { mesh: ArrayMesh, count: int }; the mesh is in Map space.
+func scatter(atlas: Dictionary) -> Dictionary:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7771113
+	var faces := PackedVector3Array()
+	for t in _tris:
+		for p: Vector3 in t["mv"]:
+			faces.append(p)
+	var tmesh := TriangleMesh.new()
+	tmesh.create_from_faces(faces)
+	var sprites: Array = atlas["sprites"]
+	var out := {"placed": [], "verts": PackedVector3Array(), "norms": PackedVector3Array(),
+		"uvs": PackedVector2Array(), "cols": PackedColorArray(), "by": {}}
+	var weights := _reach_weights()
+	var region_tri := {}   # region -> [its biggest triangle, area]
+	var region_area := {}
 	for ti in _tris.size():
-		var t: Dictionary = _tris[ti]
-		var tn: Vector3 = t["nm"]
-		var tk := KIND_WALL
-		if tn.y > 0.6:
-			tk = KIND_FLOOR
-		elif tn.y < -0.6:
-			tk = KIND_CEIL
-		elif absf(tn.y) > 0.3:
-			continue
-		var tmv: Array = t["mv"]
+		var tmv: Array = _tris[ti]["mv"]
 		var ar: float = 0.5 * ((tmv[1] as Vector3) - tmv[0]).cross((tmv[2] as Vector3) - tmv[0]).length()
-		areas[tk] += ar
-		expected += ar * weights[ti] * [density_wall, density_floor, density_ceil][tk] / 100.0
-	var fit := minf(1.0, cap * 0.85 / maxf(expected, 1.0))
-	print("decal area m2: wall %.0f floor %.0f ceil %.0f, expected %.0f, density scale %.2f" % [
-		areas[KIND_WALL], areas[KIND_FLOOR], areas[KIND_CEIL], expected, fit])
-	density_wall *= fit
-	density_floor *= fit
-	density_ceil *= fit
+		var rg: int = _tris[ti]["region"]
+		region_area[rg] = float(region_area.get(rg, 0.0)) + ar
+		if not region_tri.has(rg) or ar > float(region_tri[rg][1]):
+			region_tri[rg] = [ti, ar]
+	_scatter_keys(sprites, tmesh, rng, out)   # first, so the rules make room for them
+	_scatter_walls(sprites, weights, tmesh, rng, out)
+	_scatter_edges(sprites, region_tri, tmesh, rng, out)
+	_scatter_pipes(sprites, region_tri, weights, tmesh, rng, out)
+	_scatter_floors(sprites, region_tri, region_area, tmesh, rng, out)
+	var placed: Array = out["placed"]
+	print("decals: %d placed %s" % [placed.size(), out["by"]])
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = out["verts"]
+	arrays[Mesh.ARRAY_NORMAL] = out["norms"]
+	arrays[Mesh.ARRAY_TEX_UV] = out["uvs"]
+	arrays[Mesh.ARRAY_COLOR] = out["cols"]
+	var mesh := ArrayMesh.new()
+	if (out["verts"] as PackedVector3Array).size() > 0:
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return {"mesh": mesh, "count": placed.size()}
+
+
+## Puts `sp` down if it fits; returns whether it did.
+func _put_decal(sp: Dictionary, p: Vector3, n: Vector3, kind: int, ti: int, tmesh: TriangleMesh,
+		rng: RandomNumberGenerator, out: Dictionary, keep_up := false, up_in := Vector3.ZERO, scale := 1.0) -> bool:
+	if sp.is_empty():
+		return false
+	var placed: Array = out["placed"]
+	var q := _try_place(sp, p, n, kind, ti, tmesh, placed, rng, keep_up, up_in, scale)
+	if q.is_empty():
+		return false
+	placed.append([p, q["radius"], n])
+	_emit(q, out["verts"], out["norms"], out["uvs"], out["cols"], rng)
+	var by: Dictionary = out["by"]
+	by[sp["name"]] = int(by.get(sp["name"], 0)) + 1
+	return true
+
+
+## Vents and plates on one world grid, so a wall reads as a rhythm and a split quad never doubles up.
+func _scatter_walls(sprites: Array, weights: PackedFloat32Array, tmesh: TriangleMesh,
+		rng: RandomNumberGenerator, out: Dictionary) -> void:
 	for ti in _tris.size():
 		var t: Dictionary = _tris[ti]
 		var n: Vector3 = t["nm"]
-		var kind := KIND_WALL
-		var density := density_wall
-		if n.y > 0.6:
-			kind = KIND_FLOOR
-			density = density_floor
-		elif n.y < -0.6:
-			kind = KIND_CEIL
-			density = density_ceil
-		elif absf(n.y) > 0.3:
+		if absf(n.y) > 0.3 or weights[ti] < 0.5:
+			continue
+		var h := Vector3(n.x, 0.0, n.z)
+		if h.length() < 0.5:
+			continue
+		h = h.normalized()
+		var tang := Vector3.UP.cross(h).normalized()
+		var mv: Array = t["mv"]
+		var ua := INF
+		var ub := -INF
+		var ya := INF
+		var yb := -INF
+		for p: Vector3 in mv:
+			ua = minf(ua, p.dot(tang))
+			ub = maxf(ub, p.dot(tang))
+			ya = minf(ya, p.y)
+			yb = maxf(yb, p.y)
+		var nh := n.dot(h)
+		var a0: Vector3 = mv[0]
+		for row in 2:
+			var base_y := (ROW_PLATE_Y if row == 0 else ROW_VENT_Y) * K
+			var k := ceili((ya - base_y) / (ROW_PERIOD * K))
+			while base_y + k * ROW_PERIOD * K <= yb:
+				var y := base_y + k * ROW_PERIOD * K
+				k += 1
+				var c := ceili((ua - GRID_U * 0.5) / GRID_U)
+				while GRID_U * 0.5 + c * GRID_U <= ub:
+					var u := GRID_U * 0.5 + c * GRID_U
+					c += 1
+					var d := (n.dot(a0) - y * n.y) / nh
+					var pt := h * d + tang * u + Vector3.UP * y
+					if not _in_tri(pt, mv):
+						continue
+					var cell := int(floor(u / GRID_U)) + int(floor(y / (ROW_PERIOD * K))) * 3
+					var sprite_name := ""
+					if row == 1:
+						sprite_name = "vent_a" if posmod(cell, 2) == 0 else "vent_wide"
+					else:
+						match posmod(cell, 4):
+							0: sprite_name = "plate"
+							1: sprite_name = SECTION_LABELS[posmod(cell, SECTION_LABELS.size())]
+							_: continue
+					var sp := _find_sprite(sprites, sprite_name)
+					# A nudge along the wall if a seam is in the way.
+					for off: float in [0.0, 1.5, -1.5, 3.0, -3.0]:
+						var pp := pt + tang * off
+						if not _in_tri(pp, mv):
+							continue
+						if _put_decal(sp, pp, n, KIND_WALL, ti, tmesh, rng, out):
+							if row == 1:
+								var streak := _find_sprite(sprites, "streak_a" if posmod(cell, 3) != 0 else "streak_b")
+								var below := pp - Vector3.UP * (float(sp["h"]) / Hub2DecalAtlas.TEXELS_PER_METRE * 0.5 + float(streak["h"]) / 32.0)
+								_put_decal(streak, below, n, KIND_WALL, ti, tmesh, rng, out, true, Vector3.UP)
+							break
+
+
+## Hazard stripes along convex floor edges: the ledges you can drop from.
+func _scatter_edges(sprites: Array, region_tri: Dictionary, tmesh: TriangleMesh,
+		rng: RandomNumberGenerator, out: Dictionary) -> void:
+	var cands: Array = []
+	for li in _lines.size():
+		var L: Dictionary = _lines[li]
+		if L["cls"] != CLS_CONVEX or absf((L["dir"] as Vector3).y) > 0.05 or float(L["len"]) < 4.0:
+			continue
+		if not region_tri.has(L["region"]):
+			continue
+		var ti: int = region_tri[L["region"]][0]
+		if (_tris[ti]["nm"] as Vector3).y < 0.7:
+			continue
+		var mid: Vector3 = ((L["a"] as Vector3) + (L["b"] as Vector3)) * 0.5
+		cands.append([mid.distance_to(SPAWN * K), li, ti])
+	cands.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
+	var stripe := _find_sprite(sprites, "hazard_h")
+	var count := 0
+	for c in cands:
+		if count >= MAX_EDGE_STRIPES:
+			break
+		var L: Dictionary = _lines[c[1]]
+		var inward: Vector3 = L["n"]
+		var s := 2.0
+		var on_line := 0
+		while s < float(L["len"]) - 2.0 and on_line < 14 and count < MAX_EDGE_STRIPES:
+			var p: Vector3 = (L["a"] as Vector3) + (L["dir"] as Vector3) * s + inward * 0.5
+			if _put_decal(stripe, p, Vector3.UP, KIND_FLOOR, c[2], tmesh, rng, out, true, inward):
+				count += 1
+				on_line += 1
+			s += 4.0
+
+
+## One pipe run along each wall / ceiling joint.
+func _scatter_pipes(sprites: Array, region_tri: Dictionary, weights: PackedFloat32Array,
+		tmesh: TriangleMesh, rng: RandomNumberGenerator, out: Dictionary) -> void:
+	var cands: Array = []
+	for li in _lines.size():
+		var L: Dictionary = _lines[li]
+		if L["cls"] != CLS_CONCAVE or absf((L["dir"] as Vector3).y) > 0.05 or float(L["len"]) < 8.0:
+			continue
+		if (L["n"] as Vector3).y > -0.7 or not region_tri.has(L["region"]):
+			continue
+		var ti: int = region_tri[L["region"]][0]
+		var tn: Vector3 = _tris[ti]["nm"]
+		if absf(tn.y) > 0.3 or weights[ti] < 0.5:
+			continue
+		var mid: Vector3 = ((L["a"] as Vector3) + (L["b"] as Vector3)) * 0.5
+		cands.append([mid.distance_to(SPAWN * K), li, ti, tn])
+	cands.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
+	var pipe := _find_sprite(sprites, "pipe_b")
+	var count := 0
+	for c in cands:
+		if count >= MAX_PIPES:
+			break
+		var L: Dictionary = _lines[c[1]]
+		var s := 3.5
+		var on_line := 0
+		while s < float(L["len"]) - 3.5 and on_line < 12 and count < MAX_PIPES:
+			var p: Vector3 = (L["a"] as Vector3) + (L["dir"] as Vector3) * s + (L["n"] as Vector3) * 0.5
+			if _put_decal(pipe, p, c[3], KIND_WALL, c[2], tmesh, rng, out, true, Vector3.UP):
+				count += 1
+				on_line += 1
+			s += 6.0
+
+
+## Floor chevrons down the spawn platform, a big code on each walkable block, a few scuffs.
+func _scatter_floors(sprites: Array, region_tri: Dictionary, region_area: Dictionary,
+		tmesh: TriangleMesh, rng: RandomNumberGenerator, out: Dictionary) -> void:
+	var arrow := _find_sprite(sprites, "arrow")
+	# Chevrons point the way he travels: down the platform toward the drop.
+	var z := 96.0 * K
+	while z > 28.0 * K:
+		var r := tmesh.intersect_ray(Vector3(0.0, (SPAWN.y + 3.0) * K, z), Vector3.DOWN)
+		if not r.is_empty():
+			var ti: int = r["face_index"]
+			_put_decal(arrow, r["position"], Vector3.UP, KIND_FLOOR, ti, tmesh, rng, out, true, Vector3(0, 0, -1), 2.0)
+		z -= 10.0
+	# One code per block.
+	var blocks: Array = []
+	for rg: int in region_tri:
+		var ti: int = region_tri[rg][0]
+		if (_tris[ti]["nm"] as Vector3).y < 0.9 or float(region_area[rg]) < 150.0:
+			continue
+		var mv: Array = _tris[ti]["mv"]
+		var cen: Vector3 = ((mv[0] as Vector3) + (mv[1] as Vector3) + (mv[2] as Vector3)) / 3.0
+		blocks.append([cen.distance_to(SPAWN * K), ti, cen])
+	blocks.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
+	var codes := ["text_0", "text_1", "text_2", "text_3", "text_16", "text_13", "text_17", "text_19"]
+	var i := 0
+	for b in blocks:
+		if i >= MAX_FLOOR_LABELS:
+			break
+		var sp := _find_sprite(sprites, codes[i % codes.size()])
+		if _put_decal(sp, b[2], Vector3.UP, KIND_FLOOR, b[1], tmesh, rng, out, true, Vector3(0, 0, -1), 3.0):
+			i += 1
+	# A few scuffs, only on floors.
+	var scuffs := 0
+	for ti in _tris.size():
+		if scuffs >= MAX_SCUFFS:
+			break
+		var t: Dictionary = _tris[ti]
+		if (t["nm"] as Vector3).y < 0.9:
 			continue
 		var mv: Array = t["mv"]
 		var area: float = 0.5 * ((mv[1] as Vector3) - mv[0]).cross((mv[2] as Vector3) - mv[0]).length()
-		var want := area * density * weights[ti] / 100.0
+		var want := area * 0.12 / 100.0
 		var count := int(floor(want)) + (1 if rng.randf() < want - floor(want) else 0)
 		for _i in count:
-			if placed.size() >= cap:
-				break
-			var sp := _pick_sprite(sprites, kind, rng)
-			if sp.is_empty():
-				continue
 			var u := rng.randf()
 			var v := rng.randf()
 			if u + v > 1.0:
 				u = 1.0 - u
 				v = 1.0 - v
 			var p: Vector3 = (mv[0] as Vector3) + ((mv[1] as Vector3) - mv[0]) * u + ((mv[2] as Vector3) - mv[0]) * v
-			var q := _try_place(sp, p, n, kind, ti, tmesh, placed, rng)
-			if q.is_empty():
-				continue
-			placed.append([p, q["radius"], n])
-			_emit(q, verts, norms, uvs, cols, rng)
-			by_kind[sp["name"]] = int(by_kind.get(sp["name"], 0)) + 1
-			# Vents and plates drip.
-			if str(sp["name"]).begins_with("vent") and rng.randf() < 0.7:
-				var streak := _find_sprite(sprites, "streak_a" if rng.randf() < 0.6 else "streak_b")
-				var below: Vector3 = q["centre"] - (q["up"] as Vector3) * (q["half"].y + streak["h"] / 32.0)
-				var sq := _try_place(streak, below, n, kind, ti, tmesh, placed, rng, true, q["up"])
-				if not sq.is_empty():
-					placed.append([below, sq["radius"], n])
-					_emit(sq, verts, norms, uvs, cols, rng)
-					by_kind["streak"] = int(by_kind.get("streak", 0)) + 1
-	print("decals: %d placed %s" % [placed.size(), by_kind])
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = verts
-	arrays[Mesh.ARRAY_NORMAL] = norms
-	arrays[Mesh.ARRAY_TEX_UV] = uvs
-	arrays[Mesh.ARRAY_COLOR] = cols
-	var out := ArrayMesh.new()
-	if verts.size() > 0:
-		out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	return {"mesh": out, "count": placed.size()}
+			var sp := _find_sprite(sprites, "scuff_a" if rng.randf() < 0.6 else "scuff_b")
+			if _put_decal(sp, p, t["nm"], KIND_FLOOR, ti, tmesh, rng, out):
+				scuffs += 1
+
+
+func _scatter_keys(sprites: Array, tmesh: TriangleMesh, rng: RandomNumberGenerator, out: Dictionary) -> void:
+	for ks: Dictionary in KEY_SPOTS:
+		var dir: Vector3 = (ks["dir"] as Vector3).normalized()
+		var r := tmesh.intersect_ray((ks["from"] as Vector3) * K, dir)
+		if r.is_empty():
+			push_warning("hub2 key spot %s missed" % ks["sprite"])
+			continue
+		var n: Vector3 = r["normal"]
+		if n.dot(dir) > 0.0:
+			n = -n
+		var kind := KIND_WALL if absf(n.y) < 0.5 else KIND_FLOOR
+		if not _put_decal(_find_sprite(sprites, ks["sprite"]), r["position"], n, kind, r["face_index"], tmesh,
+				rng, out, false, Vector3.ZERO, float(ks.get("scale", 1.0))):
+			push_warning("hub2 key spot %s did not fit" % ks["sprite"])
+
+
+static func _in_tri(p: Vector3, mv: Array) -> bool:
+	var a: Vector3 = mv[0]
+	var v0: Vector3 = (mv[1] as Vector3) - a
+	var v1: Vector3 = (mv[2] as Vector3) - a
+	var v2 := p - a
+	var d00 := v0.dot(v0)
+	var d01 := v0.dot(v1)
+	var d11 := v1.dot(v1)
+	var d20 := v2.dot(v0)
+	var d21 := v2.dot(v1)
+	var den := d00 * d11 - d01 * d01
+	if absf(den) < 1e-9:
+		return false
+	var bv := (d11 * d20 - d01 * d21) / den
+	var bw := (d00 * d21 - d01 * d20) / den
+	return bv >= 0.0 and bw >= 0.0 and bv + bw <= 1.0
 
 
 static func _find_sprite(sprites: Array, sprite_name: String) -> Dictionary:
@@ -562,24 +773,9 @@ static func _find_sprite(sprites: Array, sprite_name: String) -> Dictionary:
 	return {}
 
 
-static func _pick_sprite(sprites: Array, kind: int, rng: RandomNumberGenerator) -> Dictionary:
-	var key := "wall" if kind == KIND_WALL else ("floor" if kind == KIND_FLOOR else "ceil")
-	var total := 0.0
-	for s: Dictionary in sprites:
-		total += float(s[key])
-	if total <= 0.0:
-		return {}
-	var roll := rng.randf() * total
-	for s: Dictionary in sprites:
-		roll -= float(s[key])
-		if roll <= 0.0 and float(s[key]) > 0.0:
-			return s
-	return {}
-
-
 ## A decal at `p` on a face with outward normal `n`, or {} when it doesn't fit.
 func _try_place(sp: Dictionary, p: Vector3, n: Vector3, kind: int, ti: int, tmesh: TriangleMesh,
-		placed: Array, rng: RandomNumberGenerator, keep_up := false, up_in := Vector3.ZERO) -> Dictionary:
+		placed: Array, rng: RandomNumberGenerator, keep_up := false, up_in := Vector3.ZERO, scale := 1.0) -> Dictionary:
 	var up: Vector3
 	if keep_up:
 		up = up_in
@@ -590,8 +786,8 @@ func _try_place(sp: Dictionary, p: Vector3, n: Vector3, kind: int, ti: int, tmes
 		up = Basis(n, turns * PI * 0.5) * (Vector3.RIGHT if absf(n.dot(Vector3.RIGHT)) < 0.9 else Vector3.FORWARD)
 	up = (up - n * up.dot(n)).normalized()
 	var right := up.cross(n).normalized()
-	var w: float = float(sp["w"]) / Hub2DecalAtlas.TEXELS_PER_METRE
-	var h: float = float(sp["h"]) / Hub2DecalAtlas.TEXELS_PER_METRE
+	var w: float = float(sp["w"]) / Hub2DecalAtlas.TEXELS_PER_METRE * scale
+	var h: float = float(sp["h"]) / Hub2DecalAtlas.TEXELS_PER_METRE * scale
 	if sp["rot_ok"] and not keep_up and rng.randf() < 0.5:
 		var tmp := up
 		up = right

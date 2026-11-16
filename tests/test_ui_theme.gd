@@ -37,7 +37,7 @@ func _theme() -> Theme:
 func test_theme_loads() -> void:
 	check(_theme() != null, "%s should load" % THEME_PATH)
 
-func test_the_font_resolves_and_is_barlow_condensed() -> void:
+func test_the_font_resolves_and_is_pixelify_sans() -> void:
 	var theme := _theme()
 	if theme == null:
 		fail("%s does not exist" % THEME_PATH)
@@ -47,8 +47,8 @@ func test_the_font_resolves_and_is_barlow_condensed() -> void:
 		return
 	# The face is the identity of this UI - with no fills and no colour there is
 	# very little else. A missing .ttf import silently yields the engine default.
-	eq(theme.default_font.get_font_name(), "Barlow Condensed",
-		"the default font should be Barlow Condensed, not the engine fallback")
+	eq(theme.default_font.get_font_name(), "Pixelify Sans",
+		"the default font should be Pixelify Sans (PS1 UI pass), not the engine fallback")
 
 func test_every_variation_exists_with_its_base_type() -> void:
 	var theme := _theme()
@@ -88,7 +88,7 @@ func test_the_type_hierarchy_holds() -> void:
 
 # Panels and keycaps: a keycap is a hairline outline, and the plain panel draws nothing (the
 # window's fill and rim belong to MenuFrame, which can cut a corner).
-func test_keycaps_are_unfilled_hairlines_and_panels_draw_nothing() -> void:
+func test_keycaps_are_filled_hairlines_and_panels_draw_nothing() -> void:
 	var theme := _theme()
 	if theme == null:
 		fail("%s does not exist" % THEME_PATH)
@@ -97,7 +97,7 @@ func test_keycaps_are_unfilled_hairlines_and_panels_draw_nothing() -> void:
 	if keycap == null:
 		fail("Keycap should use a StyleBoxFlat panel")
 	else:
-		check(not keycap.draw_center, "a keycap should not be filled")
+		check(keycap.draw_center, "a keycap is a filled PS1 plate since the PS1 UI pass")
 		eq(keycap.border_width_top, 1, "a keycap should have a 1px border")
 		eq(keycap.corner_radius_top_left, 0, "keycap corners should be square")
 	check(theme.get_stylebox("panel", "PanelContainer") is StyleBoxEmpty,

@@ -227,6 +227,10 @@ func test_a_ghost_carries_his_pose_on_his_own_mesh_and_skin() -> void:
 	for k in ai._sources.size():
 		var src: MeshInstance3D = ai._sources[k]
 		var copy: MeshInstance3D = ai._copies[0][k]
+		# A piece hidden under his trench coat (or its cut copy, coat off) is not on the ghost.
+		if not src.is_visible_in_tree():
+			check(not copy.visible, "%s is hidden on him but shows on the ghost" % src.name)
+			continue
 		if ai._skinned(src):
 			skinned += 1
 			check(copy.mesh == src.mesh, "%s was copied, not shared - that is the bake back" % src.name)

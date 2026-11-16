@@ -277,6 +277,7 @@ func _setup() -> void:
 
 ## The wrap buffer: quarter size each way.
 static func wrap_size(size: Vector2i) -> Vector2i:
+	@warning_ignore("integer_division")
 	return Vector2i(maxi(size.x / 4, 1), maxi(size.y / 4, 1))
 
 
